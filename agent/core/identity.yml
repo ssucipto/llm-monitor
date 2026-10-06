@@ -1,22 +1,24 @@
 # DO NOT add dynamic content to this file (no dates, no task IDs)
 # This file is prompt-cached by the LLM API after first call
-# TODO: Fill in your project details below
 
-project: YOUR_PROJECT_NAME
-type: YOUR_PROJECT_TYPE      # e.g. web-app, mobile-app, api, cli-tool, library
+project: llm-monitor
+type: local-dashboard          # stdlib-served web dashboard (no package manager)
 description: >
-  One or two sentences describing what this project does.
+  A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
+  or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
+  workspace state, and adds a power model, SQLite telemetry, and windowed
+  performance analysis. Built on the ACP Enhanced framework.
 
 stack:
-  - primary: YOUR_MAIN_LANGUAGE  # e.g. TypeScript, Python, Go
-  - framework: YOUR_FRAMEWORK    # e.g. React, FastAPI, gin
-  - backend: YOUR_BACKEND        # e.g. PostgreSQL, Firebase, None
-  - deployment: YOUR_DEPLOY      # e.g. Vercel, AWS Lambda, Docker
+  - primary: Python            # server.py — standard library only
+  - framework: None            # http.server + hand-written front end (HTML/CSS/JS)
+  - backend: sqlite3           # bounded telemetry history (local, gitignored)
+  - deployment: None           # runs locally on this machine
 
-team: solo-developer   # or: small-team, open-source
+team: solo-developer
 priorities:
   - code-quality
   - correctness
   - maintainability
 
-repo: github.com/YOUR_USERNAME/YOUR_REPO
+repo: github.com/ssucipto/llm-monitor
