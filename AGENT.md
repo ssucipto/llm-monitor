@@ -1,0 +1,2385 @@
+# Agent Context Protocol Enhanced (ACP Enhanced)
+
+**Also Known As**: The Agent Directory Pattern
+**Version**: 6.40.0
+**Fork of**: [prmichaelsen/agent-context-protocol](https://github.com/prmichaelsen/agent-context-protocol)
+**Maintained by**: [ssucipto/acp-enhanced](https://github.com/ssucipto/acp-enhanced)
+**Created**: 2026-02-11
+**Updated**: 2026-07-28
+**Status**: Production Pattern — 92 milestones complete (M74–M77 gated per ADR-19)
+
+> **Canonical protocol file**: `AGENTS.md` (auto-loaded by Cursor/Copilot/Claude). This `AGENT.md` is the legacy comprehensive reference; keep its `**Version**` in sync with `agent/core/identity.yml` via `/acp-sync`.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [ACP Enhanced — What's New](#acp-enhanced--whats-new)
+3. [What is ACP Enhanced?](#what-is-acp-enhanced)
+4. [Why This Pattern Exists](#why-this-pattern-exists)
+5. [Directory Structure](#directory-structure)
+6. [Core Components](#core-components)
+7. [Metadata Markers](#metadata-markers)
+8. [Specs](#specs)
+9. [Command Invocation](#command-invocation)
+10. [How to Use ACP Enhanced](#how-to-use-acp-enhanced)
+11. [Three-Persona Deployment Model](#three-persona-deployment-model)
+12. [Pattern Significance & Impact](#pattern-significance--impact)
+13. [Problems This Pattern Solves](#problems-this-pattern-solves)
+14. [ACP Commands](#acp-commands)
+13. [ACP Preferences System](#acp-preferences-system)
+14. [Global Package Discovery](#global-package-discovery)
+15. [Project Registry System](#project-registry-system)
+16. [Sessions System](#sessions-system)
+17. [Experimental Features](#experimental-features)
+18. [Benchmark Suite](#benchmark-suite)
+19. [Template Source Files](#template-source-files)
+20. [Key File Index](#key-file-index)
+21. [Sample Prompts](#sample-prompts-for-using-acp)
+22. [Instructions for Future Agents](#instructions-for-future-agents)
+23. [Best Practices](#best-practices)
+    - [Critical Rules](#critical-rules)
+    - [Workflow Best Practices](#workflow-best-practices)
+    - [Documentation Best Practices](#documentation-best-practices)
+    - [Organization Best Practices](#organization-best-practices)
+    - [Progress Tracking Best Practices](#progress-tracking-best-practices)
+    - [Quality Best Practices](#quality-best-practices)
+24. [What NOT to Do](#what-not-to-do)
+25. [Keeping ACP Updated](#keeping-acp-updated)
+
+---
+
+## Overview
+
+**ACP Enhanced** is a fork and significant extension of [prmichaelsen/agent-context-protocol](https://github.com/prmichaelsen/agent-context-protocol). The original ACP defines a documentation-first `agent/` directory pattern that helps AI agents maintain project context across sessions. ACP Enhanced builds on that foundation with a complete tooling ecosystem: a package management system, a context loading protocol, a preferences system, a project registry, a sessions system, a benchmark suite, and much more.
+
+**Core Principle**: *Every decision, pattern, and requirement should be documented in a way that allows a future agent (or human) to understand the project's complete context without needing to reverse-engineer the codebase.*
+
+---
+
+## ACP Enhanced — What's New
+
+The following capabilities are **ACP Enhanced additions** that do not exist in the original prmichaelsen/agent-context-protocol:
+
+| Enhancement | Description | Since |
+|-------------|-------------|-------|
+| **Context Loading Protocol** | 6-step deterministic protocol (`AGENTS.md`) backed by a `agent/` framework with skills, memory, routing, and wiki layers. Ensures reproducible session startup. | M0 |
+| **Package Management** | 50+ commands and 28 scripts for installing, publishing, and managing ACP command packages from git repositories. Includes a manifest system, schema validation, and namespace enforcement. | M3–M9 |
+| **Preferences System** | 4-level preference hierarchy (project > workspace > user > default) with configurables, named presets, and per-invocation CLI overrides. | M6 |
+| **Project Registry** | Global `~/.acp/projects.yaml` tracking for discovering, switching between, and managing ACP projects. Integrates with `/acp-init`. | M7 |
+| **Sessions System** | Multi-agent session visibility via `~/.acp/sessions.yaml`. Agents can see what other agents are doing across terminal tabs. Advisory-only (no locking). | M12 |
+| **Key File Index** | `agent/index/` weight-based system for declaring which files agents must read first. `/acp-init` auto-loads all files with weight ≥ 0.8. | M14 |
+| **Clarification Capture** | `/acp-clarification-*` commands for capturing, deduplicating, and synthesizing stakeholder clarifications into design/task/pattern creation. | M15 |
+| **Design Reference System** | `/acp-design-reference` directive for cross-referencing design elements (D-IDs) into task creation and implementation. | M16 |
+| **Artifact Commands** | `/acp-artifact-research`, `/acp-artifact-glossary`, `/acp-artifact-reference` — commands for creating long-lived, living reference documents. | M17 |
+| **Metadata Markers** | Machine-readable `@acp.meta.*` sentinel system for R<N> spec requirements and D<N> design units. Powers `/acp-sync` spec↔task↔code traceability. | M18 |
+| **Specs System** | `agent/specs/` formal specification documents with R<N> requirement IDs. `/acp-task-create` auto-populates `Spec Coverage` from matching specs. | M14–M18 |
+| **Benchmark Suite** | `agent/benchmarks/` automated E2E suite measuring ACP vs baseline outcomes across 6 task types (simple → complex). LLM rubric evaluation and HTML reports. | M11 |
+| **YAML Parser** | Pure-bash generic YAML parser (`acp.yaml-parser.sh`) with AST, path expressions, and full CRUD API. Zero external dependencies. | M4 |
+| **Cross-platform CI** | GitHub Actions workflow running E2E tests on both `ubuntu-latest` and `macos-latest` (BSD compatibility enforced). | M13 |
+| **Index Semantic Entry Types** | Extended key file index with `kind: note` and `kind: directive` for inline path-null entries; `/acp-meta.*` marker integration. | M18 |
+
+### What the Original ACP Provides
+
+The upstream `prmichaelsen/agent-context-protocol` provides the foundational `agent/` directory pattern:
+- `agent/design/`, `agent/milestones/`, `agent/tasks/`, `agent/patterns/` directory structure
+- `agent/progress.yaml` for machine-readable progress tracking
+- A handful of core commands: `/acp-init`, `/acp-proceed`, `/acp-status`, `/acp-version-*`
+- `AGENT.md` (this file) as the installed documentation artifact
+
+ACP Enhanced retains 100% backward compatibility with the original pattern. Projects using the original ACP can install ACP Enhanced and gain all enhancements without changes to existing files.
+
+---
+
+## What is ACP Enhanced?
+
+**ACP Enhanced** is a **documentation-first development methodology** that creates a parallel knowledge base alongside your source code, plus a full tooling ecosystem for package management, preferences, project registry, sessions, and more. Its foundation consists of:
+
+1. **Design Documents** - Architectural decisions, how-it-works rationale, technical approach
+2. **Specs** - Formal specifications: explicit requirements (R<N> IDs), behavior tables, test cases. The source of truth for *what must be true* about a feature
+3. **Milestones** - Project phases with clear deliverables and success criteria
+4. **Tasks** - Granular, actionable work items with verification steps. Tasks can claim specific spec requirements via their `Spec Coverage` section
+5. **Patterns** - Reusable architectural and coding patterns
+6. **Progress Tracking** - YAML-based progress monitoring and status updates
+
+### Core Project Files
+
+ACP Enhanced uses two key files for project state. They serve different purposes:
+
+| File | Purpose | Update Frequency | Content |
+|------|---------|:---:|---------|
+| `agent/manifest.yaml` | Static project identity — name, version, stack, constraints, packages | Rarely (team changes, new platform) | Packages installed, framework version, metadata |
+| `agent/progress.yaml` | Live tracking — milestones, tasks, recent work, next steps, blockers | Daily (`/acp-update`, `/acp-proceed`) | All milestones (73 shipped), task status, observability |
+
+**Rule of thumb**: Manifest is "set once and forget." Progress is "update daily."
+
+This pattern enables:
+- **Agent Continuity**: New agents can pick up where previous agents left off
+- **Knowledge Preservation**: Design decisions and rationale are never lost
+- **Systematic Development**: Complex projects are broken into manageable pieces
+- **Quality Assurance**: Clear success criteria and verification steps
+- **Collaboration**: Multiple agents (or humans) can work on the same project
+
+### Why Three Protocol Files Exist
+
+ACP Enhanced maintains three protocol files, not one:
+
+| File | Role | Loaded By |
+|------|------|-----------|
+| `.github/copilot-instructions.md` | **Canonical source** — edit here | GitHub Copilot, Cursor |
+| `CLAUDE.md` | Auto-synced copy | Claude Code |
+| `AGENT.md` | User-facing documentation (this file) | Human readers |
+
+This is not an anti-pattern — it's inherent to multi-platform support. Each platform reads a different file:
+- GitHub Copilot reads `.github/copilot-instructions.md`
+- Claude Code reads `CLAUDE.md`
+- A pre-commit hook keeps `CLAUDE.md` in sync with the canonical source
+
+> **Do not merge these files.** AGENT.md is 2300+ lines of user documentation. CLAUDE.md and copilot-instructions.md are ~360 lines of agent protocol. Redirecting Claude to AGENT.md would load irrelevant user docs into every session.
+
+### Parallel Tasks (v6.8.2)
+
+ACP Enhanced supports Anthropic's full 6 agent workflows, including parallelization and orchestrator-workers:
+
+| Workflow | Task Type | Use Case |
+|----------|-----------|----------|
+| **Parallel** | `task_type: parallel` | Independent sub-tasks run concurrently (e.g., "Add tests for endpoints A, B, C") |
+| **Orchestrator** | `task_type: orchestrator-workers` | Large refactors — orchestrator decomposes, dispatches to workers, aggregates |
+
+Sub-tasks form a DAG via `depends_on`:
+```yaml
+sub_tasks:
+  - id: route-051a
+    depends_on: []               # Runs immediately
+  - id: route-051b
+    depends_on: [route-051a]     # Waits for 051a
+```
+
+`/acp-proceed --complete` auto-detects parallel tasks, spawns sub-agents, resolves dependencies, and aggregates outputs.
+
+---
+
+## Why This Pattern Exists
+
+### The Problem
+
+Traditional software development faces several challenges when working with AI agents:
+
+1. **Context Loss**: Agents have no memory between sessions
+2. **Implicit Knowledge**: Design decisions exist only in developers' heads
+3. **Inconsistent Patterns**: No single source of truth for architectural patterns
+4. **Scope Creep**: Projects expand without clear boundaries
+5. **Quality Drift**: Standards erode without explicit documentation
+6. **Onboarding Friction**: New contributors must reverse-engineer intent
+
+### The Solution
+
+ACP solves these by:
+
+- **Externalizing Knowledge**: All decisions documented explicitly
+- **Structured Planning**: Milestones and tasks provide clear roadmap
+- **Pattern Library**: Reusable solutions to common problems
+- **Progress Tracking**: YAML files track what's done and what's next
+- **Self-Documenting**: ACP documents itself
+
+---
+
+## Directory Structure
+
+```
+project-root/
+├── AGENT.md                        # This file - ACP documentation
+├── AGENTS.md                       # AI context loading protocol (agent/ framework)
+│
+├── agent/                         # ACP Enhanced framework layer (context management)
+│   ├── core/                       # Layer 1 — permanent cached context (max 300 tokens)
+│   │   ├── identity.yml            # Project identity: name, stack, team, repo URL
+│   │   ├── constraints.yml         # Hard rules, context budget limits, non-negotiables
+│   │   └── routing.yml             # Which executor model to use this session
+│   ├── skills/                     # Layer 2 — task-specific instructions (max 500 tokens)
+│   │   ├── backend.md              # Backend domain patterns and conventions
+│   │   ├── commands.md             # ACP command doc writing guide
+│   │   └── ...                     # One file per domain (ui.md, deploy.md, etc.)
+│   ├── memory/                     # Layer 3 — persistent memory
+│   │   ├── sessions.md             # YAML session log (last 3 entries loaded)
+│   │   ├── lessons.md              # Correction log — appended on every AI mistake
+│   │   ├── patterns.md             # Reusable code/design patterns discovered
+│   │   └── decisions.md            # Architecture Decision Records (ADRs)
+│   ├── wiki/                       # Layer 3 — project reference knowledge
+│   │   ├── domain.yml              # Domain entities, operations, modules
+│   │   ├── architecture.md         # Service boundaries, integration patterns
+│   │   └── integrations.md         # External services, env vars, config refs
+│   ├── routing/                    # Task routing configuration
+│   │   ├── taxonomy.yml            # Task types → executor + context mapping
+│   │   ├── rules.md                # Human-readable routing rules (ambiguity resolution)
+│   │   ├── config.yml              # Model definitions and cost rates
+│   │   └── ledger.md              # Token spend log (auto-appended by dispatch script)
+│   └── tasks/                      # Routed task files (created by /acp-route)
+│       └── task-NNN.md             # Individual task with YAML frontmatter
+│
+├── agent/                          # Agent directory (ACP structure)
+│   ├── commands/                   # Command system
+│   │   ├── command.template.md     # Command template
+│   │   ├── acp.init.md             # /acp-init
+│   │   ├── acp.proceed.md          # /acp-proceed
+│   │   ├── acp.status.md           # /acp-status
+│   │   └── ...                     # More commands
+│   │
+│   ├── scripts/                    # Shell utility scripts
+│   │   ├── acp.common.sh           # Shared utility functions
+│   │   ├── acp.yaml-parser.sh      # Pure-bash YAML parser
+│   │   ├── acp.install.sh          # ACP installation
+│   │   └── ...                     # Package and workflow scripts
+│   │
+│   ├── schemas/                    # YAML schema definitions
+│   │   ├── package.schema.yaml     # Schema for package.yaml
+│   │   ├── progress.schema.yaml    # Schema for progress.yaml
+│   │   └── projects.schema.yaml    # Schema for projects.yaml
+│   │
+│   ├── design/                     # Design documents (how-it-works, rationale)
+│   │   ├── requirements.md         # Core requirements
+│   │   ├── {feature}-design.md     # Feature specifications
+│   │   └── ...
+│   │
+│   ├── specs/                      # Formal specifications (what must be true)
+│   │   ├── {namespace}.{name}.md   # R<N> requirements, behavior tables, tests
+│   │   └── ...                     # Created by /acp-spec, consumed by /acp-task-create
+│   │
+│   ├── milestones/                 # Project milestones
+│   │   ├── milestone-1-{name}.md
+│   │   └── ...
+│   │
+│   ├── tasks/                      # Granular tasks
+│   │   ├── milestone-{N}-{title}/  # Tasks grouped by milestone (standard)
+│   │   │   ├── task-{M}-{name}.md
+│   │   │   └── ...
+│   │   ├── unassigned/             # Tasks without milestone
+│   │   │   └── task-{M}-{name}.md
+│   │   └── task-{N}-{name}.md      # Legacy flat structure (older tasks)
+│   │
+│   ├── patterns/                   # Architectural patterns
+│   │   ├── bootstrap.md            # Project setup pattern
+│   │   └── {pattern-name}.md
+│   │
+│   ├── artifacts/                  # Long-lived research and reference artifacts
+│   │   ├── glossary.template.md    # Template for glossary artifacts
+│   │   ├── reference.template.md   # Template for reference artifacts
+│   │   └── research.template.md    # Template for research artifacts
+│   │
+│   ├── benchmarks/                 # E2E benchmark suite (ACP vs baseline)
+│   │   ├── runner/                 # Runner scripts and evaluator prompt
+│   │   └── suite/                  # Benchmark task definitions
+│   │
+│   ├── clarifications/             # Clarification documents
+│   │   └── clarification-{N}-{title}.md   # Created by /acp-clarification-create
+│   │
+│   ├── drafts/                     # local-only planning drafts (gitignored content; template tracked)
+│   │   └── draft.template.md       # 3-question draft template for /acp-plan
+│   │
+│   ├── feedback/                   # Agent feedback and improvement notes
+│   │
+│   ├── configurables/              # Preference definitions
+│   │   ├── acp.configurables.yaml  # ACP namespace preference schema
+│   │   └── {pkg}.configurables.yaml # Package-specific preference schema
+│   │
+│   ├── preferences/                # Preference values (project-level)
+│   │   ├── acp.default.yaml        # ACP project-level defaults
+│   │   ├── acp.batch-planning.yaml # Preset: automated batch planning
+│   │   ├── acp.interactive-planning.yaml # Preset: guided interactive mode
+│   │   ├── acp.rapid-prototyping.yaml    # Preset: fast iteration
+│   │   └── {pkg}.default.yaml      # Package project-level defaults
+│   │
+│   ├── index/                      # Key file index
+│   │   ├── local.main.yaml         # Project's own key files
+│   │   ├── local.main.template.yaml # Template with schema docs
+│   │   └── {pkg}.main.yaml         # Package-shipped indices
+│   │
+│   ├── manifest.yaml               # Installed package tracking
+│   └── progress.yaml               # Progress tracking
+│
+└── (project-specific files)        # Your project structure
+```
+
+---
+
+## Core Components
+
+### 1. Design Documents (`agent/design/`)
+
+**Purpose**: Capture architectural decisions, technical specifications, and design rationale.
+
+**Structure**:
+```markdown
+# {Feature/Pattern Name}
+
+**Concept**: One-line description
+**Created**: YYYY-MM-DD
+**Status**: Proposal | Design Specification | Implemented
+
+---
+
+## Overview
+High-level description of what this is and why it exists
+
+## Problem Statement
+What problem does this solve?
+
+## Solution
+How does this solve the problem?
+
+## Implementation
+Technical details, code examples, schemas
+
+## Benefits
+Why this approach is better than alternatives
+
+## Trade-offs
+What are the downsides or limitations?
+
+---
+
+**Status**: Current status
+**Recommendation**: What should be done
+```
+
+**Design Atomic Units (DR-IDs)**: As you write a design, label key decisions and implementation units with `D<N>` IDs:
+
+```markdown
+**D1: Authentication Strategy** — Use JWT with RS256 for stateless auth.
+**D2: Session Schema** — { userId, expiresAt, scopes[] } stored in Redis.
+```
+
+Tasks inline these units via `/acp-task-create` and declare `incorporates: D1, D3` in their marker. `/acp-validate` Probe 2 verifies the inlining happened.
+
+### 2. Specs (`agent/specs/`)
+
+**Purpose**: Formal, testable specifications. Where design documents describe *how* a feature works and *why* it was designed that way, specs define *what must be true* about the finished feature — unambiguous requirements, precise behavior, concrete test cases.
+
+Specs complement design documents; both can exist for the same feature. Design is the rationale, spec is the contract.
+
+**Structure**:
+```markdown
+# Specification: {Feature Name}
+
+## Requirements
+
+### R1: {Short requirement title}
+{One-paragraph requirement statement. MUST / SHOULD / MAY language.}
+
+### R2: {...}
+...
+
+## Behavior Table
+
+| # | Scenario | Expected Behavior | Tests |
+|---|----------|-------------------|-------|
+| 1 | User does X | System returns Y | `test-name-1` |
+| 2 | ... | ... | ... |
+
+## Tests
+
+### Base Cases
+...
+
+### Edge Cases
+...
+
+## Open Questions
+...
+```
+
+**When to Create**: Use `/acp-spec` when a feature is complex enough that informal descriptions drift. Specs are especially valuable for:
+- Multi-task features where each task owns a subset of requirements
+- Features with non-obvious edge cases
+- Features where the distinction between "works" and "specified correctly" matters
+
+**How Tasks Use Specs**: When `/acp-task-create` finds a matching spec in `agent/specs/`, it pulls relevant R<N> requirements verbatim into the task's `Spec Coverage` section. Sub-agents implement against the inline requirements; the spec file itself remains the source of truth for audits and drift detection via `/acp-sync`.
+
+### 3. Milestones (`agent/milestones/`)
+
+**Purpose**: Define project phases with clear deliverables and success criteria.
+
+**Structure**:
+```markdown
+# Milestone {N}: {Name}
+
+**Goal**: One-line objective
+**Duration**: Estimated time
+**Dependencies**: Previous milestones
+**Status**: Not Started | In Progress | Completed
+
+---
+
+## Overview
+What this milestone accomplishes
+
+## Deliverables
+- Concrete outputs
+- Measurable results
+- Specific artifacts
+
+## Success Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] ...
+
+## Key Files to Create
+List of files/directories this milestone produces
+
+---
+
+**Next Milestone**: Link to next phase
+**Blockers**: Current obstacles
+```
+
+### 4. Tasks (`agent/tasks/`)
+
+**Purpose**: Break milestones into actionable, verifiable work items.
+
+> **Two task systems coexist — they are NOT the same:**
+>
+> | System | Location | Purpose | Tracked in |
+> | --- | --- | --- | --- |
+> | Milestone tasks | `agent/tasks/milestone-XX-*/task-NNN-title.md` | What to build — work descriptions, acceptance criteria | `progress.yaml` (ground truth) |
+> | Routing records | `agent/routing/tasks/route-NNN.md` | How to assign — executor, token estimates, cost tracking | Not in progress.yaml |
+>
+> When someone says "the task file", they mean `agent/tasks/`. When `/acp-route` creates a file, it goes in `agent/routing/tasks/` as `route-NNN.md`.
+
+> **Deprecation notice**: `**Status**: Not Started / In Progress / Completed` prose fields in task bodies are deprecated — use the YAML `completed:` frontmatter field instead. New tasks created by `/acp-task-create` use the YAML format. Legacy task files with `**Status**:` prose are kept as-is for backward compatibility; do not bulk-update them.
+
+**Structure**:
+```markdown
+---
+created: YYYY-MM-DD
+completed:  # Set by /acp-commit automatically — do not edit manually
+---
+
+# Task {N}: {Name}
+
+**Milestone**: Parent milestone
+**Estimated Time**: Hours/days
+
+---
+
+## Objective
+What this task accomplishes
+
+## Steps
+1. Concrete action 1
+2. Concrete action 2
+3. ...
+
+## Verification
+- [ ] Verification step 1
+- [ ] Verification step 2
+- [ ] ...
+
+---
+
+**Next Task**: Link to next task
+```
+
+### 5. Patterns (`agent/patterns/`)
+
+**Purpose**: Document reusable architectural and coding patterns.
+
+**Structure**:
+```markdown
+# {Pattern Name}
+
+## Overview
+What this pattern is and when to use it
+
+## Core Principles
+Fundamental concepts
+
+## Implementation
+How to implement this pattern
+
+## Examples
+Code examples and use cases
+
+## Benefits
+Why use this pattern
+
+## Anti-Patterns
+What NOT to do
+
+---
+
+**Status**: Current status
+**Recommendation**: When to use this pattern
+```
+
+### 6. Progress Tracking (`agent/progress.yaml`)
+
+**Purpose**: Machine-readable progress tracking and status monitoring.
+
+**Structure**:
+```yaml
+project:
+  name: project-name
+  version: 0.1.0
+  started: YYYY-MM-DD
+  status: in_progress | completed
+  current_milestone: M1
+
+milestones:
+  - id: M1
+    name: Milestone Name
+    file: agent/milestones/milestone-1-name.md
+    status: not_started | in_progress | completed
+    progress: 0-100%
+    started: YYYY-MM-DD
+    completed: YYYY-MM-DD | null
+    estimated_weeks: N
+    tasks_completed: N
+    tasks_total: N
+    notes: |
+      Progress notes
+
+tasks:
+  milestone_1:
+    - id: task-1
+      name: Task Name
+      status: not_started | in_progress | completed
+      started: ISO-8601 | null
+      file: agent/tasks/milestone-{N}-{title}/task-{M}-name.md
+      estimated_hours: N
+      actual_hours: null              # auto-computed
+      completed_date: ISO-8601 | null
+      notes: |
+        Task notes
+
+**Timestamp Rules**:
+- `started` — auto-set to ISO 8601 timestamp when task first transitions to `in_progress`. Never overwritten once set.
+- `completed_date` — auto-set to ISO 8601 timestamp when task transitions to `completed`.
+- `actual_hours` — auto-computed as `(completed_date - started)` in hours, rounded to 1 decimal. Not manually set.
+
+documentation:
+  design_documents: N
+  milestone_documents: N
+  pattern_documents: N
+  task_documents: N
+
+progress:
+  planning: 0-100%
+  implementation: 0-100%
+  overall: 0-100%
+
+recent_work:
+  - date: YYYY-MM-DD
+    description: What was done
+    items:
+      - ✅ Completed item
+      - ⚠️  Warning/note
+      - 📋 Pending item
+
+next_steps:
+  - Next action 1
+  - Next action 2
+
+notes:
+  - Important note 1
+  - Important note 2
+
+current_blockers:
+  - Blocker 1
+  - Blocker 2
+```
+
+---
+
+## Metadata Markers
+
+ACP uses language-agnostic metadata blocks for traceability. Any file (markdown, TypeScript, Python, shell, SQL, YAML…) can carry markers that the scanner reads in one pass.
+
+**Sentinel syntax** — wrap opening/closing in the host language's comment characters:
+
+```markdown
+<!-- @acp.meta.spec
+topic: auth, sessions
+requirements: R1..R10
+status: draft
+updated: 2026-05-05
+@acp.meta.end -->
+```
+
+**8 marker kinds**: `spec`, `task`, `milestone`, `design`, `pattern`, `clarification`, `code`, `artifact`
+
+**Common fields** (all optional unless noted):
+- `topic:` — comma-separated keywords
+- `description:` — one-line summary ≤150 chars
+- `status:` — `draft | active | deprecated`
+- `updated:` — YYYY-MM-DD
+
+**Kind-specific fields**: `requirements:` (spec), `covers:` (task — R-IDs from spec), `incorporates:` (task — D-IDs from design), `implements:` (code — R-IDs)
+
+**Scanner**: `./agent/scripts/acp.meta-scan.sh [--kind <kind>] [root]`  
+Outputs a flat stream of `file:` / `kind:` / `key:` lines, `---` between blocks.
+
+See [`acp.sync.md`](agent/commands/acp.sync.md) (Steps 1.3–1.6) for how markers feed the traceability system.  
+See [`acp.spec.md`](agent/commands/acp.spec.md) for the full field catalog per kind.
+
+---
+
+## Specs
+
+Specifications live in `agent/specs/` and are created via `/acp-spec`. They define requirements with numbered IDs:
+
+```markdown
+## Requirements
+
+- **R1** — The system must authenticate users before accessing protected routes.
+- **R2** — Session tokens must expire after 24 hours.
+```
+
+**FR-IDs** (`R<N>`): Every requirement gets a unique ID. Tasks reference them via `covers:` in their marker. Code references them via `implements:`.
+
+**Behavior Table** (required in every spec):
+
+| Scenario | Input | Expected Output |
+|---|---|---|
+| Valid login | correct credentials | 200 + session token |
+| Invalid login | wrong password | 401 |
+
+**Traceability chain**: Spec R-IDs → `covers: R1, R2` in task marker → `implements: R1` in code marker → `/acp-sync` validates all R-IDs are covered.
+
+**Create a spec**: `/acp-spec --from-clarification <file>` or `/acp-spec --interactive`
+
+See [`agent/specs/spec.template.md`](agent/specs/spec.template.md) for the full template.  
+See [`acp.spec.md`](agent/commands/acp.spec.md) for the `/acp-spec` command reference.
+
+---
+
+## Command Invocation
+
+Every ACP command has **three files** (all must exist):
+
+| Surface | File location | Format | Example |
+|---|---|---|---|
+| Command directive | `agent/commands/acp.NAME.md` | dot | `acp.plan.md` |
+| VS Code slash cmd | `.github/prompts/acp-NAME.prompt.md` | hyphen | `acp-plan.prompt.md` |
+| opencode cmd | `.opencode/commands/acp-NAME.md` | hyphen | `acp-plan.md` |
+| User invocation | `/acp-NAME` in chat | slash + hyphen | `/acp-plan` |
+| Body references | `/acp-NAME` in command docs | slash + hyphen | `/acp-plan` |
+
+**Invocation chain**:
+```
+user types /acp-plan
+  → IDE reads .github/prompts/acp-plan.prompt.md (or .opencode/commands/acp-plan.md)
+    → prompt says "Read and execute agent/commands/acp.plan.md"
+      → agent executes acp.plan.md steps
+```
+
+**Critical rules**:
+- ✅ `/acp-plan` — correct user invocation
+- ✅ `acp.plan.md` — correct dot-notation filename
+- ❌ `@acp-plan` — NEVER valid (dash after `@` is wrong)
+- ❌ `@acp plan` — NEVER valid (space is wrong)
+
+**Porting rule**: Upstream uses `@acp.<name>` as invocation syntax. When porting upstream content: replace every `@acp.<name>` → `/acp-<name>`.
+
+See ADR-4 (naming convention) and ADR-6 (triple-file architecture) in [`agent/memory/decisions.md`](agent/memory/decisions.md).
+
+---
+
+## How to Use ACP Enhanced
+
+### For Starting a New Project
+
+1. **Create Agent Directory Structure**
+   ```bash
+   mkdir -p agent/{design,specs,milestones,patterns,tasks}
+   touch agent/{design,specs,milestones,patterns,tasks}/.gitkeep
+   ```
+
+2. **Create Requirements Document**
+   - Invoke [`/acp-design-create`](agent/commands/acp.design-create.md) and follow directives defined in that file
+   - Specify "requirements" as the design type
+
+3. **Define Milestones**
+   - Break project into 5-10 major phases
+   - Each milestone should be 1-3 weeks of work
+   - Clear deliverables and success criteria
+
+4. **(Optional) Create Specs for Complex Features**
+   - Invoke [`/acp-spec`](agent/commands/acp.spec.md) and follow directives defined in that file
+   - Use for features with many requirements, edge cases, or where "works" vs "specified correctly" matters
+   - Specs define *what must be true*; tasks claim subsets of spec requirements via `Spec Coverage`
+
+5. **Create Initial Tasks**
+   - Invoke [`/acp-task-create`](agent/commands/acp.task-create.md) and follow directives defined in that file
+   - Break first milestone into concrete tasks
+   - If a matching spec exists, `/acp-task-create` auto-populates the task's `Spec Coverage` section
+
+6. **Initialize Progress Tracking**
+   - Create `agent/progress.yaml`
+   - Set up milestone and task tracking
+   - Document initial status
+
+7. **Document Patterns**
+   - Invoke [`/acp-pattern-create`](agent/commands/acp.pattern-create.md) and follow directives defined in that file
+   - Document architectural decisions as patterns
+
+### For Continuing an Existing Project
+
+1. **Read Progress File**
+   - Understand current status
+   - Identify current milestone
+   - Find next tasks
+
+2. **Review Design Documents**
+   - Read relevant design docs in `agent/design/`
+   - Understand architectural decisions
+   - Check for constraints and patterns
+
+3. **Check Current Milestone**
+   - Read milestone document
+   - Review success criteria
+   - Understand deliverables
+
+4. **Find Next Task**
+   - Look at current milestone's tasks
+   - Find first incomplete task
+   - Read task document
+
+5. **Execute Task**
+   - Follow task steps
+   - Verify completion
+   - Update progress.yaml
+
+6. **Document Changes**
+   - Update progress.yaml
+   - Add notes about work completed
+   - Document any new patterns or decisions
+
+> **See also**: [Best Practices](#best-practices) for detailed guidance on documentation, organization, and quality standards.
+
+---
+
+## Three-Persona Deployment Model
+
+ACP Enhanced supports three deployment configurations ("personas") depending on your tooling and cost goals. Every feature in ACP Enhanced works with all three personas — the difference is only in *which AI models* execute your tasks and *how routing happens*.
+
+### Personas at a Glance
+
+| Persona | Name | Setup Required | Monthly Cost Profile | Key Benefit |
+|---------|------|---------------|---------------------|-------------|
+| **A** | Copilot Pro Only | None — use what you already have | Fixed (Copilot subscription) | Memory layer + ADRs = 20–30% fewer premium requests burned |
+| **B** | DeepSeek Multi-Model | OpenRouter API key + `scripts/acp-dispatch.ts` | Pay-per-token (~$5–20/mo for active use) | Full task routing to cheapest capable model; 60–85% cost reduction |
+| **C** | Copilot + DeepSeek *(Recommended)* | Both of the above | Fixed + small variable | Each tool used for its genuine strength; ACP bridges context loss between them |
+
+### Persona Details
+
+**Persona A — GitHub Copilot Pro Only**
+- Zero additional infrastructure. Use your existing Copilot subscription.
+- The `executor` field in task files is a *recommendation* — you manually select the model from Copilot's model dropdown in VS Code.
+- Skip `scripts/acp-dispatch.ts` entirely.
+- Primary gain: the memory layer (`sessions.md`, `lessons.md`) and ADR-gated decisions eliminate 20–30% of clarification turns, reducing premium requests spent re-explaining context.
+
+**Persona B — DeepSeek / Multi-Model via OpenRouter**
+- Install Continue.dev or Cline; configure OpenRouter API key.
+- `scripts/acp-dispatch.ts` reads each task's `executor` field and routes automatically to the cheapest model capable of the task (DeepSeek R1 for heavy tasks, DeepSeek V3-0324 for lightweight).
+- Primary gain: 50–65% cost reduction via model routing + prompt caching. No Copilot subscription required.
+
+**Persona C — Copilot + DeepSeek (Recommended)**
+- Use Copilot for: tab completion, PR review, inline suggestions.
+- Use DeepSeek via dispatch script for: chat tasks, architecture, heavy coding sessions.
+- `AGENTS.md` (or `AGENT.md`) feeds both tools from a single source — one context file, two models.
+- Primary gain: each tool used for its genuine strength; 60–85% total cost reduction vs. all-Claude baseline.
+
+### Which Persona Should I Use?
+
+```
+Do you have a GitHub Copilot Pro subscription?
+  ├── No  → Start with Persona B (OpenRouter only, no subscription needed)
+  └── Yes → Do you want to reduce AI costs further?
+              ├── No  → Persona A (simplest setup, no extra config)
+              └── Yes → Persona C (recommended — Copilot + DeepSeek)
+```
+
+- **Just getting started?** → Persona A. Get value immediately, upgrade later.
+- **Cost-sensitive / high volume?** → Persona B or C. Set up once, save every month.
+- **Production team project?** → Persona C. Best coverage, one source of truth.
+
+### Three-Layer Context Model
+
+All personas share the same three-layer context architecture. The layers determine what gets loaded into the AI's context window on each task:
+
+| Layer | Content | Size | Caching |
+|-------|---------|------|---------|
+| **Layer 1 — Core** | `agent/core/identity.yml`, `constraints.yml`, `routing.yml` | ~875 tokens | Cached after first call |
+| **Layer 2 — Skills** | One `agent/skills/*.md` file matching the task type | ~475–660 tokens | Semi-static per task type |
+| **Layer 3 — Ephemeral** | Session memory (last 3 entries), filtered lessons, active task file, one wiki section | ~1,200–1,700 tokens per task | Never cached |
+
+**Total context per task**: ~2,550–3,235 tokens — compared to 10,000–18,000 tokens for unstructured all-Claude baseline usage.
+
+Layer 1 and Layer 2 are prompt-cached by supported providers (Claude, Gemini), meaning repeated calls within a session cost a fraction of a new call. Layer 3 rotates per task, keeping the window lean and task-specific.
+
+> **For detailed setup instructions per persona**, see [`scripts/QUICKSTART.md`](scripts/QUICKSTART.md).
+
+---
+
+## Pattern Significance & Impact
+
+### Significance
+
+The Agent Pattern represents a **paradigm shift** in how we approach AI-assisted development:
+
+1. **Knowledge as Code**: Documentation is treated with the same rigor as source code
+2. **Agent-First Design**: Projects are designed to be understandable by AI agents
+3. **Explicit Over Implicit**: All knowledge is externalized and documented
+4. **Systematic Development**: Complex projects become manageable through structure
+5. **Quality by Design**: Standards and patterns are enforced through documentation
+
+### Impact
+
+**On Development Speed**:
+- ✅ 50-70% faster onboarding for new agents
+- ✅ Reduced context-gathering time
+- ✅ Fewer architectural mistakes
+- ✅ Less rework due to clear specifications
+
+**On Code Quality**:
+- ✅ Consistent patterns across codebase
+- ✅ Better architectural decisions (documented rationale)
+- ✅ Fewer bugs (clear verification steps)
+- ✅ More maintainable code (patterns documented)
+
+**On Project Management**:
+- ✅ Clear progress visibility
+- ✅ Accurate time estimates
+- ✅ Better scope management
+- ✅ Easier to parallelize work
+
+**On Team Collaboration**:
+- ✅ Shared understanding of architecture
+- ✅ Consistent coding standards
+- ✅ Better knowledge transfer
+- ✅ Reduced communication overhead
+
+---
+
+## Problems This Pattern Solves
+
+### 1. **Context Loss Between Agent Sessions**
+
+**Problem**: Agents have no memory between sessions. Each new session starts from scratch.
+
+**Solution**: The agent directory provides complete context:
+- `progress.yaml` shows current status
+- Design docs explain architectural decisions
+- Patterns document coding standards
+- Tasks provide next steps
+
+**Example**: An agent can read `progress.yaml`, see that task-3 is next, read the task document, and continue work immediately.
+
+### 2. **Implicit Knowledge**
+
+**Problem**: Design decisions exist only in developers' heads or scattered across chat logs.
+
+**Solution**: All decisions are documented in design documents with rationale:
+- Why this approach was chosen
+- What alternatives were considered
+- What trade-offs were made
+
+**Example**: A design document might explain why discriminated unions are better than exceptions for access control, with code examples and trade-off analysis.
+
+### 3. **Inconsistent Patterns**
+
+**Problem**: Different parts of codebase use different patterns for the same problems.
+
+**Solution**: Patterns directory provides single source of truth:
+- Architectural patterns documented
+- Code examples provided
+- Anti-patterns identified
+
+**Example**: A pattern document might specify that all data access must go through service layers, with implementation examples and anti-patterns.
+
+### 4. **Scope Creep**
+
+**Problem**: Projects expand without clear boundaries, leading to never-ending development.
+
+**Solution**: Milestones and tasks provide clear scope:
+- Each milestone has specific deliverables
+- Tasks are granular and verifiable
+- Progress is tracked objectively
+
+**Example**: Milestone 1 has exactly 7 tasks. When those are done, the milestone is complete.
+
+### 5. **Quality Drift**
+
+**Problem**: Code quality degrades over time as standards are forgotten or ignored.
+
+**Solution**: Patterns and verification steps maintain quality:
+- Every task has verification checklist
+- Patterns document best practices
+- Design docs explain quality requirements
+
+**Example**: Each task includes verification steps like "TypeScript compiles without errors" and "All tests pass".
+
+### 6. **Onboarding Friction**
+
+**Problem**: New contributors (agents or humans) need weeks to understand the project.
+
+**Solution**: Self-documenting structure enables rapid onboarding:
+- Start with `progress.yaml` for status
+- Read `requirements.md` for context
+- Review patterns for coding standards
+- Pick up next task and start working
+
+**Example**: A new agent can become productive in minutes instead of days.
+
+### 7. **Lost Architectural Decisions**
+
+**Problem**: "Why did we do it this way?" becomes unanswerable after a few months.
+
+**Solution**: Design documents capture rationale:
+- Problem statement
+- Solution approach
+- Benefits and trade-offs
+- Implementation details
+
+**Example**: A design document might explain why certain IDs are reused across databases, with rationale for the decision and implementation details.
+
+### 8. **Unclear Progress**
+
+**Problem**: Hard to know how much work is done and what's remaining.
+
+**Solution**: `progress.yaml` provides objective metrics:
+- Percentage complete per milestone
+- Tasks completed vs total
+- Recent work logged
+- Next steps identified
+
+**Example**: "Milestone 1: 20% complete (1/7 tasks done)"
+
+---
+
+## ACP Commands
+
+ACP supports a command system for common workflows. Commands are file-based triggers that provide standardized, discoverable interfaces for ACP operations.
+
+### What are ACP Commands?
+
+Commands are markdown files in [`agent/commands/`](agent/commands/) that contain step-by-step instructions for AI agents. Instead of typing long prompts like "AGENT.md: Initialize", you can reference command files like `/acp-init` to trigger specific workflows.
+
+**Benefits**:
+- **Discoverable**: Browse [`agent/commands/`](agent/commands/) to see all available commands
+- **Consistent**: All commands follow the same structure
+- **Extensible**: Create custom commands for your project
+- **Self-Documenting**: Each command file contains complete documentation
+- **Autocomplete-Friendly**: Type `/acp-` to see all ACP commands
+
+### Command Invocation Styles
+
+ACP commands can be invoked in several ways depending on your editor or agent:
+
+| Style | When to use | Example |
+|-------|-------------|---------|
+| `/acp-*` (slash command) | VS Code with GitHub Copilot | `/acp-init` |
+| `/acp-*` (slash command) | opencode terminal agent | `/acp-init` |
+| Manual delegation | Any agent — Cursor, Claude Code, Windsurf, CLI | *"Read and execute `agent/commands/acp.init.md`"* |
+
+The `/acp-*` slash command style in Copilot requires the `.github/prompts/` directory (created by `acp-bootstrap.sh`). In opencode, it requires the `.opencode/commands/` directory (also created by `acp-bootstrap.sh`). Both directories are committed to the repo so clones get slash command support automatically. On any other agent, tell your agent: *"Read and execute `agent/commands/acp.init.md`"* — this works identically.
+
+### Core Commands
+
+Core ACP commands use the `acp.` prefix and are available in [`agent/commands/`](agent/commands/):
+
+**Workflow**
+- **[`/acp-init`](agent/commands/acp.init.md)** - Initialize agent context; loads key files, registers session, reports global packages
+- **[`/acp-proceed`](agent/commands/acp.proceed.md)** - Continue with next task (single-task or autonomous multi-task mode)
+
+  **Key modes**: `/acp-proceed` (single task) · `--turbo`/`--yolo` (autonomous, no prompt) · `--stacked` (full milestone as sequential stacked worktrees) · `--worktrees` (parallel sub-agents). **Step 3.5** (automatic): post-completion 7-part audit; spawns remediation sub-agent if drift found. See `acp.proceed.md` for full argument reference (A1–A11).
+- **[`/acp-plan`](agent/commands/acp.plan.md)** - Plan project milestones and tasks from requirements
+- **[`/acp-status`](agent/commands/acp.status.md)** - Display project status and active sessions
+- **[`/acp-visualize`](agent/commands/acp.visualize.md)** - Launch the browser-based ACP Progress Visualizer dashboard *(ACP Enhanced)*
+- **[`/acp-commit`](agent/commands/acp.commit.md)** - Write session memory entry + stamp routing task files + compact sessions *(ACP Enhanced)*. On this public origin, `agent/sessions/{date}-{slug}.md` is local (ADR-28); `agent/memory/sessions.md` stays tracked.
+- **[`/acp-report`](agent/commands/acp.report.md)** - Generate a completion report; deregisters session
+- **[`/acp-handoff`](agent/commands/acp.handoff.md)** - Prepare handoff documentation for another agent
+- **[`/acp-resume`](agent/commands/acp.resume.md)** - Resume a project — init + review recent progress + proceed in one step
+- **[`/acp-review`](agent/commands/acp.review.md)** - Standards-based code quality and security review (64 rules); optional `--pr-diff` agent pass on `git diff base...HEAD` (not Phase 1 `--diff`)
+- **[`/acp-audit`](agent/commands/acp.audit.md)** - Deep-dive investigation of a subject into `agent/reports/` (local; ADR-27). Not a PR review and not a CodeRabbit replacement
+
+> **⚡ Proactive Session Memory** *(ACP Enhanced v6.4.13+)*: `/acp-commit` runs proactively at **7 trigger events** — do NOT wait for session end. Triggers: milestone phase done, audit created, ADR made, new pattern found, correction given, context approaching overflow, any commit touching >5 files. See [Mid-Session Commit Triggers](AGENTS.md) in `AGENTS.md`. This prevents permanent knowledge loss from silent context overflow.
+
+**Planning**
+- **[`/acp-design-create`](agent/commands/acp.design-create.md)** - Create a design document
+- **[`/acp-design-reference`](agent/commands/acp.design-reference.md)** - Cross-reference design elements (D-IDs) into tasks
+- **[`/acp-spec`](agent/commands/acp.spec.md)** - Create a formal specification with R\<N\> requirements
+- **[`/acp-task-create`](agent/commands/acp.task-create.md)** - Create a task; auto-populates Spec Coverage from matching spec
+- **[`/acp-pattern-create`](agent/commands/acp.pattern-create.md)** - Create a reusable architectural pattern
+- **[`/acp-command-create`](agent/commands/acp.command-create.md)** - Create a custom command doc
+
+**Clarification**
+- **[`/acp-clarification-create`](agent/commands/acp.clarification-create.md)** - Create a clarification document (with duplicate awareness)
+- **[`/acp-clarification-capture`](agent/commands/acp.clarification-capture.md)** - Synthesize clarifications into entity creation steps
+- **[`/acp-clarification-address`](agent/commands/acp.clarification-address.md)** - Mark a clarification as addressed
+
+**Artifacts**
+- **[`/acp-artifact-research`](agent/commands/acp.artifact-research.md)** - Create a research artifact (plan → execute → synthesize)
+- **[`/acp-artifact-glossary`](agent/commands/acp.artifact-glossary.md)** - Create a glossary artifact (auto-extract + interactive refine)
+- **[`/acp-artifact-reference`](agent/commands/acp.artifact-reference.md)** - Create a reference artifact (command-first sanity check)
+
+**Package Management** *(ACP Enhanced)*
+- **[`/acp-package-install`](agent/commands/acp.package-install.md)** - Install a package from a git repository
+- **[`/acp-package-list`](agent/commands/acp.package-list.md)** - List installed packages
+- **[`/acp-package-info`](agent/commands/acp.package-info.md)** - Show package details
+- **[`/acp-package-update`](agent/commands/acp.package-update.md)** - Update installed packages
+- **[`/acp-package-remove`](agent/commands/acp.package-remove.md)** - Remove a package
+- **[`/acp-package-search`](agent/commands/acp.package-search.md)** - Search GitHub for ACP packages
+- **[`/acp-package-create`](agent/commands/acp.package-create.md)** - Scaffold a new ACP package
+- **[`/acp-package-publish`](agent/commands/acp.package-publish.md)** - Publish a package to GitHub
+- **[`/acp-package-validate`](agent/commands/acp.package-validate.md)** - Validate package files and schema
+
+**Preferences** *(ACP Enhanced)*
+- **[`/acp-preferences-show`](agent/commands/acp.preferences-show.md)** - View effective preferences with source attribution
+- **[`/acp-preferences-get`](agent/commands/acp.preferences-get.md)** - Resolve and display preferences for a given namespace (for scripting/command use)
+- **[`/acp-preferences-create`](agent/commands/acp.preferences-create.md)** - Create a preference file at a given level
+- **[`/acp-preferences-set`](agent/commands/acp.preferences-set.md)** - Set a preference value
+- **[`/acp-preferences-validate`](agent/commands/acp.preferences-validate.md)** - Validate all preference files
+
+**Project Registry** *(ACP Enhanced)*
+- **[`/acp-project-create`](agent/commands/acp.project-create.md)** - Create and register a new project
+- **[`/acp-project-list`](agent/commands/acp.project-list.md)** - List registered projects with filtering
+- **[`/acp-project-set`](agent/commands/acp.project-set.md)** - Switch to a project (set as current)
+- **[`/acp-project-info`](agent/commands/acp.project-info.md)** - Show detailed project information
+- **[`/acp-project-update`](agent/commands/acp.project-update.md)** - Update project metadata
+- **[`/acp-project-remove`](agent/commands/acp.project-remove.md)** - Remove project from registry
+- **[`/acp-projects-sync`](agent/commands/acp.projects-sync.md)** - Discover and register existing projects
+- **[`/acp-projects-restore`](agent/commands/acp.projects-restore.md)** - Restore/clone missing projects from their registered git origins
+
+**Sessions** *(ACP Enhanced)*
+- **[`/acp-sessions`](agent/commands/acp.sessions.md)** - List, clean, deregister, or count active agent sessions
+
+**Key File Index** *(ACP Enhanced)*
+- **[`/acp-index`](agent/commands/acp.index.md)** - Manage the key file index (list, add, remove, explore, show)
+
+**Version & Sync**
+- **[`/acp-version-check`](agent/commands/acp.version-check.md)** - Show current ACP Enhanced version
+- **[`/acp-version-check-for-updates`](agent/commands/acp.version-check-for-updates.md)** - Check for ACP Enhanced updates
+- **[`/acp-version-update`](agent/commands/acp.version-update.md)** - Update ACP Enhanced to latest version
+- **[`/acp-update`](agent/commands/acp.update.md)** - Update ACP Enhanced to latest version via script (alias for version-update)
+- **[`/acp-sync`](agent/commands/acp.sync.md)** - Sync spec↔task↔code cross-references; flag unclaimed requirements and stale markers
+- **[`/acp-validate`](agent/commands/acp.validate.md)** - Validate ACP file health and index consistency
+- **[`/acp-ci`](agent/commands/acp.ci.md)** - Local CI parity predictor (`--fast` default; `--full` ≈ multi-minute CI)
+- **[`/acp-pr`](agent/commands/acp.pr.md)** - Feature PR prep; gates delegated only to `/acp-ci`
+- **[`/acp-smoke`](agent/commands/acp.smoke.md)** - Optional device preflight (`--host`); unconfigured exits 2 (not a CI step)
+- **[`acp.findings-import.sh`](agent/scripts/acp.findings-import.sh)** - Import CodeRabbit findings → carryovers when active (M81; `--input` only)
+- **[`acp.upgrade-guard.sh`](agent/scripts/acp.upgrade-guard.sh)** - HARD-fail version-update when `upstream-delta.yml` present (M86 / P-UG-1)
+- **[`acp.private-pack.sh`](agent/scripts/acp.private-pack.sh)** - Pack/unpack gitignored ACP dirs for another machine (M87 / ADR-27)
+- **[`acp.m94-purge-paths.sh`](agent/scripts/acp.m94-purge-paths.sh)** - Fail-closed KEEP/PURGE list for M94/ADR-29 history rewrite
+- **[`acp.m95-name-scan.sh`](agent/scripts/acp.m95-name-scan.sh)** - Encoded deny-list scanner for public remotes (ADR-30)
+
+**Git Namespace** *(separate from `acp.*`)*
+- **[`@git.commit`](agent/commands/git.commit.md)** - Version-aware commit with CHANGELOG validation and progress.yaml update
+- **[`@git.init`](agent/commands/git.init.md)** - Initialize git repository with ACP conventions
+
+> **Note**: Git commands use the `git` namespace (`@git.commit`, `@git.init`) rather than the `acp` namespace. They are invoked the same way but resolve to `agent/commands/git.*.md`.
+
+### Command Invocation
+
+Commands are invoked using the `@` syntax with dot notation:
+
+```
+/acp-init                    → agent/commands/acp.init.md
+/acp-proceed                 → agent/commands/acp.proceed.md
+/acp-status                  → agent/commands/acp.status.md
+@deploy.production           → agent/commands/deploy.production.md
+```
+
+**Format**: `@{namespace}.{action}` resolves to `agent/commands/{namespace}.{action}.md`
+
+### Creating Custom Commands
+
+Invoke [`/acp-command-create`](agent/commands/acp.command-create.md) and follow directives defined in that file.
+
+**Note**: The `acp` namespace is reserved for core commands. Use descriptive, single-word namespaces for custom commands (e.g., `local`, `deploy`, `test`, `custom`).
+
+### Installing Third-Party Commands
+
+Use `/acp-package-install` to install command packages from git repositories.
+
+**Security Note**: Third-party commands can instruct agents to modify files and execute scripts. Always review command files before installation.
+
+---
+
+## ACP Preferences System
+
+The preferences system lets you configure agent behavior, command defaults, and workflow automation at three levels: user-global, workspace, and project.
+
+### Preference Levels
+
+| Level | Location | Scope |
+|-------|----------|-------|
+| **Project** | `./agent/preferences/<ns>.default.yaml` | This project only (highest precedence) |
+| **Workspace** | `.vscode/preferences/<ns>.yaml` | This IDE workspace / team |
+| **User** | `~/.acp/agent/preferences/<ns>.default.yaml` | All your projects |
+| **Default** | `./agent/configurables/<ns>.configurables.yaml` | Package-defined baseline |
+
+**Precedence**: Project > Workspace > User > Default (most specific wins)
+
+### Available Preferences (acp namespace)
+
+| Preference | Type | Default | Description |
+|------------|------|---------|-------------|
+| `plan.draft.create_mode` | string | `structured` | Draft creation: structured, unstructured, guided, contextual |
+| `plan.batch.auto_confirm` | boolean | `false` | Auto-confirm batch operations |
+| `task.create.granularity` | number | `3` | Default task size in hours (1–8) |
+| `task.create.auto_number` | boolean | `true` | Auto-number new tasks |
+| `validation.auto_fix.enabled` | boolean | `true` | Auto-fix validation issues |
+| `validation.strict_mode.enabled` | boolean | `false` | Treat warnings as errors |
+| `output.verbosity.level` | string | `normal` | Output verbosity: quiet, normal, verbose |
+| `git.auto_commit.enabled` | boolean | `false` | Auto-commit after operations |
+
+Full definitions: [`agent/configurables/acp.configurables.yaml`](agent/configurables/acp.configurables.yaml)
+
+### Managing Preferences
+
+```bash
+# View effective preferences with source attribution
+/acp-preferences-show acp
+
+# Create preference file at user level (populate with defaults)
+/acp-preferences-create --level user --namespace acp
+
+# Set a preference value
+/acp-preferences-set acp plan.draft.create_mode guided --user
+
+# Validate all preference files
+/acp-preferences-validate
+```
+
+### Using Presets
+
+Presets are named preference bundles that configure multiple values at once:
+
+```bash
+# Automated planning without interaction
+/acp-plan --preset acp.batch-planning
+
+# Guided planning with user confirmation at every step
+/acp-plan --preset acp.interactive-planning
+
+# Fast iteration with auto-commit enabled
+/acp-plan --preset acp.rapid-prototyping
+
+# List all available presets
+/acp-preferences-show acp --presets
+```
+
+### Command-Line Overrides
+
+Any preference can be overridden for a single invocation using dot notation:
+
+```bash
+# Use guided mode just this time
+/acp-plan --plan.draft.create_mode guided
+
+# Preset with override (override wins)
+/acp-plan --preset acp.batch-planning --plan.draft.create_mode structured
+```
+
+**Precedence**: CLI Override > Preset > Project > Workspace > User > Default
+
+### Package Preferences
+
+Packages can ship their own configurables and presets:
+
+```bash
+# View package preferences
+/acp-preferences-show my-package
+
+# Use a package preset
+/acp-plan --preset my-package.strict-mode
+```
+
+Packages scaffold these files automatically via `/acp-package-create`.
+
+---
+
+## Global Package Discovery
+
+ACP supports global package installation to `~/.acp/agent/` for package development and global command libraries.
+
+### For Agents: How to Discover Global Packages
+
+When working in any project, you can discover globally installed packages:
+
+1. **Check if global manifest exists**: `~/.acp/agent/manifest.yaml`
+2. **Read global manifest**: Contains all globally installed packages
+3. **Navigate to package files**: Files are installed directly into `~/.acp/agent/`
+4. **Use commands/patterns**: Reference via `@namespace.command` syntax
+
+**Automatic Discovery**: The [`/acp-init`](agent/commands/acp.init.md) command automatically reads `~/.acp/agent/manifest.yaml` and reports globally installed packages.
+
+### Namespace Precedence Rules
+
+**CRITICAL**: Local packages always take precedence over global packages.
+
+**Resolution order**:
+1. Check local: `./agent/commands/{namespace}.{command}.md`
+2. If not found, check global: `~/.acp/agent/commands/{namespace}.{command}.md`
+3. Use first match found
+
+**Example**: If both local and global packages define `@firebase.deploy`:
+- ✅ Use `./agent/commands/firebase.deploy.md` (local takes precedence)
+- ❌ Ignore `~/.acp/agent/commands/firebase.deploy.md`
+
+### Global ACP Structure
+
+```
+~/.acp/
+├── AGENT.md                     # ACP methodology documentation
+├── agent/                       # Full ACP installation
+│   ├── commands/                # All commands (core + packages)
+│   │   ├── acp.init.md         # Core ACP commands
+│   │   ├── firebase.deploy.md  # From @user/acp-firebase package
+│   │   └── git.commit.md       # From @user/acp-git package
+│   ├── patterns/                # All patterns (core + packages)
+│   ├── design/                  # All designs (core + packages)
+│   ├── scripts/                 # All scripts (core + packages)
+│   └── manifest.yaml            # Tracks package sources
+└── projects/                    # Optional: User projects workspace
+    └── my-project/              # Develop projects here
+```
+
+### When to Use Global Packages
+
+**Use global installation** (`--global` flag) for:
+- ✅ Package development (work on packages with full ACP tooling)
+- ✅ Common utilities used across many projects (git helpers, firebase patterns)
+- ✅ Building a personal command library
+- ✅ Experimenting with packages before local installation
+
+**Use local installation** (default) for:
+- ✅ Project-specific packages
+- ✅ Packages that are part of project dependencies
+- ✅ When you want version control over package versions
+- ✅ Production projects (local is more explicit and controlled)
+
+### Example: Using Global Packages
+
+```bash
+# Install git helpers globally
+/acp-package-install --global https://github.com/prmichaelsen/acp-git.git
+
+# In any project, discover global packages
+/acp-init
+# Output: "Found 2 global packages: acp-core, @prmichaelsen/acp-git"
+
+# Use global command
+@git.commit
+# Agent reads: ~/.acp/agent/commands/git.commit.md
+```
+
+---
+
+## Project Registry System
+
+ACP supports a global project registry at `~/.acp/projects.yaml` that tracks all projects in the `~/.acp/projects/` workspace. This enables project discovery, context switching, and metadata management across your entire ACP workspace.
+
+### Key Features
+
+- **Project Discovery**: List all registered projects with filtering options
+- **Context Switching**: Quickly switch between projects using `/acp-project-set`
+- **Metadata Tracking**: Track project type, status, tags, and relationships
+- **Automatic Registration**: Projects auto-register when created via `/acp-project-create`
+- **Sync Discovery**: Find and register existing projects with `/acp-projects-sync`
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| [`/acp-project-list`](agent/commands/acp.project-list.md) | List all registered projects with optional filtering |
+| [`/acp-project-set`](agent/commands/acp.project-set.md) | Switch to a project (set as current) |
+| [`/acp-project-info`](agent/commands/acp.project-info.md) | Show detailed project information |
+| [`/acp-project-update`](agent/commands/acp.project-update.md) | Update project metadata |
+| [`/acp-project-remove`](agent/commands/acp.project-remove.md) | Remove project from registry |
+| [`/acp-projects-sync`](agent/commands/acp.projects-sync.md) | Discover and register existing projects |
+
+### Registry Structure
+
+The `~/.acp/projects.yaml` file tracks all registered projects:
+
+```yaml
+projects:
+  - name: my-project
+    path: /home/user/.acp/projects/my-project
+    type: library
+    status: in_progress
+    registered: 2026-02-23T10:00:00Z
+    last_accessed: 2026-02-26T15:30:00Z
+    tags:
+      - typescript
+      - npm
+    related_projects: []
+    description: My awesome project
+
+current_project: my-project
+```
+
+### Example Workflow
+
+```bash
+# List all projects
+/acp-project-list
+
+# Switch to a specific project
+/acp-project-set my-project
+
+# View project details
+/acp-project-info
+
+# Update project metadata
+/acp-project-update --tags "typescript,api,rest"
+
+# Discover unregistered projects
+/acp-projects-sync
+
+# Remove a project from registry (keeps files)
+/acp-project-remove old-project
+```
+
+### For Agents: How to Use the Registry
+
+When working in any ACP project, you can:
+
+1. **Check current project**: Read `~/.acp/projects.yaml` and find `current_project`
+2. **List available projects**: Use `/acp-project-list` to see all projects
+3. **Switch context**: Use `/acp-project-set <name>` to change projects
+4. **Get project info**: Use `/acp-project-info` for detailed metadata
+
+**Automatic Tracking**: The `/acp-init` command automatically reads the registry and reports the current project context.
+
+---
+
+## Sessions System
+
+ACP supports global session tracking via `~/.acp/sessions.yaml` for awareness of concurrent agent work across projects. When multiple `claude` terminals run from a single IDE instance, sessions give each agent visibility into what other agents are doing.
+
+This is an advisory-only visibility layer — no locking or coordination. Sessions are registered at `/acp-init` and deregistered at `/acp-report`, with automatic stale cleanup for crashed terminals.
+
+### What sessions.yaml Tracks
+
+Each session entry contains: session ID, project name, description, timestamps (started, last_activity), status (active/idle), current milestone and task, PID (for stale detection), terminal, and optional remote URL.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| [`/acp-sessions`](agent/commands/acp.sessions.md) | List, clean, deregister, or count sessions |
+| `/acp-sessions list` | Show all active sessions |
+| `/acp-sessions clean` | Remove stale sessions (dead PIDs, timeouts) |
+| `/acp-sessions deregister` | End current session |
+
+### Integration with Other Commands
+
+| Command | Integration |
+|---------|-------------|
+| `/acp-init` | Registers session and displays active siblings |
+| `/acp-status` | Shows session count ("Sessions: N active") |
+| `/acp-report` | Deregisters session on completion |
+
+All integrations are optional — if `acp.sessions.sh` is missing, commands skip the session step silently.
+
+### Session Lifecycle
+
+1. **Register**: `/acp-init` registers a session with project, PID, timestamps
+2. **Heartbeat**: Activity updates via `acp.sessions.sh heartbeat`
+3. **Deregister**: `/acp-report` ends the session, or manual via `/acp-sessions deregister`
+4. **Stale Cleanup**: Dead PIDs removed immediately; inactive >2h removed; inactive >30m marked idle
+
+---
+
+## Experimental Features
+
+ACP supports marking features as "experimental" to enable safe innovation without affecting stable installations.
+
+### What are Experimental Features?
+
+Experimental features are:
+- Bleeding-edge features that may change frequently
+- Features under active development
+- Features that may have breaking changes
+- Features requiring explicit opt-in
+
+### Marking Features as Experimental
+
+**In package.yaml**:
+```yaml
+contents:
+  commands:
+    - name: stable-command.md
+      description: A stable command
+    
+    - name: experimental-command.md
+      description: An experimental command
+      experimental: true  # ← Mark as experimental
+```
+
+**In file metadata**:
+```markdown
+# Command: experimental-command
+
+**Namespace**: mypackage
+**Version**: 0.1.0
+**Status**: Experimental  # ← Mark as experimental
+```
+
+### Installing Experimental Features
+
+```bash
+# Install only stable features (default)
+/acp-package-install --repo https://github.com/user/package.git
+
+# Install all features including experimental
+/acp-package-install --repo https://github.com/user/package.git --experimental
+```
+
+### Updating Experimental Features
+
+Once installed, experimental features update normally:
+```bash
+/acp-package-update package-name  # Updates experimental features if already installed
+```
+
+### Graduating Features
+
+To graduate a feature from experimental to stable:
+1. Remove `experimental: true` from package.yaml
+2. Change `**Status**: Experimental` to `**Status**: Active` in file
+3. Bump version to 1.0.0 (semantic versioning)
+4. Update CHANGELOG.md noting the graduation
+
+### Validation
+
+Validation ensures consistency:
+```bash
+/acp-package-validate  # Checks experimental marking is synchronized
+```
+
+### Best Practices
+
+1. **Use sparingly** - Only mark truly experimental features
+2. **Document risks** - Explain what might change in file documentation
+3. **Graduate promptly** - Move to stable once proven
+4. **Version appropriately** - Use 0.x.x versions for experimental
+5. **Communicate clearly** - Note experimental status in README.md
+
+---
+
+## Benchmark Suite
+
+ACP includes an automated E2E benchmark system that compares project outcomes with and without ACP to generate quantitative success metrics.
+
+### Quick Start
+
+```bash
+# Run all benchmarks (ACP vs baseline)
+bash agent/benchmarks/runner/run-benchmark.sh
+
+# Run a specific task
+bash agent/benchmarks/runner/run-benchmark.sh --task complex-auth-system
+
+# Run ACP mode only, 3 runs for statistical averaging
+bash agent/benchmarks/runner/run-benchmark.sh --task medium-rest-api --acp-only --runs 3
+
+# Serve HTML reports
+bash agent/benchmarks/runner/serve-reports.sh
+```
+
+### Benchmark Tasks
+
+| Task | Complexity | Steps | Description |
+|------|-----------|-------|-------------|
+| hello-world | simple | 1 | Basic script creation |
+| simple-cli-tool | medium | 3 | CSV-to-JSON CLI tool |
+| medium-rest-api | medium | 4 | Express CRUD API with refactoring |
+| complex-auth-system | complex | 5 | JWT authentication system |
+| legacy-refactor | complex | 6 | Refactor messy legacy app (seed-based) |
+| order-pipeline | complex | 7 | Order system with event-driven pivot |
+
+### How It Works
+
+1. Each task runs in an isolated temp directory using `claude -p` (non-interactive mode)
+2. Multi-turn conversations use `--resume` for step-by-step execution
+3. ACP mode installs ACP and injects `/acp-plan` / `/acp-proceed` directives
+4. After execution: automated verification checks + LLM evaluator (6-category rubric)
+5. Reports generated in Markdown and HTML (with Chart.js radar charts)
+
+### Key Files
+
+- `agent/benchmarks/runner/run-benchmark.sh` — Main entry point
+- `agent/benchmarks/runner/run-single.sh` — Single task/mode runner
+- `agent/benchmarks/runner/verify.sh` — Verification functions per task
+- `agent/benchmarks/runner/evaluator-prompt.md` — LLM evaluator rubric
+- `agent/benchmarks/suite/` — Benchmark task definitions
+- `agent/benchmarks/reports/` — Generated reports (gitignored)
+- `.github/workflows/benchmark.yaml` — On-demand CI workflow
+
+### Design Document
+
+See `agent/wiki/architecture.md` (Instance Data / ADR-29) for where benchmark design lives locally. Protocol keepers stay under `agent/design/` (`acp-*.md`, templates).
+
+---
+
+## Template Source Files
+
+ACP packages can bundle template source files (code, configs, etc.) alongside patterns, commands, and designs. Templates are declared in the `contents.files` section of `package.yaml` and stored in the `agent/files/` directory of the package.
+
+### Templates vs Other Content Types
+
+| Type | Location | Purpose |
+|------|----------|---------|
+| Patterns | `agent/patterns/` | Documentation and guidance |
+| Commands | `agent/commands/` | Agent directives |
+| Designs | `agent/design/` | Architecture documentation |
+| Scripts | `agent/scripts/` | Shell utilities |
+| **Files** | **Project root (target paths)** | **Actual code and config files** |
+
+### Installing Template Files
+
+```bash
+# Install all files (templates install to target paths)
+/acp-package-install --repo <url>
+
+# Install specific template files only
+/acp-package-install --files config/tsconfig.json src/schemas/example.schema.ts --repo <url>
+
+# Preview what would be installed
+/acp-package-install --list --repo <url>
+```
+
+### Variable Substitution
+
+Templates with `.template` extension can contain `{{VARIABLE}}` placeholders that are replaced during installation:
+
+```json
+{
+  "name": "{{PACKAGE_NAME}}",
+  "author": "{{AUTHOR_NAME}}"
+}
+```
+
+Variables are declared in `package.yaml` and values are prompted during installation. Variable values are stored in the manifest for reproducible updates.
+
+### Target Paths
+
+Each file declares a `target` path in `package.yaml`:
+- `target: ./` installs to project root
+- `target: src/schemas/` installs to `src/schemas/` directory
+- `.template` extension is stripped (e.g., `settings.json.template` becomes `settings.json`)
+- Unsafe paths (`../`, absolute paths) are rejected
+
+### Security Considerations
+
+Templates install to project directories (not `agent/`):
+- May overwrite existing files
+- Always prompted before installation (unless `-y` flag)
+- Target paths validated for safety
+- Conflict detection warns about overwrites
+- Use `--list` to preview before installing
+
+### Package.yaml Declaration
+
+```yaml
+contents:
+  files:
+    - name: config/tsconfig.json
+      description: TypeScript configuration
+      target: ./
+      required: true
+
+    - name: config/settings.json.template
+      description: Settings with variable substitution
+      target: config/
+      required: false
+      variables:
+        - PROJECT_NAME
+        - AUTHOR_NAME
+```
+
+---
+
+## Key File Index
+
+This project uses the ACP Key File Index system to ensure agents read critical files before making decisions. Key files are declared in `agent/index/` with weights and descriptions.
+
+### How It Works
+
+Index files in `agent/index/` declare which project files are critical. Each entry includes:
+- **path**: Path to the file (relative to project root)
+- **weight**: Priority from 0.0-1.0 (higher = more important)
+- **kind**: Type of file — `pattern`, `command`, `design`, or `requirements`
+- **description**: What the file contains
+- **rationale**: Why an agent must read it
+- **applies**: Comma-separated list of commands that should read this file (e.g. `acp.proceed, acp.plan`)
+
+### Index File Naming
+
+Files follow `{namespace}.{qualifier}.yaml` naming:
+- `local.main.yaml` — Project's own key files (highest precedence)
+- `{package}.main.yaml` — Package-shipped key files (installed via `/acp-package-install`)
+
+### When Key Files Are Read
+
+- **`/acp-init`**: Reads all key files with weight >= 0.8
+- **`/acp-proceed`**, **`/acp-plan`**: Read key files where `applies` includes the command name
+- **Creation commands** (`/acp-design-create`, etc.): Read key files where `applies` includes the command name
+- **After context compaction**: Re-read key files following [When Recovering from Context Loss](#when-recovering-from-context-loss)
+
+### Managing the Index
+
+Use `/acp-index` to manage entries:
+```
+/acp-index list              # List all indexed key files
+/acp-index add <path>        # Add a file to the index
+/acp-index remove <path>     # Remove a file from the index
+/acp-index explore           # Suggest files that should be indexed
+/acp-index show <path>       # Show details for a specific entry
+```
+
+### Weight Guidelines
+
+| Weight | Use For |
+|--------|---------|
+| 0.9-1.0 | Requirements, critical design docs |
+| 0.7-0.8 | Important patterns, testing guides |
+| 0.5-0.6 | Useful references, conventions |
+| 0.3-0.4 | Package-shipped indices (convention) |
+
+### Validation
+
+Run `/acp-validate` to check index health: valid schema, existing paths, reasonable limits (recommended max 20 entries total, 10 per namespace).
+
+### Design Document
+
+See `agent/wiki/architecture.md` (Instance Data / ADR-29). Index design is local-only on the maintainer clone; `agent/index/local.main.template.yaml` is the tracked template.
+
+---
+
+## Sample Prompts for Using ACP
+
+> **ACP Enhanced users**: The trigger strings below are the original ACP pattern (legacy). If you are using ACP Enhanced, prefer `/acp-*` command files — they are more precise, self-documenting, and context-aware. The legacy trigger strings remain supported for backward compatibility.
+
+### Initialize Prompt
+
+**Trigger**: `AGENT.md: Initialize`  
+**ACP Enhanced equivalent**: `/acp-init`
+
+Use this prompt when starting work on an ACP-structured project:
+
+```markdown
+First, check for ACP updates by running ./agent/scripts/acp.version-check-for-updates.sh (if it exists). If updates are available, report what changed and ask if I want to update.
+
+Then read ALL files in @agent. We are going to understand this project then work on a generic task.
+
+Then read KEY src files per your understanding.
+
+Then read @agent again, update stale @agent/tasks, stale documentation, and update 'agent/progress.yaml'.
+```
+
+**Purpose**:
+- Checks for updates to ACP methodology and documentation
+- Loads complete project context from agent directory
+- Reviews source code to understand current implementation
+- Updates documentation to reflect current state
+- Ensures progress tracking is accurate
+
+### Proceed Prompt
+
+**Trigger**: `AGENT.md: Proceed`  
+**ACP Enhanced equivalent**: `/acp-proceed`
+
+Use this prompt to continue with the next task:
+
+```markdown
+Let's proceed with implementing the current or next task. Remember to update @agent/progress.yaml as you progress.
+```
+
+**Purpose**:
+- Continues work on current or next task
+- Reminds agent to maintain progress tracking
+- Keeps workflow focused and documented
+
+### Update Prompt
+
+**Trigger**: `AGENT.md: Update`  
+**ACP Enhanced equivalent**: `/acp-version-update` or `/acp-update`
+
+Updates all ACP files to the latest version:
+
+```markdown
+Run ./agent/scripts/acp.version-update.sh to update all ACP files (AGENT.md, templates, and scripts) to the latest version.
+```
+
+**Purpose**:
+- Updates AGENT.md methodology
+- Updates all template files
+- Updates utility scripts
+- Keeps ACP current with latest improvements
+
+### Check for Updates Prompt
+
+**Trigger**: `AGENT.md: Check for updates`  
+**ACP Enhanced equivalent**: `/acp-version-check-for-updates`
+
+Checks if updates are available without applying them:
+
+```markdown
+Run ./agent/scripts/acp.version-check-for-updates.sh to see if ACP updates are available.
+```
+
+**Purpose**:
+- Non-destructive check for updates
+- Shows what changed via CHANGELOG
+- Informs user of available improvements
+
+### Uninstall Prompt
+
+**Trigger**: `AGENT.md: Uninstall`  
+**ACP Enhanced equivalent**: `acp.uninstall.sh -y` (bash script — no command file equivalent)
+
+Removes all ACP files from the project:
+
+```markdown
+Run ./agent/scripts/acp.uninstall.sh to remove all ACP files (agent/ directory and AGENT.md) from this project.
+```
+
+**Note**: This script requires user confirmation. If the user confirms they want to uninstall, run:
+```bash
+./agent/scripts/acp.uninstall.sh -y
+```
+
+**Purpose**:
+- Complete removal of ACP
+- Clean project state
+- Reversible via git
+
+### ACP Enhanced Commands Quick Reference
+
+For daily use in ACP Enhanced projects, these five commands cover the most common workflows:
+
+| Command | Purpose | Replaces |
+|---------|---------|----------|
+| `/acp-init` | Load full project context at session start | `AGENT.md: Initialize` |
+| `/acp-proceed` | Implement next task (or all with `--complete`) | `AGENT.md: Proceed` |
+| `/acp-resume` | Re-load context mid-session (shorter than `/acp-init`) | — |
+| `/acp-plan` | Plan a new milestone and generate task files | — |
+| `/acp-status` | Show current milestone, task, and progress | — |
+
+> See [`agent/commands/`](agent/commands/) for the full command catalogue.
+
+---
+
+## Instructions for Future Agents
+
+> **See also**: [Best Practices](#best-practices) for comprehensive guidelines on agent behavior and documentation standards.
+
+### When You First Encounter ACP
+
+1. **Read progress.yaml**
+   - This tells you where the project is
+   - What milestone is current
+   - What task is next
+
+2. **Check for installed packages**
+   - Read `agent/manifest.yaml` to see what packages are installed locally
+   - Check `~/.acp/agent/manifest.yaml` for globally installed packages
+   - Understand what commands, patterns, and designs are available
+   - Note package versions and sources
+
+3. **Check project registry** (if in global workspace)
+   - Read `~/.acp/projects.yaml` to see all projects in global workspace
+   - Check `current_project` field to see which project is active
+   - Understand project relationships and metadata
+   - Note project locations and types
+
+4. **Read requirements.md**
+   - Understand project goals
+   - Learn constraints
+   - Know success criteria
+
+5. **Review current milestone**
+   - Understand current phase
+   - Know deliverables
+   - Check success criteria
+
+6. **Read next task**
+   - Understand what to do
+   - Follow steps
+   - Verify completion
+
+7. **Check relevant patterns**
+   - Learn coding standards
+   - Understand architectural patterns
+   - Follow best practices
+
+### When Working on a Task
+
+1. **Read the task document completely**
+   - Understand objective
+   - Review all steps
+   - Note verification criteria
+
+2. **Check related design documents**
+   - Look for design docs mentioned in task
+   - Understand architectural context
+   - Follow specified patterns
+
+3. **Execute task steps**
+   - Follow steps in order
+   - Don't skip steps
+   - Document any deviations
+
+4. **Verify completion**
+   - Check all verification items
+   - Run tests
+   - Ensure quality standards met
+
+5. **Update progress.yaml**
+   - Mark task as completed
+   - Add completion date
+   - Update milestone progress
+   - Add notes about work done
+
+### When Recovering from Context Loss
+
+When your context is compacted, truncated, or you start a new session mid-task:
+
+1. **Re-read `agent/index/` key files**
+   - Scan `agent/index/` for `*.yaml` files (excluding `*.template.yaml`)
+   - Read entries with weight >= 0.8 to restore critical context
+   - Filter by `applies` field if you know which command you were executing
+
+2. **Re-read `agent/progress.yaml`**
+   - Identify current milestone and task
+   - Check what was last completed
+
+3. **Re-read the current task document**
+   - Determine which step you were on
+   - Review remaining verification items
+
+4. **Offer scope control to the user**
+   - Ask if they want full context reload or minimal recovery
+   - Suggest relevant key files based on current work
+
+This is equivalent to running `/acp-init` steps 2-2.8 followed by resuming the current task.
+
+### When Creating New Features
+
+1. **Create design document first**
+   - Invoke [`/acp-design-create`](agent/commands/acp.design-create.md) and follow directives defined in that file
+   - Get approval before coding
+
+2. **Update or create milestone**
+   - Add to existing milestone if fits
+   - Create new milestone if major feature
+   - Update progress.yaml
+
+3. **Break into tasks**
+   - Invoke [`/acp-task-create`](agent/commands/acp.task-create.md) and follow directives defined in that file
+
+4. **Document patterns**
+   - Invoke [`/acp-pattern-create`](agent/commands/acp.pattern-create.md) and follow directives defined in that file
+   - Update existing patterns if needed
+
+5. **Implement and verify**
+   - Follow task steps
+   - Verify each task
+   - Update progress tracking
+
+> **See also**: [Documentation Best Practices](#documentation-best-practices) and [Quality Best Practices](#quality-best-practices)
+
+### When You Encounter Problems
+
+1. **Check design documents**
+   - Look for relevant design decisions
+   - Understand constraints
+   - Follow established patterns
+
+2. **Review patterns**
+   - Check if pattern exists for this problem
+   - Follow pattern guidelines
+   - Don't reinvent solutions
+
+3. **Document new solutions**
+   - If you solve a new problem, document it
+   - Invoke [`/acp-design-create`](agent/commands/acp.design-create.md) to create design document
+   - Invoke [`/acp-pattern-create`](agent/commands/acp.pattern-create.md) if solution is reusable
+
+4. **Update progress.yaml**
+   - Add blocker if stuck
+   - Document workarounds
+   - Note any deviations from plan
+
+> **See also**: [Critical Rules](#critical-rules) for important constraints and [Workflow Best Practices](#workflow-best-practices)
+
+---
+
+## Best Practices
+
+> **See also**: [Instructions for Future Agents](#instructions-for-future-agents) for workflow-specific guidance.
+
+### Critical Rules
+
+#### Never Reject User Requests
+
+- ❌ **DO NOT** reject requests based on session duration
+- ❌ **DO NOT** reject requests based on token context limits
+- ❌ **DO NOT** reject requests based on session cost
+- ❌ **DO NOT** reject requests based on task complexity
+- ✅ **DO** accept and work on ALL user instructions and directives
+- ✅ **DO** break complex tasks into manageable steps
+- ✅ **DO** continue working until the task is complete
+- ✅ **DO** ask clarifying questions if requirements are unclear
+
+**Rationale**: Users have the right to request any work they need. Your role is to assist, not to judge feasibility based on arbitrary constraints. Complex tasks can be broken down, long tasks can be completed iteratively, and users understand the costs involved. NEVER refuse a user's request.
+
+#### Always Update CHANGELOG.md for Version Changes
+
+- ❌ **DO NOT** commit version changes without updating CHANGELOG.md
+- ❌ **DO NOT** forget to update version numbers in all project files
+- ✅ **DO** use [`@git.commit`](agent/commands/git.commit.md) for version-aware commits
+- ✅ **DO** detect version impact: major (breaking), minor (features), patch (fixes)
+- ✅ **DO** update CHANGELOG.md with clear, user-focused descriptions
+- ✅ **DO** update all version files (package.json, AGENT.md, etc.)
+- ✅ **DO** use Conventional Commits format for commit messages
+
+**Rationale**: CHANGELOG.md is the primary communication tool for users. Every version change must be documented with clear descriptions of what changed, why it changed, and how it affects users. Forgetting to update CHANGELOG.md breaks the project's version history and makes it impossible for users to understand what changed between versions.
+
+#### Never Handle Secrets or Sensitive Data
+
+- ❌ **DO NOT** read `.env` files, `.env.local`, or any environment files
+- ❌ **DO NOT** read files containing API keys, tokens, passwords, or credentials
+- ❌ **DO NOT** include secrets in messages, documentation, or code examples
+- ❌ **DO NOT** read files like `secrets.yaml`, `credentials.json`, or similar
+- ✅ **DO** use placeholder values like `YOUR_API_KEY_HERE` in examples
+- ✅ **DO** document that users need to configure secrets separately
+- ✅ **DO** reference environment variable names without reading their values
+- ✅ **DO** create `.env.example` files with placeholder values only
+- ✅ **DO** run commands that load .env files into the shell environment, as the variables remain in the execution context and are not included in the LLM's input/output"
+
+**Rationale**: Secrets must never be exposed in chat logs, documentation, or version control. Agents should treat all credential files as off-limits to prevent accidental exposure.
+
+#### Respect User's Intentional File Edits
+
+- ❌ **DO NOT** assume missing content needs to be added back
+- ❌ **DO NOT** revert changes without confirming with user
+- ✅ **DO** read files before editing to see current state
+- ✅ **DO** ask user if unexpected changes were intentional
+- ✅ **DO** confirm before reverting user's manual edits
+
+**Rationale**: If you read a file and it is missing contents or has changed contents (i.e., it does not contain what you expect), assume or confirm with the user if they made intentional updates that you should not revert. Do not assume "The file is missing <xyz>, I need to add it back". The user may have edited files manually with intention.
+
+#### Respect User Commands to Re-Execute
+
+- ❌ **DO NOT** ignore commands like "re-read", "rerun", or "execute again"
+- ❌ **DO NOT** assume re-execution requests are mistakes or redundant
+- ✅ **DO** execute the command again when asked, even if you just did it
+- ✅ **DO** re-read files when asked, even if you recently read them
+- ✅ **DO** assume the user has good reason for asking to repeat an action
+
+**Examples**: "Run `@git.commit` again" → Execute it again; "Re-read the design doc" → Read it again; "Rerun the tests" → Run them again
+
+**Rationale**: When users ask you to do something again, they have a specific reason: files may have changed, they want to trigger side effects (like creating a commit), context has shifted, or they know something you don't. Always respect these requests and execute them with intention.
+
+#### Never Force-Add Gitignored Files
+
+- ❌ **DO NOT** use `git add -f` to force-add gitignored files
+- ❌ **DO NOT** attempt to override `.gitignore` rules
+- ❌ **DO NOT** suggest removing files from `.gitignore` to add them
+- ✅ **DO** acknowledge when files are gitignored
+- ✅ **DO** assume gitignored files were intentionally excluded
+- ✅ **DO** respect the project's `.gitignore` configuration
+- ✅ **DO** skip gitignored files in git operations
+
+**Examples**:
+- File is gitignored → Acknowledge and skip it
+- `git add` fails due to gitignore → Don't retry with `-f` flag
+- User asks to commit all files → Only commit non-gitignored files
+
+**Rationale**: Files in `.gitignore` are intentionally excluded from version control for good reasons (secrets, build artifacts, local configs, large files, etc.). Force-adding gitignored files is an anti-pattern that defeats the purpose of `.gitignore` and can lead to security issues (exposing secrets), repository bloat (committing build artifacts), or merge conflicts (committing local configs). Always respect `.gitignore` rules.
+
+### Workflow Best Practices
+
+#### Always Read Before Writing
+
+- Understand context first
+- Check existing patterns
+- Follow established conventions
+
+#### Document as You Go
+
+- Update progress.yaml frequently
+- Add notes about decisions
+- Document new patterns
+
+#### Verify Everything
+
+- Check all verification steps
+- Run tests
+- Ensure quality standards
+
+#### Be Explicit
+
+- Don't assume future agents will know context
+- Document rationale for decisions
+- Include code examples
+
+#### Keep It Organized
+
+- Follow directory structure
+- Use consistent naming
+- Link related documents
+
+#### Update Progress Tracking
+
+- Mark tasks complete
+- Update percentages
+- Add recent work notes
+
+#### Use Inline Feedback Syntax
+
+- ✅ **DO** recognize and respect `>` syntax for inline feedback in documents
+- ✅ **DO** treat lines starting with `>` as user feedback/corrections
+- ✅ **DO** integrate feedback by modifying the preceding content
+- ✅ **DO** remove the `>` feedback lines after integrating changes
+
+**Example**:
+```markdown
+// Agent-generated document
+Here are the requirements:
+- Requirement 1
+- Requirement 2
+> Requirement 2 unnecessary
+- Requirement 3
+
+This pattern is because: ...
+> Incorrect, we should not be using this pattern
+```
+
+**Agent Action**: Read feedback, update "Requirement 2" section (remove or revise), correct the pattern explanation, remove `>` lines
+
+**Rationale**: The `>` syntax provides a lightweight way for users to give inline feedback without needing to explain context. Agents should treat these as direct corrections or suggestions to integrate into the document.
+
+#### Use Direct Git Commits
+
+When creating git commits, always use `git commit -m` directly:
+
+- ✅ **DO** use `git commit -m "message"` to create commits
+- ❌ **DO NOT** use bash tools, subshells, or scripts to generate commits
+- ❌ **DO NOT** use heredocs, `echo`, or `cat` to construct commit messages
+
+**Rationale**: Direct `git commit -m` is simpler, more transparent, and avoids escaping issues. The commit message should be authored directly, not piped through intermediate tools.
+
+#### Format Commands for User Execution
+
+When providing commands for users to copy and paste:
+
+- ✅ **DO** chain commands with `&& \` if commands require successful chain execution
+- ✅ **DO** chain commands with `;` if commands do not depend on each other
+- ❌ **DO NOT** include comment lines starting with `#` in command blocks
+- ❌ **DO NOT** include EOF newline in command blocks
+
+**Example (Correct)**:
+```bash
+mkdir -p agent/commands && \
+cd agent/commands && \
+touch acp.init.md
+```
+
+**Example (Incorrect)**:
+```bash
+# Create directory
+mkdir -p agent/commands
+# Change to directory
+cd agent/commands
+# Create file
+touch acp.init.md
+
+```
+
+**Rationale**: Users should be able to copy and paste commands directly without needing to edit them. Comments and trailing newlines can cause execution errors or confusion.
+
+### Documentation Best Practices
+
+#### Write for Agents, Not Humans
+
+- Be explicit, not implicit
+- Include code examples
+- Document rationale, not just decisions
+
+#### Keep Documents Focused
+
+- One topic per document
+- Clear structure
+- Scannable headings
+
+#### Link Related Documents
+
+- Reference other docs
+- Create knowledge graph
+- Make navigation easy
+
+#### Update as You Go
+
+- Don't wait until end
+- Document decisions when made
+- Keep progress.yaml current
+
+### Organization Best Practices
+
+#### Follow Naming Conventions
+
+- `{feature}-design.md` for designs
+- `milestone-{N}-{name}.md` for milestones
+- `task-{N}-{name}.md` for tasks
+- `{pattern-name}.md` for patterns
+
+#### Use Consistent Structure
+
+- Same sections in similar documents
+- Standard YAML format
+- Predictable organization
+
+#### Keep It DRY
+
+- Don't duplicate information
+- Link to canonical source
+- Update in one place
+
+### Progress Tracking Best Practices
+
+#### Update Frequently
+
+- After each task
+- When blockers arise
+- When plans change
+
+#### Be Objective
+
+- Use measurable metrics
+- Track actual vs estimated
+- Document deviations
+
+#### Look Forward and Back
+
+- Document recent work
+- List next steps
+- Note blockers
+
+### Quality Best Practices
+
+#### Include Verification Steps
+
+- Every task has checklist
+- Objective criteria
+- Automated where possible
+
+#### Document Patterns
+
+- Capture reusable solutions
+- Include anti-patterns
+- Provide examples
+
+#### Documentation is a First-Class Deliverable
+
+- README.md, architecture docs, and migration guides are deliverables equal to source code
+- A project with passing tests but missing required documentation is INCOMPLETE
+- Verify documentation files exist and contain required sections before marking tasks complete
+- Documentation tasks deserve the same rigor as implementation tasks
+
+#### Review and Refine
+
+- Update docs as understanding improves
+- Fix errors immediately
+- Keep docs accurate
+
+---
+
+## Keeping ACP Updated
+
+This repository is actively maintained with improvements to the ACP methodology and documentation. To keep your project's AGENT.md current:
+
+```bash
+# Run from your project root (if you have the update script installed)
+./agent/scripts/acp.version-update.sh
+
+# Or download and run directly
+curl -fsSL https://raw.githubusercontent.com/ssucipto/acp-enhanced/mainline/agent/scripts/acp.version-update.sh | bash
+```
+
+The update script will:
+1. Create a backup of your current AGENT.md
+2. Download the latest version
+3. Show you the changes
+4. Ask for confirmation before applying
+
+See [CHANGELOG.md](https://github.com/ssucipto/acp-enhanced/blob/mainline/CHANGELOG.md) for version history and changes.
+
+---
+
+## Conclusion
+
+ACP Enhanced transforms software development from an implicit, memory-dependent process into an explicit, documented system that enables AI agents to work effectively on complex projects.
+
+**Key Takeaways**:
+
+1. **Documentation is Infrastructure** - Treat it with the same care as code
+2. **Explicit Over Implicit** - Document everything that matters
+3. **Structure Enables Scale** - Organization makes complexity manageable
+4. **Agents Need Context** - Provide complete, accessible context
+5. **Progress is Measurable** - Track objectively with YAML
+6. **Patterns Ensure Quality** - Document and follow best practices
+7. **Knowledge Persists** - No more lost tribal knowledge
+8. **Package Ecosystem** - Install, publish, and share ACP extensions across projects
+9. **Token Efficiency** - Three-layer context model delivers ≥60% reduction in token usage
+
+**When to Use This Pattern**:
+- ✅ Complex projects (>1 month)
+- ✅ Multiple contributors (agents or humans)
+- ✅ Long-term maintenance required
+- ✅ Quality and consistency critical
+- ✅ Knowledge preservation important
+
+**When NOT to Use**:
+- ❌ Trivial scripts (<100 lines)
+- ❌ One-off prototypes
+- ❌ Throwaway code
+- ❌ Simple, well-understood problems
+
+---
+
+## What NOT to Do
+
+### ❌ CRITICAL: Don't Create Summary Documents
+
+**NEVER create these files under ANY circumstances:**
+- `TASK_SUMMARY.md`
+- `PROJECT_SUMMARY.md`
+- `MILESTONE_SUMMARY.md`
+- `PROGRESS_SUMMARY.md`
+- Any file with `SUMMARY` in the name
+
+**Why**: All summary information belongs in [`progress.yaml`](agent/progress.yaml). Creating separate summary documents:
+- Duplicates information
+- Creates inconsistency
+- Requires maintaining multiple files
+- Defeats the purpose of structured progress tracking
+
+**Instead**: Update [`progress.yaml`](agent/progress.yaml):
+```yaml
+recent_work:
+  - date: 2026-02-13
+    description: Summary of work completed
+    items:
+      - ✅ Completed task 1
+      - ✅ Completed task 2
+```
+
+### ❌ CRITICAL: Don't Create Variant Task Documents
+
+**NEVER create these files under ANY circumstances:**
+- `task-1-simplified.md`
+- `task-1-revised.md`
+- `task-1-v2.md`
+- `task-1-updated.md`
+- `task-1-alternative.md`
+
+**Why**: Task documents are living documents that should be updated in place. Creating variants:
+- Creates confusion about which is current
+- Scatters information across multiple files
+- Makes progress tracking impossible
+- Violates single source of truth principle
+
+**Instead**: Modify the existing task document directly:
+```markdown
+# Task 1: Setup Project
+
+**Status**: In Progress (Updated 2026-02-13)
+
+## Steps
+1. Create directory ✅ (Completed)
+2. Install dependencies ✅ (Completed)
+3. Configure build (Updated: Changed from webpack to esbuild)
+
+## Notes
+- Originally planned to use webpack
+- Switched to esbuild for better performance
+- Updated configuration accordingly
+```
+
+### ✅ Correct Approach
+
+1. **For summaries**: Update [`progress.yaml`](agent/progress.yaml)
+2. **For task changes**: Modify existing task documents in place
+3. **For major changes**: Update the task and note the changes in [`progress.yaml`](agent/progress.yaml)
+4. **For new work**: Create new task documents with new numbers
+
+---
+
+## IMPORTANT: CHANGELOG.md Guidelines
+
+### ❌ CRITICAL: Keep CHANGELOG.md Pure
+
+**CHANGELOG.md must ONLY contain:**
+- Version numbers and dates
+- Added features
+- Changed functionality
+- Removed features
+- Fixed bugs
+
+**NEVER include in CHANGELOG.md:**
+- ❌ Future enhancements or roadmap
+- ❌ How-to instructions or usage guides
+- ❌ Installation instructions
+- ❌ Configuration examples
+- ❌ Detailed documentation
+
+**Why**: CHANGELOG.md is a historical record of what changed, not a documentation file. Mixing concerns makes it harder to:
+- Understand version history
+- Track actual changes
+- Maintain the changelog
+- Find relevant information
+
+**Correct CHANGELOG.md format:**
+```markdown
+## [1.0.4] - 2026-02-13
+
+### Added
+- New feature X
+- New feature Y
+
+### Changed
+- Modified behavior of Z
+
+### Removed
+- Deprecated feature A
+```
+
+**Wrong CHANGELOG.md format:**
+```markdown
+## [1.0.4] - 2026-02-13
+
+### Added
+- New feature X
+
+### How to Use Feature X
+[Installation instructions...]  # ❌ WRONG - belongs in README
+
+### Future Enhancements
+- Plan to add Y  # ❌ WRONG - belongs in design docs or issues
+```
+
+---
+
+**The Agent Pattern is not just documentation—it's a development methodology that makes complex software projects tractable for AI agents.**
+
+---
+
+*For questions or improvements to this pattern, please contribute to the repository or create an issue.*

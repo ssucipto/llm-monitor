@@ -1,0 +1,292 @@
+# ACP Configurables
+# Defines available preferences with metadata, options, types, and defaults.
+#
+# Structure:
+#   namespace:
+#     category:
+#       subcategory:
+#         preference_name:
+#           id: 'category.subcategory.preference_name'
+#           description: Human-readable description
+#           default: default_value
+#           type: string | number | boolean
+#           options: [array of {name, description, value}]   # for string enums
+#           min: N                                            # for number types
+#           max: N                                            # for number types
+#
+# Usage:
+#   - acp.preferences.sh uses this file to resolve defaults (precedence level 4)
+#   - acp.preferences.sh uses this file to validate option/type constraints
+#   - Users browse this file to discover available preferences
+#
+# Packages may define their own configurables in:
+#   agent/configurables/<package-name>.configurables.yaml
+#
+# Version: 1.2.0
+# Last Updated: 2026-07-23
+
+acp:
+
+  # ── Preference index (used by generate_preferences for enumeration) ───────
+  _index:
+    - plan.draft.create_mode
+    - plan.batch.auto_confirm
+    - task.create.granularity
+    - task.create.auto_number
+    - validation.auto_fix.enabled
+    - validation.strict_mode.enabled
+    - output.verbosity.level
+    - git.auto_commit.enabled
+    - integrations.coderabbit.enabled
+    - integrations.coderabbit.config_path
+    - integrations.gitleaks.enabled
+    - integrations.dupehound.enabled
+    - integrations.dupehound.min_tokens
+    - integrations.dupehound.install_prompt_version
+
+  # ── Plan command preferences ──────────────────────────────────────────────
+
+  plan:
+    draft:
+      create_mode:
+        id: 'plan.draft.create_mode'
+        description: Define your agent's default behavior when creating draft documents.
+        default: structured
+        type: string
+        options:
+          - name: unstructured
+            description: |
+              Drafts will be created as empty documents placed in the
+              appropriate location with appropriate filenames.
+            value: unstructured
+
+          - name: structured
+            description: |
+              Drafts will be created as structured documents with clear
+              template sections and placeholders for user input,
+              placed in the appropriate location with appropriate filenames.
+            value: structured
+
+          - name: guided
+            description: |
+              Draft contents collected via chat conversation.
+              No draft file is created — a summary is provided in chat
+              once all context has been gathered interactively.
+            value: guided
+
+          - name: contextual
+            description: |
+              Draft contents inferred from existing context and the inferred
+              current user goal. No clarification questions asked, no draft
+              file created. The draft summary is provided in chat.
+            value: contextual
+
+    batch:
+      auto_confirm:
+        id: 'plan.batch.auto_confirm'
+        description: |
+          Automatically confirm batch planning operations without prompting.
+          When false (default), the agent presents a summary and waits for
+          explicit user approval before processing multiple plans.
+        default: false
+        type: boolean
+
+  # ── Task preferences ──────────────────────────────────────────────────────
+
+  task:
+    create:
+      granularity:
+        id: 'task.create.granularity'
+        description: |
+          Default task size in hours used when planning tasks. The agent
+          targets tasks of approximately this duration. Larger values produce
+          fewer, broader tasks; smaller values produce more atomic tasks.
+        default: 3
+        type: number
+        min: 1
+        max: 8
+
+      auto_number:
+        id: 'task.create.auto_number'
+        description: |
+          Automatically assign task numbers when creating new tasks by finding
+          the highest existing task number and incrementing by 1.
+          When false, the agent prompts for an explicit task number.
+        default: true
+        type: boolean
+
+  # ── Validation preferences ────────────────────────────────────────────────
+
+  validation:
+    auto_fix:
+      enabled:
+        id: 'validation.auto_fix.enabled'
+        description: |
+          Automatically fix validation issues when a safe, unambiguous
+          correction exists. When false, the agent reports issues without
+          applying any changes.
+        default: true
+        type: boolean
+
+    strict_mode:
+      enabled:
+        id: 'validation.strict_mode.enabled'
+        description: |
+          Treat warnings as errors during validation. When true, any
+          warning causes validation to fail (non-zero exit). When false,
+          only errors cause failure; warnings are reported and ignored.
+        default: false
+        type: boolean
+
+  # ── Output preferences ────────────────────────────────────────────────────
+
+  output:
+    verbosity:
+      level:
+        id: 'output.verbosity.level'
+        description: Default output verbosity level for ACP commands.
+        default: normal
+        type: string
+        options:
+          - name: quiet
+            description: Minimal output — errors only. Suitable for scripted use.
+            value: quiet
+
+          - name: normal
+            description: Standard output — progress indicators and final results.
+            value: normal
+
+          - name: verbose
+            description: |
+              Detailed output including debug information, file paths, and
+              intermediate state. Useful for troubleshooting.
+            value: verbose
+
+  # ── Git preferences ───────────────────────────────────────────────────────
+
+  git:
+    auto_commit:
+      enabled:
+        id: 'git.auto_commit.enabled'
+        description: |
+          Automatically commit changes after task completion in single-task
+          mode. Equivalent to always running @acp.proceed --commit.
+          In autonomous mode (--complete), commits are always performed
+          per-task regardless of this setting.
+        default: false
+        type: boolean
+
+  # ── Review scanner preferences (M84 / F-105-01) ───────────────────────────
+  # Nested map — not listed in _index; edit directly in agent/preferences/acp.default.yaml.
+
+  review:
+    rule_overrides:
+      id: 'review.rule_overrides'
+      description: |
+        Per-rule enable/disable and severity overrides for `/acp-review` and
+        `/acp-integrity` scanners. Keys are rule IDs (for example `NC-01`,
+        `CH-03`). Values may set `enabled: false` to silence a rule project-wide,
+        or `severity: LOW|MEDIUM|HIGH|CRITICAL` to downgrade/upshift without
+        baselining every occurrence. Requires PyYAML for preference-file reads
+        (CI installs it; use `IG_RULE_OVERRIDES_JSON` or `.json` override files for tests without it).
+        Emits a stderr warning when a YAML preference file exists but PyYAML is missing.
+        Precedence: project preferences override workspace and user files.
+        See agent/wiki/review-legacy-adoption.md.
+      default: {}
+      type: object
+
+  # ── Integration preferences ───────────────────────────────────────────────
+  # Optional external-tool integrations. All OFF by default — ACP is fully
+  # functional without any of them. Added M78 (audit-097, ADR-21). Detection
+  # keys (enabled, config_path) are live. CodeRabbit findings-import / review
+  # wiring ships under ADR-22 / M81 (gated on findings fixture). Aikido and
+  # M76/M77 remain gated under ADR-19.
+
+  integrations:
+    coderabbit:
+      enabled:
+        id: 'integrations.coderabbit.enabled'
+        description: |
+          Enable optional CodeRabbit-aware behavior in ACP commands. Off by
+          default; ACP's /acp-review and carryover loop are fully functional
+          without CodeRabbit. When true AND a CodeRabbit config is detected,
+          ACP may surface CodeRabbit-aware hints. See agent/wiki/coderabbit-integration.md.
+        default: false
+        type: boolean
+
+      config_path:
+        id: 'integrations.coderabbit.config_path'
+        description: |
+          Repo-relative path ACP checks to detect a CodeRabbit-configured
+          repository. Presence of this file is the detection signal used by
+          coderabbit_available() (agent/scripts/acp.coderabbit.sh).
+        default: .coderabbit.yaml
+        type: string
+
+    gitleaks:
+      enabled:
+        id: 'integrations.gitleaks.enabled'
+        description: |
+          Control optional gitleaks-assisted SC-01 secret detection.
+          `auto` (default) enables gitleaks when the local binary is present.
+          `true` requires it explicitly and emits a hint if missing.
+          `false` disables gitleaks even when installed.
+        default: auto
+        type: string
+        options:
+          - name: auto
+            description: Auto-enable gitleaks when it is installed locally.
+            value: auto
+          - name: true
+            description: Expect gitleaks to be available; hint once if missing.
+            value: true
+          - name: false
+            description: Disable gitleaks integration completely.
+            value: false
+
+    dupehound:
+      enabled:
+        id: 'integrations.dupehound.enabled'
+        description: |
+          Control optional dupehound-assisted CH-05 duplicate-code detection.
+          `auto` (default) enables it when the local binary is present.
+          `true` expects the binary and emits a hint if missing.
+          `false` disables CH-05 dupehound scans even when installed.
+        default: auto
+        type: string
+        options:
+          - name: auto
+            description: Auto-enable dupehound when it is installed locally.
+            value: auto
+          - name: true
+            description: Expect dupehound to be available; hint once if missing.
+            value: true
+          - name: false
+            description: Disable dupehound integration completely.
+            value: false
+
+      min_tokens:
+        id: 'integrations.dupehound.min_tokens'
+        description: |
+          Reserved lower bound for dupehound token span filtering. The current
+          wrapper stores the preference now so future CH-05 tuning remains
+          forward-compatible without changing the preference surface.
+        default: 40
+        type: number
+        min: 1
+        max: 500
+
+      install_prompt_version:
+        id: 'integrations.dupehound.install_prompt_version'
+        description: |
+          ACP version that last prompted for dupehound installation. Empty
+          string means no prompt has been recorded yet.
+        default: ''
+        type: string
+
+
+# Packages may define their own configurables here or in separate files:
+#   agent/configurables/<package-name>.configurables.yaml
+#
+# Example: agent/configurables/mcp-auth-server-base.configurables.yaml
+# defines preferences for commands in the mcp-auth-server-base ACP package.

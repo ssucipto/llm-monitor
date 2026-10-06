@@ -1,0 +1,880 @@
+/* Local LLM Monitor — dark, glanceable, responsive.
+ * Palette flips to light automatically via light-dark() when supported.
+ * Motion encodes data (gauges, sparkline, countdown ring), not decoration.
+ */
+
+:root {
+  color-scheme: dark light;
+
+  --bg: #0b0f14;
+  --bg-elev: #141a22;
+  --bg-elev-2: #1b2430;
+  --border: #29323f;
+  --text: #e6edf3;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --down: #f85149;
+  --strata: #a78bfa;
+  --vulkan: #34d399;
+
+  --radius: 10px;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --font: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+}
+
+@supports (color: light-dark(red, red)) {
+  :root {
+    --bg: light-dark(#0b0f14, #f6f8fa);
+    --bg-elev: light-dark(#141a22, #ffffff);
+    --bg-elev-2: light-dark(#1b2430, #eaeef2);
+    --border: light-dark(#29323f, #d0d7de);
+    --text: light-dark(#e6edf3, #0d1117);
+    --text-dim: light-dark(#8b949e, #57606a);
+    --shadow: 0 4px 14px light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.08));
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Skip link ---------- */
+.skip {
+  position: absolute;
+  inset: 0 auto auto 0;
+  color: var(--text-dim);
+}
+
+.skip:not(:focus):not(:focus-visible) {
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.skip:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  color: var(--accent);
+}
+
+.noscript {
+  padding: 10px 14px;
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar hgroup,
+.topbar__brand {
+  margin: 0;
+}
+
+.topbar__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.topbar__tagline {
+  margin: 2px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.topbar__meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-family: var(--mono);
+}
+
+.refresh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--ok);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.refresh-badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse 2s infinite;
+}
+
+.refresh-badge.is-error {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--down);
+  border-color: rgba(248, 81, 73, 0.3);
+}
+
+.refresh-badge.is-error::before {
+  background: var(--down);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---------- Table of contents ---------- */
+.toc {
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.toc ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.toc a {
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.toc a:hover,
+.toc a:active {
+  color: var(--accent);
+}
+
+/* ---------- Layout ----------
+ * A 2-column grid, but paired by content volume rather than by reading order:
+ * tall panels sit opposite tall ones and medium opposite medium, so no row is
+ * stretched by a sparse neighbour. The log gets its own full-width row because
+ * it ships collapsed (hidden="until-found").
+ */
+.layout {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "engine     throughput"
+    "live       context"
+    "power      gpu"
+    "hardware   cache"
+    "requests   analysis"
+    "spec       switch"
+    "log        log";
+}
+
+.panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.panel.engine { grid-area: engine; }
+.panel.live { grid-area: live; }
+.panel.context { grid-area: context; }
+.panel.throughput { grid-area: throughput; }
+.panel.hardware { grid-area: hardware; }
+.panel.cache { grid-area: cache; }
+.panel.spec { grid-area: spec; }
+.panel.requests { grid-area: requests; }
+.panel.switch { grid-area: switch; }
+.panel.power { grid-area: power; }
+.panel.analysis { grid-area: analysis; }
+.panel.gpu { grid-area: gpu; }
+.panel.log { grid-area: log; }
+
+/* ---------- Generic fact list (dt/dd pairs) ---------- */
+.facts,
+dl.engine__facts,
+dl.engine__config,
+dl.live__facts,
+dl.context__facts,
+dl.hardware__facts,
+dl.gpu__facts,
+dl.cache__facts,
+dl.spec__facts,
+dl.switch__facts,
+dl.power__facts,
+dl.analysis__facts {
+  display: grid;
+  gap: 8px 14px;
+  grid-template-columns: auto 1fr;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.fact {
+  display: contents;
+}
+
+.fact dt {
+  color: var(--text-dim);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-size: 0.7rem;
+}
+
+.fact dd {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--text);
+  overflow-x: auto;
+}
+
+/* ---------- Engine ---------- */
+.engine__badge {
+  margin: 0 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.engine__badge::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.engine__badge.strata {
+  color: var(--strata);
+  border-color: var(--strata);
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.engine__badge.strata::before { background: var(--strata); }
+
+.engine__badge.vulkan {
+  color: var(--vulkan);
+  border-color: var(--vulkan);
+  background: rgba(52, 211, 153, 0.12);
+}
+
+.engine__badge.vulkan::before { background: var(--vulkan); }
+
+.engine__badge.down {
+  color: var(--down);
+  border-color: var(--down);
+  background: rgba(248, 81, 73, 0.12);
+}
+
+.engine__badge.down::before { background: var(--down); }
+
+.engine__badge::before {
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+/* ---------- Live inference ---------- */
+.live__state {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.live__state.processing {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.live__state.processing::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.live__state.idle {
+  color: var(--text-dim);
+}
+
+/* The engine-activity chip: idle vs active is obvious at a glance, independent of
+   the finer state/phase readings below it. */
+.live__chip {
+  margin: 0 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.live__chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.live__chip.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.live__chip.active::before {
+  background: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.live__chip.idle::before {
+  animation: none;
+}
+
+/* ---------- Gauges (context, cache, spec) ---------- */
+.metric__value,
+.context__pct,
+.cache__hit,
+.spec__accept,
+.hw__value,
+.power__value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.context__pct,
+.cache__hit,
+.spec__accept {
+  display: block;
+}
+
+.gauge,
+.context__gauge,
+.cache__gauge,
+.spec__gauge,
+.hw__gauge,
+.power__gauge,
+meter {
+  display: block;
+  margin: 8px 0 0;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+::-webkit-meter-bar {
+  background: var(--bg-elev-2);
+  border-radius: 999px;
+  border: none;
+}
+
+::-webkit-meter-optimum-value { background: var(--ok); }
+::-webkit-meter-suboptimum-value { background: var(--warn); }
+::-webkit-meter-even-less-good-value { background: var(--down); }
+
+/* Severity drives the value text so the reading is legible even where the
+   native bar cannot be restyled (Firefox). */
+.is-ok { color: var(--ok); }
+.is-warn { color: var(--warn); }
+.is-bad { color: var(--down); }
+
+.hint,
+.context__hint,
+.cache__hint,
+.spec__hint,
+.hw__hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* ---------- Throughput ---------- */
+.throughput__now {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+/* ---------- Sub-card metrics (hardware, gpu) ---------- */
+.hardware__metrics,
+.gpu__metrics {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  padding: 0;
+}
+
+.gpu__metrics {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.hw {
+  background: var(--bg-elev-2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  transition: transform 0.15s ease;
+}
+
+.hw:hover {
+  transform: translateY(-2px);
+}
+
+.hw dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.hw dt abbr { text-decoration: none; }
+
+.hw dd {
+  margin: 0;
+}
+
+.hw__value {
+  font-size: 1.5rem;
+}
+
+.hw__gauge {
+  height: 6px;
+}
+
+/* ---------- GPU parity with the engine's own monitor ----------
+ * The engine schema carries gpu_util / gpu_temp / gpu_mem / gpu_power / gpu_pcie,
+ * but this AMD HIP build exposes no userspace counter, so the panel says so in
+ * words rather than drawing a gauge at zero.
+ */
+.gpu__state {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.gpu__state.measured {
+  color: var(--ok);
+}
+
+.gpu__metrics .hw__value {
+  font-size: 1.25rem;
+}
+
+.gpu__facts {
+  margin: 12px 0 0;
+}
+
+/* ---------- Sparkline ---------- */
+.spark {
+  margin: 14px 0 0;
+  background: var(--bg-elev-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.spark svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--accent);
+}
+
+.spark__caption {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+/* ---------- Requests table ---------- */
+.request-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.request-table__caption {
+  caption-side: top;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  padding-bottom: 6px;
+}
+
+.request-table th,
+.request-table td {
+  padding: 6px 9px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.request-table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+.request-table .num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.requests__count {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* ---------- Switch ---------- */
+.switch__active {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.switch__profiles {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.switch__profiles li {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+}
+
+.switch__profiles li.active {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+/* ---------- Collapsed log ---------- */
+.panel.log {
+  contain-intrinsic-size: auto 96px;
+}
+
+.panel.log.revealed {
+  border-color: var(--accent);
+}
+
+.log__list {
+  margin: 0;
+  padding: 0 0 0 22px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+.log__list time {
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.log__list .lvl--info { color: var(--text-dim); }
+.log__list .lvl--warn { color: var(--warn); }
+.log__list .lvl--bad { color: var(--down); }
+
+/* ---------- Footer ---------- */
+.footer {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 10px 22px 28px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.footer p {
+  margin: 0;
+}
+
+.footer code {
+  background: var(--bg-elev-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+/* ---------- Power ---------- */
+.power__hint {
+  margin: 6px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.analysis__window {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* ---------- Sparkline variants ---------- */
+.spark--requests,
+.spark--power,
+.spark--gpu {
+  margin: 12px 0 0;
+}
+
+.spark--requests svg { color: var(--strata); }
+.spark--power svg { color: var(--warn); }
+.spark--gpu svg { color: var(--vulkan); }
+
+/* ---------- Motion system ----------
+ * Data-shaped motion: gauges ease to their reading, the sparkline redraws, the
+ * badge ring counts down to the next poll, panels cascade in. The guard at the
+ * bottom of this sheet switches the whole layer off.
+ */
+@property --sweep {
+  initial-value: 0deg;
+  inherits: false;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 520px at 12% -8%, rgba(88, 166, 255, 0.10), transparent 62%),
+    radial-gradient(760px 460px at 86% 6%, rgba(167, 139, 250, 0.08), transparent 60%);
+  animation: drift 46s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-2.5%, 2%, 0) scale(1.08); }
+}
+
+.panel {
+  animation: panel-in 520ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+  animation-delay: calc(var(--i, 0) * 80ms);
+}
+
+.panel.log {
+  animation: none;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.spark__line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.spark__area {
+  opacity: 1;
+}
+
+@keyframes spark-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes spark-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.spark__halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping 2.6s ease-out infinite;
+}
+
+@keyframes ping {
+  0% { opacity: 0.45; transform: scale(0.5); }
+  70%, 100% { opacity: 0; transform: scale(3.2); }
+}
+
+.refresh-badge {
+  position: relative;
+}
+
+.refresh-badge::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  pointer-events: none;
+  background: conic-gradient(from -90deg, var(--accent) var(--sweep), transparent 0);
+  mask: radial-gradient(circle at center, transparent 58%, #000 63%);
+  -webkit-mask: radial-gradient(circle at center, transparent 58%, #000 63%);
+  opacity: 0.75;
+  animation: sweep var(--poll-ms, 5s) linear infinite;
+}
+
+.refresh-badge.is-error::after {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes sweep {
+  from { --sweep: 0deg; }
+  to { --sweep: 360deg; }
+}
+
+.request-table tbody tr {
+  animation: row-in 420ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+}
+
+.panel.log.revealed .log__list > li {
+  animation: log-in 320ms ease both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@keyframes log-in {
+  from { opacity: 0; transform: translateX(-8px); }
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "engine"
+      "live"
+      "context"
+      "throughput"
+      "power"
+      "gpu"
+      "hardware"
+      "cache"
+      "spec"
+      "requests"
+      "analysis"
+      "switch"
+      "log";
+  }
+  .hardware__metrics,
+  .gpu__metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .request-table th,
+  .request-table td {
+    padding: 5px 7px;
+  }
+}
+
+/* ---------- Reduced motion (must stay last: it overrides the layer above) ----------
+ * Every animation here is informational, so switching it off loses no reading —
+ * gauges, dots, badges and bars still carry state in colour and text.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .refresh-badge::after {
+    background: conic-gradient(from -90deg, var(--accent) 360deg, transparent 0);
+  }
+
+  .spark__line {
+    stroke-dashoffset: 0;
+  }
+}

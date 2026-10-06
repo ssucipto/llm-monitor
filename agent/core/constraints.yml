@@ -1,0 +1,22 @@
+# Hard rules — never violate these
+# DO NOT add dynamic content to this file
+# TODO: Add project-specific code rules below
+
+rules:
+  - never_load_all_wiki_files: load one section at a time
+  - never_load_full_sessions: last 3 entries only
+  - never_load_all_lessons: filter by task_type first
+  - never_skip_acp_commit: required at end of every session
+  - never_reopen_closed_adrs: respect DO NOT re-open flags
+
+context_budget:
+  layer1_max_tokens: 300
+  layer2_max_tokens: 500
+  layer3_max_tokens: 2000
+  total_max_tokens: 2800
+  warning_threshold: 0.80
+
+# Add project-specific coding rules here, for example:
+# code_rules:
+#   - prefer_immutable_data: true
+#   - require_error_handling: true

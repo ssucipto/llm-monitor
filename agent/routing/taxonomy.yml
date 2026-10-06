@@ -1,0 +1,84 @@
+# Project Task Taxonomy
+# Maps task types to executor + required context
+# TODO: Add task types specific to your project's domains
+
+task_types:
+
+  # ── FEATURES ──────────────────────────────────────────────
+  feature-small:
+    executor: fast-model
+    complexity: low
+    context_required: [memory/sessions.md]
+    tokens_est: 4000
+    skill: backend  # TODO: change to your relevant skill file
+
+  feature-large:
+    executor: smart-model
+    complexity: high
+    context_required: [wiki/architecture.md, wiki/domain.yml, memory/decisions.md]
+    tokens_est: 20000
+    skill: backend
+
+  # ── BUG FIXES ─────────────────────────────────────────────
+  bug-fix-simple:
+    executor: fast-model
+    complexity: low
+    context_required: [memory/sessions.md]
+    tokens_est: 3000
+    skill: backend
+
+  bug-fix-architectural:
+    executor: smart-model
+    complexity: high
+    context_required: [wiki/architecture.md, memory/decisions.md, memory/sessions.md]
+    tokens_est: 15000
+    skill: backend
+
+  # ── TESTS ─────────────────────────────────────────────────
+  test-write:
+    executor: fast-model
+    complexity: low
+    context_required: [active-task-only]
+    tokens_est: 4000
+    skill: backend
+
+  # ── ARCHITECTURE ──────────────────────────────────────────
+  architecture-design:
+    executor: smart-model
+    complexity: high
+    context_required: [wiki/architecture.md, wiki/domain.yml, memory/decisions.md]
+    risk: high
+    tokens_est: 20000
+    skill: backend
+
+  # ── DEPLOYMENT / CI ───────────────────────────────────────
+  deploy-config:
+    executor: fast-model
+    complexity: low
+    context_required: [wiki/integrations.md]
+    tokens_est: 4000
+    skill: backend
+
+  ci-pipeline:
+    executor: smart-model
+    complexity: medium
+    context_required: [wiki/integrations.md, memory/decisions.md]
+    tokens_est: 10000
+    skill: backend
+
+  # ── DATA SCHEMA ───────────────────────────────────────────
+  data-schema:
+    executor: smart-model
+    complexity: medium
+    context_required: [wiki/domain.yml, memory/decisions.md]
+    risk: high
+    tokens_est: 8000
+    skill: backend
+
+  # ── DOCS / CROSS-CUTTING ──────────────────────────────────
+  documentation:
+    executor: fast-model
+    complexity: low
+    context_required: [memory/sessions.md]
+    tokens_est: 3000
+    skill: backend

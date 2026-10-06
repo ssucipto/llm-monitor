@@ -1,0 +1,7 @@
+# Domain Entity Model
+# TODO: Describe the core entities your project works with
+# Run /acp-init to auto-populate from your source code
+
+entities: []     # Core domain objects (User, Order, Product, etc.)
+operations: []   # Key operations grouped by category
+modules: []      # Main modules or packages

@@ -1,0 +1,43 @@
+# ---------- ACP local-only files (framework) ----------
+# ADR-28 — field-feedback file local
+docs/acp-enhanced-dev-team-feedback-consolidated.md
+
+# ---------- llm-monitor runtime artifacts ----------
+# SQLite telemetry history — regenerated on every run, machine-local data
+llm-monitor/telemetry.sqlite3
+llm-monitor/telemetry.sqlite3-journal
+llm-monitor/telemetry.sqlite3-wal
+llm-monitor/telemetry.sqlite3-shm
+
+# Ad-hoc payload dumps taken while auditing the engine (investigation scratch)
+llm-monitor/*.dump.json
+llm-monitor/resp.json
+llm-monitor/out.json
+
+# ---------- Python bytecode / caches ----------
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ---------- OS / editor junk ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+
+# ---------- Secrets / credentials (defensive — none expected, keep the guard) ----------
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.keystore
+id_rsa
+id_ed25519
+*.kdbx

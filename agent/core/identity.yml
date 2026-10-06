@@ -1,0 +1,22 @@
+# DO NOT add dynamic content to this file (no dates, no task IDs)
+# This file is prompt-cached by the LLM API after first call
+# TODO: Fill in your project details below
+
+project: YOUR_PROJECT_NAME
+type: YOUR_PROJECT_TYPE      # e.g. web-app, mobile-app, api, cli-tool, library
+description: >
+  One or two sentences describing what this project does.
+
+stack:
+  - primary: YOUR_MAIN_LANGUAGE  # e.g. TypeScript, Python, Go
+  - framework: YOUR_FRAMEWORK    # e.g. React, FastAPI, gin
+  - backend: YOUR_BACKEND        # e.g. PostgreSQL, Firebase, None
+  - deployment: YOUR_DEPLOY      # e.g. Vercel, AWS Lambda, Docker
+
+team: solo-developer   # or: small-team, open-source
+priorities:
+  - code-quality
+  - correctness
+  - maintainability
+
+repo: github.com/YOUR_USERNAME/YOUR_REPO

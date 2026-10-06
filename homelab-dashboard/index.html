@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f8fa" media="(prefers-color-scheme: light)" />
+  <meta name="description" content="Homelab dashboard template — live status for hosts, containers, and services." />
+  <title>Homelab Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='18' y='78' font-size='72' fill='%2358a6ff'%3E%E2%99%99%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the dashboard</a>
+  <noscript>
+    <p class="noscript">This dashboard needs JavaScript to poll live metrics. The sections below stay in their last rendered state.</p>
+  </noscript>
+
+  <header class="topbar">
+    <hgroup class="topbar__brand">
+      <h1 class="topbar__title">Homelab Dashboard</h1>
+      <p class="topbar__tagline">Live status for the rack, the NAS, and everything in between</p>
+    </hgroup>
+    <p class="topbar__meta">
+      <time class="clock" id="clock">--:--:--</time>
+      <span class="refresh-badge" id="refresh-badge" role="status">Booting</span>
+    </p>
+  </header>
+
+  <nav class="toc" aria-label="Jump to a section">
+    <ol>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#hosts">Hosts</a></li>
+      <li><a href="#containers">Containers</a></li>
+      <li><a href="#services">Services</a></li>
+      <li><a href="#controls">Controls</a></li>
+      <li><a href="#log">System log</a></li>
+    </ol>
+  </nav>
+
+  <main id="main" class="layout">
+    <section class="panel cards" id="overview" aria-labelledby="overview-h">
+      <h2 id="overview-h">Overview</h2>
+      <dl class="metrics">
+        <div class="metric" data-metric="cpu">
+          <dt><abbr title="Processing unit load">CPU</abbr></dt>
+          <dd>
+            <data class="metric__value" id="cpu-value" value="0">--</data>
+            <meter class="metric__gauge" id="cpu-gauge" min="0" max="100" low="60" high="85" optimum="20" value="0">--</meter>
+            <p class="metric__hint" id="cpu-hint">load average</p>
+          </dd>
+        </div>
+        <div class="metric" data-metric="memory">
+          <dt><abbr title="Resident memory">Memory</abbr></dt>
+          <dd>
+            <data class="metric__value" id="mem-value" value="0">--</data>
+            <meter class="metric__gauge" id="mem-gauge" min="0" max="100" low="60" high="85" optimum="20" value="0">--</meter>
+            <p class="metric__hint" id="mem-hint">used / total</p>
+          </dd>
+        </div>
+        <div class="metric" data-metric="disk">
+          <dt><abbr title="Root filesystem usage">Disk</abbr></dt>
+          <dd>
+            <data class="metric__value" id="disk-value" value="0">--</data>
+            <meter class="metric__gauge" id="disk-gauge" min="0" max="100" low="60" high="85" optimum="20" value="0">--</meter>
+            <p class="metric__hint" id="disk-hint">/ usage</p>
+          </dd>
+        </div>
+        <div class="metric" data-metric="uptime">
+          <dt><abbr title="Time since last boot">Uptime</abbr></dt>
+          <dd><time class="metric__value metric__value--sm" id="uptime-value">--</time></dd>
+        </div>
+      </dl>
+      <figure class="spark">
+        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="CPU load over the last minute">
+          <defs>
+            <linearGradient id="spark-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity="0.32" />
+              <stop offset="1" stop-color="currentColor" stop-opacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon class="spark__area" id="cpu-area" points="" fill="url(#spark-fill)" />
+          <polyline class="spark__line" id="cpu-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          <circle class="spark__halo" id="cpu-halo" r="2.2" cx="0" cy="30" fill="currentColor" />
+          <circle class="spark__head" id="cpu-head" r="1.4" cx="0" cy="30" fill="currentColor" />
+        </svg>
+        <figcaption class="spark__caption" id="spark-caption">CPU, last 12 samples</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel hosts" id="hosts" aria-labelledby="hosts-h">
+      <h2 id="hosts-h">Hosts</h2>
+      <p class="panel__count" id="hosts-count">--</p>
+      <table class="host-table">
+        <caption class="host-table__caption" id="host-caption">Every host on the network, with live load</caption>
+        <thead>
+          <tr>
+            <th scope="col">Host</th>
+            <th scope="col">Address</th>
+            <th scope="col">System</th>
+            <th scope="col">CPU</th>
+            <th scope="col">Memory</th>
+          </tr>
+        </thead>
+        <tbody id="host-tbody"></tbody>
+      </table>
+    </section>
+
+    <section class="panel containers" id="containers" aria-labelledby="containers-h">
+      <h2 id="containers-h">Containers</h2>
+      <p class="panel__count" id="containers-count">--</p>
+      <ul class="container-list" id="container-list"></ul>
+    </section>
+
+    <section class="panel services" id="services" aria-labelledby="services-h">
+      <h2 id="services-h">Services</h2>
+      <p class="panel__count" id="services-count">--</p>
+      <ul class="service-list" id="service-list"></ul>
+    </section>
+
+    <section class="panel controls" id="controls" aria-labelledby="controls-h">
+      <h2 id="controls-h">Controls</h2>
+      <p class="controls__intro">Destructive actions confirm through a native <code>&lt;dialog&gt;</code> before anything runs.</p>
+      <button type="button" class="btn" id="reboot-btn">Request reboot</button>
+      <p class="controls__hint">
+        The log below is collapsed with <code>hidden="until-found"</code> —
+        <a href="#log">jump to it</a> or press <kbd>Ctrl</kbd>+<kbd>F</kbd> to reveal it.
+      </p>
+      <dialog class="confirm-dialog" id="confirm-dialog" closedby="any">
+        <form method="dialog">
+          <h3>Confirm reboot</h3>
+          <p class="confirm-dialog__body">This is a template stub — no command runs. Wire the submit handler to your real endpoint.</p>
+          <button type="submit" value="cancel">Cancel</button>
+          <button type="submit" value="reboot">Confirm reboot</button>
+        </form>
+      </dialog>
+    </section>
+
+    <section class="panel log" id="log" hidden="until-found" aria-labelledby="log-h">
+      <h2 id="log-h">System log</h2>
+      <ol class="log__list" id="log-list"></ol>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Template data is simulated. The <code>id</code> attributes in this file are the contract:
+      point them at your real metrics (<code>/api/stats</code>, <code>docker stats --no-stream</code>,
+      <code>uptime</code>, <code>df</code>) in <code>app.js</code>.</p>
+  </footer>
+</body>
+</html>
