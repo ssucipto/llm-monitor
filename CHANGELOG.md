@@ -4,6 +4,39 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.5] - 2026-10-07
+
+### Fixed
+- **Cumulative-counter deltas could go negative** when the engine restarts (its
+  counters reset), so a day/window's last-minus-first swallowed a whole session or
+  printed a negative. Added `cumulative_delta`, which splits at each decrease and
+  sums the segments; applied to both the daily rollups and the existing windowed
+  `db_analysis` (including `req_per_min`). Verified against the live DB: 351 req /
+  25.0 tok/s, all positive.
+- **Drag froze over the hero/gaps/footer and cross-container drops failed silently**
+  because `pointermove`/`pointerup` were bound to the container. They now live on
+  `document` and the drop target is hit-tested per move, so a card can land in the
+  band and vice versa.
+- A plain click left the preview slot stuck in the DOM; the slot is now always
+  removed on release/cancel.
+
+### Added
+- **History panel**: daily/weekly/monthly rollups in a tiny per-day SQLite table
+  (finalized at each day boundary before pruning, so weekly/monthly survive the
+  ~28h poll window), period comparisons (today vs yesterday, this week vs previous,
+  this month vs previous, each with a % delta), and a **day scrubber** to slide a
+  marker across recorded days and read any past day's numbers with its delta vs the
+  day before.
+- **Visible drop slot**: a dashed outline shows where a dragged panel will land,
+  with the other panels parting around it, so the drop point is unambiguous before
+  releasing. The dragged panel eases toward the pointer for a fluid follow.
+- Footer **Save layout** / **Reset layout** buttons (the arrangement also
+  auto-persists on every commit, so the latest positions are always recorded).
+
+### Changed
+- README documents the History panel, the day scrubber, the visible drop slot, and
+  the Save/Reset buttons; the `/api/stats` shape gains `daily` and `periods`.
+
 ## [0.1.4] - 2026-10-07
 
 ### Added

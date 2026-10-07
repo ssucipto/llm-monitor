@@ -112,22 +112,40 @@ function setGauge(valueId, gaugeId, pct, higherBetter) {
 
 // ---------- Drag-and-drop reordering ----------
 // Both the masonry columns and the band read document order, so a drag commits by
-// moving the panel's DOM node — no parallel order state to keep in sync. The
-// arrangement is persisted in localStorage and restored on load, so it survives
-// reloads. A drag may only start on the panel's own box or its heading (never
-// inside its text), so it never fights text selection; touch is excluded so
-// page scrolling over a panel is not hijacked. ?reset=1 in the URL clears the
-// saved arrangement and returns to the default order.
+// moving the panel's DOM node. pointermove/pointerup live on the document (not the
+// container) so a drag keeps tracking over the hero, gaps and footer, and the drop
+// target is hit-tested per move — a card can land in the band and vice versa.
+// A dashed slot element is inserted at the would-be position and the other panels
+// FLIP-part around it, so the drop point is unambiguous before releasing. The
+// dragged panel eases toward the pointer (CSS transition while dragging) for a
+// fluid follow. The arrangement auto-persists in localStorage on every commit
+// (the latest positions are always recorded); the footer Save button confirms it
+// explicitly and Reset restores the default order. ?reset=1 clears the save too.
 const ORDER_KEY = "llm-monitor-order";
+const DEFAULT_ORDER = {
+  masonry: ["engine", "live", "context", "throughput", "power", "gpu", "hardware", "cache", "spec", "switch"],
+  band: ["requests", "analysis", "history", "log"],
+};
 let drag = null;
+let containers = [];
+let slotEl = null;
 
 function persistOrder() {
   const order = {};
-  for (const cls of ["masonry", "band"]) {
-    const container = document.querySelector(`.${cls}`);
-    if (container) order[cls] = [...container.children].map((el) => el.id);
-  }
+  for (const c of containers) order[c.className.split(" ")[0]] = [...c.children].map((el) => el.id);
   localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+}
+
+function applyOrder(order) {
+  for (const [cls, ids] of Object.entries(order)) {
+    const container = containers.find((c) => c.className.split(" ")[0] === cls);
+    if (!container) continue;
+    const kids = [...container.children].filter((k) => k !== slotEl);
+    const byId = new Map(kids.map((k) => [k.id, k]));
+    const wanted = ids.map((id) => byId.get(id)).filter(Boolean);
+    wanted.concat(kids.filter((k) => !wanted.includes(k)))
+      .forEach((el) => container.appendChild(el));
+  }
 }
 
 function restoreOrder() {
@@ -141,16 +159,75 @@ function restoreOrder() {
   } catch (err) {
     saved = null;
   }
-  if (!saved) return;
-  for (const [cls, ids] of Object.entries(saved)) {
-    const container = document.querySelector(`.${cls}`);
-    if (!container) continue;
-    const kids = [...container.children];
-    const byId = new Map(kids.map((k) => [k.id, k]));
-    const wanted = ids.map((id) => byId.get(id)).filter(Boolean);
-    // Saved order first, then any panel that is new since the save.
-    wanted.concat(kids.filter((k) => !wanted.includes(k)))
-      .forEach((el) => container.appendChild(el));
+  if (saved) applyOrder(saved);
+}
+
+function hitContainer(x, y) {
+  for (const c of containers) {
+    const r = c.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return c;
+  }
+  return null;
+}
+
+// The candidate slot in `container` for a drop at (x, y): nearest sibling by
+// centre, before/after decided by the sibling's vertical midpoint. The anchor
+// is a real panel element (stable across slot insertions), so the preview can
+// tell when the candidate actually changed.
+function slotAnchor(container, x, y) {
+  let best = null;
+  let bestD = Infinity;
+  for (const s of container.children) {
+    if (s === slotEl || s === (drag && drag.panel)) continue;
+    const r = s.getBoundingClientRect();
+    if (!r.width || !r.height) continue; // collapsed panels (hidden=until-found)
+    const d = (r.left + r.width / 2 - x) ** 2 + (r.top + r.height / 2 - y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  if (!best) return null;
+  const r = best.getBoundingClientRect();
+  return { anchor: best, side: y > r.top + r.height / 2 ? "after" : "before" };
+}
+
+function placeSlot(x, y) {
+  const target = hitContainer(x, y) || (drag && drag.target);
+  if (!target || !drag) return;
+  drag.target = target;
+  const a = slotAnchor(target, x, y);
+  if (!a) return;
+  // Only re-part when the candidate slot actually changed, so the preview does
+  // not restart its FLIP on every pointermove.
+  if (target === drag.slotContainer && a.side === drag.slotSide && a.anchor === drag.slotAnchor) return;
+  drag.slotContainer = target;
+  drag.slotSide = a.side;
+  drag.slotAnchor = a.anchor;
+  const first = new Map();
+  for (const k of target.children) first.set(k, k.getBoundingClientRect());
+  if (a.side === "after") {
+    if (a.anchor.nextSibling) target.insertBefore(slotEl, a.anchor.nextSibling);
+    else target.appendChild(slotEl);
+  } else {
+    target.insertBefore(slotEl, a.anchor);
+  }
+  // Part the other panels smoothly around the new slot (FLIP again).
+  if (!reducedMotion()) {
+    for (const k of first.keys()) {
+      if (k === slotEl || k === drag.panel) continue;
+      const f = first.get(k);
+      const l = k.getBoundingClientRect();
+      const dx = f.left - l.left;
+      const dy = f.top - l.top;
+      if (!dx && !dy) continue;
+      if (typeof k.animate === "function") {
+        k.animate(
+          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+          { duration: 180, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)" }
+        );
+      }
+    }
   }
 }
 
@@ -160,79 +237,57 @@ function wireContainer(container) {
     const panel = e.target.closest(".panel");
     if (!panel || panel.parentElement !== container) return;
     if (e.target !== panel && e.target.tagName.toLowerCase() !== "h2") return;
-    drag = { panel, container, x: e.clientX, y: e.clientY, moved: false };
+    drag = { panel, target: container, x: e.clientX, y: e.clientY, dx: 0, dy: 0, moved: false, slotContainer: null, slotSide: null, slotAnchor: null };
     panel.classList.add("dragging");
-  });
-
-  container.addEventListener("pointermove", (e) => {
-    if (!drag || drag.container !== container) return;
-    const dx = e.clientX - drag.x;
-    const dy = e.clientY - drag.y;
-    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-    drag.panel.style.transform = `translate(${dx}px, ${dy}px)`;
-  });
-
-  container.addEventListener("pointerup", (e) => {
-    if (!drag || drag.container !== container) return;
-    commitDrag(e);
+    placeSlot(e.clientX, e.clientY);
   });
 }
 
-function commitDrag(e) {
-  const { panel, container, moved } = drag;
+document.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  drag.dx = e.clientX - drag.x;
+  drag.dy = e.clientY - drag.y;
+  if (Math.abs(drag.dx) + Math.abs(drag.dy) > 4) drag.moved = true;
+  drag.panel.style.transform = `translate(${drag.dx}px, ${drag.dy}px)`;
+  placeSlot(e.clientX, e.clientY);
+});
+
+document.addEventListener("pointerup", (e) => {
+  if (drag) commitDrag(e);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (drag && e.key === "Escape") cancelDrag();
+});
+
+function cancelDrag() {
+  const { panel } = drag;
   drag = null;
   panel.classList.remove("dragging");
   panel.style.transform = "";
+  if (slotEl) slotEl.remove();
+}
+
+function commitDrag(e) {
+  const { panel, target } = drag;
+  const { dx, dy } = drag;
+  const moved = drag.moved;
+  drag = null;
+  panel.classList.remove("dragging");
+  panel.style.transform = "";
+  const ref = slotEl.nextSibling;
+  slotEl.remove();
   if (!moved) return; // a plain click, not a drag — leave the order alone
+  if (ref) target.insertBefore(panel, ref);
+  else target.appendChild(panel);
 
-  // The nearest sibling to the drop point decides the new slot; the drop point's
-  // side of that sibling's vertical midpoint decides before/after.
-  let best = null;
-  let bestD = Infinity;
-  for (const s of container.children) {
-    if (s === panel) continue;
-    const r = s.getBoundingClientRect();
-    if (!r.width || !r.height) continue; // collapsed panels (hidden=until-found)
-    const d = (r.left + r.width / 2 - e.clientX) ** 2 + (r.top + r.height / 2 - e.clientY) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-  if (!best) return;
-
-  const first = new Map();
-  for (const k of container.children) first.set(k, k.getBoundingClientRect());
-
-  const r = best.getBoundingClientRect();
-  if (e.clientY > r.top + r.height / 2) {
-    if (best.nextSibling) container.insertBefore(panel, best.nextSibling);
-    else container.appendChild(panel);
-  } else {
-    container.insertBefore(panel, best);
-  }
-
-  // FLIP: every panel that moved gets an inverse translate, then eases back to
-  // its real position, so the reorder reads as a glide instead of a snap.
-  if (!reducedMotion()) {
-    for (const k of first.keys()) {
-      const f = first.get(k);
-      const l = k.getBoundingClientRect();
-      if (!f.width || !f.height || !l.width || !l.height) continue;
-      const dx = f.left - l.left;
-      const dy = f.top - l.top;
-      if (!dx && !dy) continue;
-      if (typeof k.animate === "function") {
-        k.animate(
-          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
-          { duration: 260, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)" }
-        );
-      } else {
-        k.style.transition = "transform 260ms cubic-bezier(0.2, 0.85, 0.25, 1)";
-        k.style.transform = `translate(${dx}px, ${dy}px)`;
-        requestAnimationFrame(() => (k.style.transform = ""));
-      }
-    }
+  // FLIP the resting panels, and glide the dragged one from its hover position
+  // to its final slot, so the release reads as one continuous motion.
+  if (!reducedMotion() && typeof panel.animate === "function") {
+    panel.animate(
+      [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+      { duration: 240, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)" }
+    );
   }
   persistOrder();
 }
@@ -645,6 +700,113 @@ function renderHero(throughput, power, context, cache) {
   setText("hero-hit", cache && cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}` : "--");
 }
 
+// ---------- History (daily rollups, period comparisons, day scrubber) ----------
+let days = [];
+
+function fmtDelta(v) {
+  if (v === null || v === undefined) return "";
+  const r = Math.round(v * 10) / 10;
+  return r > 0 ? `+${r}%` : r < 0 ? `${r}%` : "±0%";
+}
+
+function cmp(cur, prev, key) {
+  const a = cur && cur[key];
+  const b = prev && prev[key];
+  if (a === null || a === undefined || b === null || b === undefined || b === 0) return "";
+  return ` (${fmtDelta(((a - b) / b) * 100)} vs prev)`;
+}
+
+function periodLine(p) {
+  if (!p || !p.current) return "--";
+  const c = p.current;
+  const bits = [`${fmtInt(c.requests)} req`, `${fmtNum(c.tok_s_mean, " tok/s", 1)}`];
+  if (c.energy_wh != null) bits.push(`${fmtNum(c.energy_wh, " Wh", 1)}`);
+  const line = `${p.current_label} ${bits.join(" · ")}`;
+  return `${line}${cmp(c, p.previous, "requests")}${cmp(c, p.previous, "tok_s_mean")}`;
+}
+
+function renderHistory(periods, daily) {
+  days = daily || [];
+  setText("hist-window", days.length
+    ? `${days.length} recorded day(s) · ${days[0].date} → ${days.at(-1).date}`
+    : "awaiting history");
+  setText("hist-day", periods && periodLine(periods.day));
+  setText("hist-week", periods && periodLine(periods.week));
+  setText("hist-month", periods && periodLine(periods.month));
+  drawSpark("hist", days.map((x) => x.requests), "req/day", "requests per day, recorded history");
+  selectDay(Math.min(scrubIdx, Math.max(0, days.length - 1)), true);
+}
+
+// The scrubber: the marker's x-position picks a recorded day; the day's numbers
+// (and its delta vs the day before) print beside it. Clicking the track jumps
+// straight to a day; dragging slides it.
+let scrubIdx = 0;
+
+function selectDay(idx, force) {
+  const track = $("scrub");
+  const marker = $("scrub-marker");
+  const sel = $("hist-selected");
+  if (!track || !marker || !sel) return;
+  if (!days.length) {
+    marker.style.left = "0%";
+    sel.textContent = "no recorded days yet — history builds as the engine runs";
+    track.setAttribute("aria-valuenow", "0");
+    return;
+  }
+  scrubIdx = Math.max(0, Math.min(idx, days.length - 1));
+  const pct = days.length === 1 ? 0 : (scrubIdx / (days.length - 1)) * 100;
+  marker.style.left = `${pct}%`;
+  track.setAttribute("aria-valuemax", String(days.length - 1));
+  track.setAttribute("aria-valuenow", String(scrubIdx));
+
+  const x = days[scrubIdx];
+  const prev = scrubIdx > 0 ? days[scrubIdx - 1] : null;
+  const bits = [`${fmtInt(x.requests)} req`, `${fmtNum(x.tok_s_mean, " tok/s", 1)}`];
+  if (x.energy_wh != null) bits.push(`${fmtNum(x.energy_wh, " Wh", 1)}`);
+  if (x.hit_mean != null) bits.push(`hit ${Math.round(x.hit_mean)}%`);
+  if (x.idle_pct != null) bits.push(`idle ${Math.round(x.idle_pct)}%`);
+  let line = `${x.date} · ${bits.join(" · ")}`;
+  if (prev && prev.requests) {
+    const d = ((x.requests - prev.requests) / prev.requests) * 100;
+    line += ` · ${fmtDelta(d)} req vs ${prev.date}`;
+  }
+  sel.textContent = line;
+}
+
+function wireScrub() {
+  const track = $("scrub");
+  if (!track) return;
+  const pick = (e) => {
+    if (!days.length) return;
+    const r = track.getBoundingClientRect();
+    if (!r.width) return;
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    selectDay(Math.round(frac * (days.length - 1)), false);
+  };
+  let scrubbing = false;
+  track.addEventListener("pointerdown", (e) => {
+    scrubbing = true;
+    pick(e);
+  });
+  track.addEventListener("pointermove", (e) => {
+    if (scrubbing) pick(e);
+  });
+  track.addEventListener("pointerup", () => (scrubbing = false));
+}
+
+// ---------- Layout save/reset buttons ----------
+function wireLayoutButtons() {
+  const save = $("layout-save");
+  if (save) save.addEventListener("click", () => persistOrder());
+  const reset = $("layout-reset");
+  if (reset) {
+    reset.addEventListener("click", () => {
+      localStorage.removeItem(ORDER_KEY);
+      applyOrder(DEFAULT_ORDER);
+    });
+  }
+}
+
 async function refresh() {
   let data;
   try {
@@ -673,13 +835,16 @@ async function refresh() {
   renderLog(data.log);
   renderEndpoints(data.endpoints);
   renderHero(data.throughput, data.power, data.context, data.cache);
+  renderHistory(data.periods, data.daily);
 }
 
 async function wireDragDrop() {
-  for (const cls of ["masonry", "band"]) {
-    const container = document.querySelector(`.${cls}`);
-    if (container) wireContainer(container);
-  }
+  containers = ["masonry", "band"].map((cls) => document.querySelector(`.${cls}`)).filter(Boolean);
+  slotEl = document.createElement("div");
+  slotEl.className = "drop-slot";
+  slotEl.id = "drop-slot";
+  // Detached until a drag places it, so it never renders or takes a11y order.
+  for (const container of containers) wireContainer(container);
 }
 
 async function init() {
@@ -688,6 +853,8 @@ async function init() {
   document.documentElement.style.setProperty("--poll-ms", `${REFRESH_MS}ms`);
   restoreOrder();
   wireDragDrop();
+  wireScrub();
+  wireLayoutButtons();
   tickClock();
   wireLogReveal();
   await refresh();

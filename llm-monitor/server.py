@@ -64,6 +64,7 @@ DB_PATH = str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
 DB_MAX_ROWS = 20000
 DB_PRUNE_EVERY = 500
 DB_WINDOW_S = 3600  # the two analysis windows (recent vs previous)
+DB_DAILY_MAX = 400  # finalized days kept in the rollup table (covers 13+ months)
 
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
@@ -572,6 +573,15 @@ def db_init():
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
+    try:
+        con.execute(
+            "CREATE TABLE day (d INTEGER, polls INTEGER, span_s REAL, reqs INTEGER,"
+            " prompt INTEGER, reused INTEGER, output INTEGER, tok_mean REAL, tok_max REAL,"
+            " prefill_mean REAL, hit_mean REAL, accept_mean REAL, power_mean REAL,"
+            " energy_wh REAL, idle_pct REAL, hours TEXT)"
+        )
+    except sqlite3.OperationalError:
+        pass  # the table survived from a previous run
     return con
 
 
@@ -614,6 +624,191 @@ def db_prune(con):
         con.commit()
 
 
+def cumulative_delta(rows, idx):
+    """Span total from a cumulative counter that may reset mid-span.
+
+    The engine's counters reset when it restarts, so a plain last-minus-first can
+    go negative (or swallow a whole session). Split at each decrease and sum the
+    segments; the first segment contributes only its own movement, since the
+    counter's baseline predates recording.
+    """
+    total = 0
+    seg_start = None
+    prev = None
+    for r in rows:
+        v = r[idx]
+        if v is None:
+            continue
+        if prev is None or v < prev:
+            if prev is not None and seg_start is not None:
+                total += prev - seg_start
+            seg_start = v
+        prev = v
+    if prev is not None and seg_start is not None:
+        total += prev - seg_start
+    return total
+
+
+def day_aggregates(con, lo, hi):
+    """Summarise one [lo, hi) span of poll rows (a UTC day slice).
+
+    Cumulative counters make a span's real work last-minus-first, split at
+    counter resets (see cumulative_delta); the per-poll columns give means/max
+    directly. Also returns 24 hourly request counts so the day scrubber can
+    draw a day's activity without keeping per-hour rows.
+    """
+    rows = con.execute(
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens,"
+        " reused, output_tokens, power_w, busy FROM poll WHERE t >= ? AND t < ?",
+        (lo, hi)).fetchall()
+    if len(rows) < 2:
+        return None
+
+    def avg(i):
+        vals = [r[i] for r in rows if r[i] is not None]
+        return sum(vals) / len(vals) if vals else None
+
+    power_vals = [r[9] for r in rows if r[9] is not None]
+    span = max(1e-9, rows[-1][0] - rows[0][0])
+    hours = []
+    for h in range(24):
+        seg = [r for r in rows if int((r[0] - lo) // 3600) == h]
+        hours.append(cumulative_delta(seg, 5) if len(seg) >= 2 else 0)
+    return {
+        "polls": len(rows),
+        "span_s": round(span, 1),
+        "requests": cumulative_delta(rows, 5),
+        "prompt_tokens": cumulative_delta(rows, 6),
+        "reused": cumulative_delta(rows, 7),
+        "output_tokens": cumulative_delta(rows, 8),
+        "tok_s_mean": avg(1),
+        "tok_s_max": max((r[1] for r in rows if r[1] is not None), default=None),
+        "prefill_mean": avg(2),
+        "hit_mean": avg(3),
+        "accept_mean": avg(4),
+        "power_mean": avg(9),
+        "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
+        "idle_pct": round(100 * sum(1 for r in rows if not r[10]) / len(rows), 1),
+        "hours": hours,
+    }
+
+
+def db_finalize_days(con):
+    """Freeze ended UTC days into the rollup table before pruning can drop them.
+
+    The poll table only holds ~28h of rows, so daily/weekly/monthly views need a
+    tiny per-day table written at the day boundary. Days with no polls are skipped
+    (a gap, honestly rendered as missing).
+    """
+    latest = con.execute("SELECT t FROM poll ORDER BY t DESC LIMIT 1").fetchone()
+    oldest = con.execute("SELECT t FROM poll ORDER BY t ASC LIMIT 1").fetchone()
+    if not latest or not oldest:
+        return
+    today = int(latest[0] // 86400)
+    have = {r[0] for r in con.execute("SELECT d FROM day")}
+    for d in range(max(int(oldest[0] // 86400), today - DB_DAILY_MAX), today):
+        if d in have:
+            continue
+        agg = day_aggregates(con, d * 86400, (d + 1) * 86400)
+        if not agg:
+            continue
+        con.execute(
+            "INSERT INTO day (d, polls, span_s, reqs, prompt, reused, output,"
+            " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean,"
+            " energy_wh, idle_pct, hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (d, agg["polls"], agg["span_s"], agg["requests"], agg["prompt_tokens"],
+             agg["reused"], agg["output_tokens"], agg["tok_s_mean"], agg["tok_s_max"],
+             agg["prefill_mean"], agg["hit_mean"], agg["accept_mean"], agg["power_mean"],
+             agg["energy_wh"], agg["idle_pct"], json.dumps(agg["hours"])),
+        )
+    con.commit()
+
+
+def _iso_day(d):
+    return datetime.fromtimestamp(d * 86400, timezone.utc).strftime("%Y-%m-%d")
+
+
+def db_daily(con, limit=DB_DAILY_MAX):
+    """Finalized days oldest-first plus today's live partial, as day dicts."""
+    out = []
+    for r in con.execute(
+        "SELECT d, polls, span_s, reqs, prompt, reused, output,"
+        " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean,"
+        " energy_wh, idle_pct, hours FROM day ORDER BY d"
+    ):
+        out.append({
+            "d": r[0], "date": _iso_day(r[0]), "polls": r[1], "requests": r[3],
+            "prompt_tokens": r[4], "reused": r[5], "output_tokens": r[6],
+            "tok_s_mean": r[7], "tok_s_max": r[8], "prefill_mean": r[9],
+            "hit_mean": r[10], "accept_mean": r[11], "power_mean": r[12],
+            "energy_wh": r[13], "idle_pct": r[14], "hours": json.loads(r[15]),
+        })
+    now = datetime.now(timezone.utc).timestamp()
+    d = int(now // 86400)
+    agg = day_aggregates(con, d * 86400, now + 1)
+    if agg:
+        agg["d"] = d
+        agg["date"] = _iso_day(d)
+        out.append(agg)
+    return out[-limit:]
+
+
+def db_periods(dlist):
+    """Today vs yesterday, this week vs previous, this month vs previous.
+
+    Weeks start Monday (UTC); months are calendar months. Means are poll-weighted
+    across the days in a period, so a quiet day cannot skew an average.
+    """
+    if not dlist:
+        return None
+    by_d = {x["d"]: x for x in dlist}
+    today = dlist[-1]["d"]
+
+    def span(day_indices):
+        ds = [by_d[d] for d in day_indices if d in by_d]
+        if not ds:
+            return None
+        polls = sum(x["polls"] for x in ds) or 1
+
+        def wmean(key):
+            pairs = [(x[key], x["polls"]) for x in ds if x[key] is not None]
+            tot = sum(w for _, w in pairs)
+            return sum(v * w for v, w in pairs) / tot if tot else None
+
+        return {
+            "requests": sum(x["requests"] or 0 for x in ds),
+            "prompt_tokens": sum(x["prompt_tokens"] or 0 for x in ds),
+            "output_tokens": sum(x["output_tokens"] or 0 for x in ds),
+            "energy_wh": round(sum(x["energy_wh"] or 0 for x in ds), 2),
+            "tok_s_mean": wmean("tok_s_mean"),
+            "tok_s_max": max((x["tok_s_max"] for x in ds if x["tok_s_max"] is not None), default=None),
+            "hit_mean": wmean("hit_mean"),
+            "accept_mean": wmean("accept_mean"),
+            "idle_pct": round(sum(x["idle_pct"] * x["polls"] for x in ds) / polls, 1),
+            "days": len(ds),
+        }
+
+    def month_key(d):
+        dt = datetime.fromtimestamp(d * 86400, timezone.utc)
+        return (dt.year, dt.month)
+
+    now_dt = datetime.fromtimestamp(today * 86400, timezone.utc)
+    first_ts = (today - (now_dt.day - 1)) * 86400
+    prev_dt = datetime.fromtimestamp(first_ts - 86400, timezone.utc)
+    cur_month = (now_dt.year, now_dt.month)
+    prev_month = (prev_dt.year, prev_dt.month)
+    wk = today - (today + 3) % 7  # Monday of the current week (epoch day 0 is a Thursday)
+    return {
+        "day": {"current": span([today]), "previous": span([today - 1]),
+                "current_label": "Today", "previous_label": "Yesterday"},
+        "week": {"current": span(range(wk, today + 1)), "previous": span(range(wk - 7, wk)),
+                 "current_label": "This week", "previous_label": "Prev week"},
+        "month": {"current": span([x["d"] for x in dlist if month_key(x["d"]) == cur_month]),
+                  "previous": span([x["d"] for x in dlist if month_key(x["d"]) == prev_month]),
+                  "current_label": "This month", "previous_label": "Prev month"},
+    }
+
+
 def db_analysis(con, window_s=DB_WINDOW_S):
     """Compare the recent window against the one before it.
 
@@ -639,19 +834,15 @@ def db_analysis(con, window_s=DB_WINDOW_S):
             vals = [r[i] for r in window if r[i] is not None]
             return sum(vals) / len(vals) if vals else None
 
-        def delta(i):
-            a, b = first[i], last[i]
-            return (b - a) if (a is not None and b is not None) else None
-
         power_vals = [r[10] for r in window if r[10] is not None]
         out[label] = {
             "polls": len(window),
             "span_s": round(span, 1),
-            "requests": delta(6),
-            "prompt_tokens": delta(7),
-            "reused": delta(8),
-            "output_tokens": delta(9),
-            "req_per_min": round((delta(6) or 0) / span * 60, 2),
+            "requests": cumulative_delta(window, 6),
+            "prompt_tokens": cumulative_delta(window, 7),
+            "reused": cumulative_delta(window, 8),
+            "output_tokens": cumulative_delta(window, 9),
+            "req_per_min": round((cumulative_delta(window, 6) or 0) / span * 60, 2),
             "tok_s_mean": avg(2),
             "tok_s_max": max((r[2] for r in window if r[2] is not None), default=None),
             "prefill_mean": avg(3),
@@ -729,13 +920,14 @@ def telemetry(stats):
         con = db_init()
         _DB_WRITES += 1
         db_record(con, stats)
+        db_finalize_days(con)  # before pruning, so a closed day is captured
         if _DB_WRITES % DB_PRUNE_EVERY == 0:
             db_prune(con)
         rows = db_rows(con)
-        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}
+        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}, db_daily(con)
     except Exception as err:
         print(f"[telemetry] disabled: {err}")
-        return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}
+        return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}, None
     finally:
         if con is not None:
             con.close()
@@ -933,8 +1125,10 @@ def build_stats():
 
     # Telemetry is the last step: it records this poll, then reads the history back so
     # the series and the analysis include the current sample.
-    rows, analysis, telemetry_status = telemetry(stats)
+    rows, analysis, telemetry_status, daily = telemetry(stats)
     stats["telemetry"] = telemetry_status
+    stats["daily"] = daily or []
+    stats["periods"] = db_periods(stats["daily"]) if daily else None
     if rows:
         stats["history"] = {
             "tok_s": [r[1] for r in rows],

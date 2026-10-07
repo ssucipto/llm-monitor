@@ -72,15 +72,26 @@ files and log tails. Sections:
   full profile inventory with the active one highlighted.
 - **System log** — merged tails of `watchdog.log`, `autostart.log`, `server.log.err`,
   collapsed with `hidden="until-found"`.
+- **History** — daily/weekly/monthly rollups from a tiny per-day table in the SQLite
+  side channel, with period comparisons (today vs yesterday, this week vs previous,
+  this month vs previous, each with a % delta). A **day scrubber** lets you slide a
+  marker (or click) across recorded days to inspect any past day's requests, tok/s,
+  energy, hit-rate and idle %, with its delta vs the day before. Because the poll
+  table is bounded to ~28h, ended days are frozen into the rollup at each day
+  boundary before pruning can drop them, so weekly/monthly history survives uptime
+  the raw polls cannot.
 
 ## Drag-and-drop layout
 
 Any panel can be dragged by its heading and dropped anywhere in the card masonry
 or the history band — document order drives both, so a drop reorders the DOM and
-the arrangement is remembered in `localStorage` between reloads. The drop point's
-nearest sibling decides the new slot, and a FLIP animation glides the panels to
-their places. `?reset=1` in the URL clears the saved arrangement and restores the
-default priority order. Touch is excluded (so page scrolling is never hijacked),
+the latest positions are remembered automatically in `localStorage` between reloads.
+While dragging, a **dashed slot** shows exactly where the panel will land and the
+other panels part around it, so the drop point is unambiguous before you release;
+the dragged panel eases toward the pointer for a fluid follow, and a card can land
+in the band or vice versa. The footer **Save layout** button commits the arrangement
+explicitly and **Reset layout** restores the default priority order (`?reset=1` in
+the URL clears the save too). Touch is excluded (so page scrolling is never hijacked),
 and the hero band is fixed.
 
 ## `/api/stats` shape
@@ -106,6 +117,8 @@ and the hero band is fixed.
   "totals":   {"since","requests","prompt_tokens","reused","output_tokens","prompt_ms","decode_ms","drafts_offered","drafts_accepted"},
   "analysis": {"recent":{"polls","span_s","requests","prompt_tokens","reused","output_tokens","req_per_min","tok_s_mean","tok_s_max","prefill_mean","hit_pct_mean","accept_pct_mean","power_w_mean","energy_wh","idle_pct"},"previous":{...}},
   "telemetry": {"ok":true,"rows":N} | {"ok":false,"error":"OperationalError: ..."},
+  "daily":     [{"d","date","polls","requests","prompt_tokens","reused","output_tokens","tok_s_mean","tok_s_max","prefill_mean","hit_mean","accept_mean","power_mean","energy_wh","idle_pct","hours":[24]}],
+  "periods":   {"day":{"current":{...},"previous":{...},"current_label","previous_label"},"week":{...},"month":{...}},
   "switch":   {"engine_active","llama_active_profile","llama_last_profile","owner","pid","profiles"},
   "log":      [{"level","iso","msg","source"}],
   "endpoints":{"health","metrics","slots","models","status"},

@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.4
+  version: 0.1.5
   started: 2026-10-07
   status: in_progress
   current_milestone: M1
@@ -65,6 +65,22 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-07
+    description: |
+      Audited and rebuilt drag-and-drop (visible drop slot, fluid follow, cross-container
+      drops, document-level pointer tracking) and added the daily/weekly/monthly History
+      system with period comparisons and a day scrubber. Fixed a real bug: cumulative
+      counters reset on engine restart, so day/window deltas could go negative.
+    items:
+      - "✅ cumulative_delta splits at counter resets; applied to daily rollups + db_analysis + req_per_min (verified 351 req / 25 tok/s positive)"
+      - "✅ drag: pointermove/up on document (no freeze over hero/gaps/footer), cross-container drops work"
+      - "✅ visible dashed drop slot with panels parting around it; dragged panel eases to pointer"
+      - "✅ History panel: per-day SQLite rollup finalized at day boundary before pruning (survives ~28h poll window)"
+      - "✅ period comparisons: today vs yesterday, this week vs prev, this month vs prev (% delta each)"
+      - "✅ day scrubber: slide marker / click to inspect any recorded day + delta vs prior day"
+      - "✅ footer Save/Reset layout buttons; arrangement auto-persists on every commit"
+      - "📋 previous-period values are None until enough days accumulate (DB holds ~9.4h today)"
+
   - date: 2026-10-07
     description: |
       Added drag-and-drop panel reordering: grab any panel by its heading and

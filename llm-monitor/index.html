@@ -42,6 +42,7 @@
       <li><a href="#spec">Speculative</a></li>
       <li><a href="#requests">Requests</a></li>
       <li><a href="#analysis">Telemetry</a></li>
+      <li><a href="#history">History</a></li>
       <li><a href="#switch">Switch</a></li>
       <li><a href="#log">System log</a></li>
     </ol>
@@ -309,6 +310,28 @@
       </dl>
     </section>
 
+    <section class="panel history" id="history" aria-labelledby="history-h">
+      <h2 id="history-h">History</h2>
+      <p class="hist__window" id="hist-window">awaiting history</p>
+      <dl class="hist__periods">
+        <div class="fact"><dt>Day</dt><dd id="hist-day">--</dd></div>
+        <div class="fact"><dt>Week</dt><dd id="hist-week">--</dd></div>
+        <div class="fact"><dt>Month</dt><dd id="hist-month">--</dd></div>
+      </dl>
+      <figure class="spark spark--hist">
+        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Requests per day over recorded history">
+          <polygon class="spark__area" id="hist-area" points="" fill="url(#spark-fill)" />
+          <polyline class="spark__line" id="hist-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          <circle class="spark__head" id="hist-head" r="1.4" cx="0" cy="30" fill="currentColor" />
+        </svg>
+        <figcaption class="spark__caption" id="hist-caption">requests per day, recorded history</figcaption>
+      </figure>
+      <div class="scrub" id="scrub" role="slider" aria-label="Slide to select a recorded day" aria-valuemin="0" aria-valuenow="0">
+        <span class="scrub__marker" id="scrub-marker"></span>
+      </div>
+      <p class="hist__selected" id="hist-selected">slide the marker (or click a day) to inspect that day</p>
+    </section>
+
     <section class="panel log" id="log" hidden="until-found" aria-labelledby="log-h">
       <h2 id="log-h">System log</h2>
       <ol class="log__list" id="log-list"></ol>
@@ -317,7 +340,7 @@
   </main>
 
   <footer class="footer">
-    <p class="footer__hint">Drag any panel by its heading to place it anywhere; the arrangement is remembered between reloads (<code>?reset=1</code> restores the default order).</p>
+    <p class="footer__hint">Drag any panel by its heading to place it anywhere; the latest positions are remembered automatically. <button class="footer__save" id="layout-save">Save layout</button> <button class="footer__reset" id="layout-reset">Reset layout</button></p>
     <p class="endpoints__status" id="endpoints-status">endpoints — health -- · metrics -- · slots -- · models -- · status --</p>
     <p>Reads the live engine on <code>http://127.0.0.1:8080</code> (<code>/health</code>, <code>/metrics</code>,
       <code>/status</code>, <code>/slots</code>, <code>/props</code>, <code>/v1/models</code>) plus the Hermes workspace state files and log tails.

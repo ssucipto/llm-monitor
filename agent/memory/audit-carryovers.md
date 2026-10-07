@@ -116,3 +116,66 @@ carryovers:
     fix_applied_date: null
     verified_in_audit: 3
     notes: deliberately NOT shortcut in audit-3/review — a blanket window label would misstate the per-series x-axis. Correct fix threads a per-series window through drawSpark. Left open, not half-done
+  - id: a4-01
+    audit: 4
+    finding: drag froze over hero/gaps/footer and cross-container drops failed — pointermove/up were bound to the container, not the page
+    location: llm-monitor/app.js:246
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: pointermove/pointerup/keydown(Escape) now on document; hitContainer() rect hit-test per move picks the target container
+  - id: a4-02
+    audit: 4
+    finding: drop point ambiguous — nothing showed where a released panel would land
+    location: llm-monitor/app.js:placeSlot
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: dashed .drop-slot inserted at the candidate slot and other panels FLIP-part around it; slot detached until placed (no hidden attr)
+  - id: a4-03
+    audit: 4
+    finding: a plain click (no movement) left the preview slot in the DOM
+    location: llm-monitor/app.js:commitDrag
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: slotEl.remove() precedes the !moved early return
+  - id: a4-04
+    audit: 4
+    finding: FLIP fallback leaked an inline transition that double-animated subsequent moves
+    location: llm-monitor/app.js
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: fallback removed (Element.animate is universal in target browsers); transition scoped to .panel.dragging only
+  - id: a4-05
+    audit: 4
+    finding: ~28h poll-window cap made weekly/monthly history impossible — nothing survived pruning
+    location: llm-monitor/server.py
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: tiny per-day rollup table finalized at each day boundary BEFORE pruning (db_finalize_days); DB_DAILY_MAX=400 covers 13+ months
+  - id: a4-06
+    audit: 4
+    finding: day/window deltas went negative (e.g. -263 req) when engine counters reset on restart
+    location: llm-monitor/server.py:627
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: cumulative_delta splits at each decrease and sums segments; first segment contributes only its own movement; applied in day_aggregates, db_analysis, req_per_min
+  - id: a4-07
+    audit: 4
+    finding: req_per_min NameError after removing the old delta() helper (caught only by live-DB test)
+    location: llm-monitor/server.py:838
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 4
+    notes: req_per_min now computed from cumulative_delta(window, 6) / span * 60

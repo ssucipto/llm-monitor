@@ -294,6 +294,83 @@ body {
   margin: 0 0 16px;
 }
 
+/* The previewed drop slot: a dashed outline where the dragged panel will land,
+ * with the other panels parted around it, so the drop point is unambiguous. */
+.drop-slot {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  min-height: 46px;
+  margin: 0 0 16px;
+  pointer-events: none;
+}
+
+/* While dragging, the panel eases toward the pointer for a fluid follow. The
+ * rule only applies while .dragging is set, so the commit FLIP (class already
+ * removed) is not double-animated by a CSS transition. */
+.panel.dragging {
+  transition: transform 120ms ease-out;
+}
+
+/* ---------- History panel ---------- */
+.hist__window {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.hist__selected {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.spark--hist svg { color: var(--accent); }
+
+/* The day scrubber: a track with a draggable marker; its x-position selects a
+ * recorded day. */
+.scrub {
+  position: relative;
+  height: 26px;
+  margin: 12px 0 0;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.scrub__marker {
+  position: absolute;
+  left: 0%;
+  top: 2px;
+  width: 4px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  pointer-events: none;
+}
+
+/* ---------- Footer layout buttons ---------- */
+.footer__save,
+.footer__reset {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.footer__save:hover,
+.footer__reset:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .panel h2 {
   margin: 0 0 12px;
   font-size: 1rem;
@@ -316,7 +393,8 @@ dl.cache__facts,
 dl.spec__facts,
 dl.switch__facts,
 dl.power__facts,
-dl.analysis__facts {
+dl.analysis__facts,
+dl.hist__periods {
   display: grid;
   gap: 8px 14px;
   grid-template-columns: auto 1fr;
