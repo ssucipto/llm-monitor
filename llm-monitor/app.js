@@ -692,12 +692,83 @@ function renderEndpoints(endpoints) {
     .map((k) => `${k} ${mark(ep[k])}`).join(" · ");
 }
 
-function renderHero(throughput, power, context, cache) {
+function renderHero(throughput, power, context, cache, status) {
   const tok = throughput && throughput.now;
   setText("hero-tok", tok != null ? `${tok.toFixed(1)}` : "--");
+  const state = status && status.state;
+  setText("hero-state", stateName(state));
   setText("hero-power", power && power.total_w != null ? `${power.total_w}` : "--");
-  setText("hero-ctx", context && context.pct != null ? `${context.pct}` : "--");
+  // Two decimals: the gauge rounds to whole percents, but the headline reading
+  // should not hide a 0.4-point change in a 200k-token window.
+  setText("hero-ctx", context && context.pct != null ? `${context.pct.toFixed(2)}` : "--");
   setText("hero-hit", cache && cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}` : "--");
+}
+
+// A hero meter: a custom bar (not the native <meter>, which cannot be styled
+// richly) that eases to a reading. The fill width is set inline; a CSS transition
+// animates it, and the reduced-motion block at the bottom of style.css zeroes the
+// transition duration so it snaps instead. Ceiling is the rated prefill envelope
+// for this model class on this GPU; only extreme tiny-span outliers peg it.
+function setMeter(id, val, ceiling = 2000) {
+  const meter = $(id);
+  if (!meter) return;
+  const fill = meter.firstElementChild;
+  const pct = val == null ? 0 : Math.max(0, Math.min(1, val / ceiling));
+  meter.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+  if (fill) fill.style.width = `${(pct * 100).toFixed(1)}%`;
+}
+
+function stateName(state) {
+  return {
+    reading: "Reading",
+    generating: "Generating",
+    processing: "Processing",
+    queued: "Queued",
+    idle: "Idle",
+  }[state || ""] || "--";
+}
+
+// The prefill speed meter lives in the sticky top bar (not the hero) so it stays
+// pinned at the top while the page scrolls. renderTopbar takes throughput too.
+function renderTopbar(engine, throughput) {
+  const pre = throughput && throughput.prefill;
+  setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
+  setMeter("top-prefill-meter", pre);
+  const host = $("top-identity");
+  if (!host) return;
+  const svc = engine.service || engine.active;
+  const mark = $("top-mark");
+  const engineEl = $("top-engine");
+  const modelEl = $("top-model");
+  const known = svc === "strata" || svc === "vulkan";
+  if (mark) {
+    mark.innerHTML = brandMark(svc, engine.port_open);
+    mark.classList.remove("strata", "vulkan", "down");
+    if (!engine.port_open) mark.classList.add("down");
+    else if (svc === "strata") mark.classList.add("strata");
+    else if (svc === "vulkan") mark.classList.add("vulkan");
+  }
+  if (engineEl) {
+    engineEl.textContent = known ? (svc === "strata" ? "Strata Coder" : "Vulkan llama.cpp") : String(svc || "unknown");
+    engineEl.classList.remove("strata", "vulkan", "down");
+    if (!engine.port_open) engineEl.classList.add("down");
+    else if (svc === "strata") engineEl.classList.add("strata");
+    else if (svc === "vulkan") engineEl.classList.add("vulkan");
+  }
+  if (modelEl) modelEl.textContent = engine.model || "--";
+}
+
+function brandMark(svc, portOpen) {
+  if (!portOpen) return "";
+  if (svc === "strata") {
+    // Three stacked layers: the strata the engine reads its context from.
+    return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 20 9 12 14 4 9Z"/><path d="M4 13 12 18 20 13" opacity=".55"/><path d="M4 17 12 22 20 17" opacity=".3"/></svg>`;
+  }
+  if (svc === "vulkan") {
+    // The Vulkan triangle-ish mark rendered as a bold V over a ring.
+    return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" opacity=".4"/><path d="M6 5 12 19 18 5"/></svg>`;
+  }
+  return "";
 }
 
 // ---------- History (daily rollups, period comparisons, day scrubber) ----------
@@ -834,7 +905,8 @@ async function refresh() {
   renderSwitch(data.switch);
   renderLog(data.log);
   renderEndpoints(data.endpoints);
-  renderHero(data.throughput, data.power, data.context, data.cache);
+  renderHero(data.throughput, data.power, data.context, data.cache, data.status);
+  renderTopbar(data.engine, data.throughput);
   renderHistory(data.periods, data.daily);
 }
 

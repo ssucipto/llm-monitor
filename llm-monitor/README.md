@@ -32,6 +32,13 @@ fabricated numbers).
 The backend reads the engine's own HTTP endpoints plus the Hermes workspace state
 files and log tails. Sections:
 
+- **Header identity** — the engine that owns the port and the model it is serving,
+  set large and bold in the top bar with a monogram mark (stacked layers for Strata,
+  a V over a ring for Vulkan), colored with the engine's own accent. The prefill
+  speed reading lives here too, with a compact gradient speed meter pinned at the
+  top so it stays visible while the page scrolls.
+- **At a glance** — the hero band under the header: decode tok/s, model state (Reading /
+  Generating / Queued / Idle), watts, % context (two decimals), and % cache hit.
 - **Engine** — which service owns the port (Strata / Vulkan), model, build, loaded
   state, model path. From `/health`, `/v1/models`, `/props`.
 - **Live inference** — current state (idle/processing), phase, prompt/generated

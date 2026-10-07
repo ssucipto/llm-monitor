@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.5
+  version: 0.1.6
   started: 2026-10-07
   status: in_progress
   current_milestone: M1
@@ -65,6 +65,17 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-07
+    description: |
+      Header identity line (engine + model, bold, per-engine monogram) and an
+      expanded hero band (prefill tok/s + model state, % context to 2 decimals).
+    items:
+      - "✅ top bar shows engine name + model large/bold with an inline-SVG mark (Strata layers / Vulkan V), engine-accent colored"
+      - "✅ hero band: decode tok/s, model state, watts, % context (2 decimals), % cache hit"
+      - "✅ prefill tok/s + gradient speed meter moved into the sticky header bar (pinned at top while scrolling)"
+      - "✅ stateName() maps reading/generating/processing/queued/idle to Reading/Generating/Processing/Queued/Idle"
+      - "✅ gates: node --check + py_compile pass; HTML div balance 76/76, no dup ids, CSS braces 0"
+
   - date: 2026-10-07
     description: |
       Audited and rebuilt drag-and-drop (visible drop slot, fluid follow, cross-container

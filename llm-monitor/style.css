@@ -123,6 +123,60 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* The engine + model identity is the headline of the whole page: what is running
+ * right now. It gets the largest type on the bar and the engine's own accent. */
+.topbar__identity {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.brand__mark {
+  display: inline-flex;
+  color: var(--text-dim);
+}
+
+.brand__mark.strata {
+  color: var(--strata);
+}
+
+.brand__mark.vulkan {
+  color: var(--vulkan);
+}
+
+.brand__mark.down {
+  color: var(--down);
+}
+
+.brand__engine {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: .01em;
+  line-height: 1.1;
+}
+
+.brand__engine.strata {
+  color: var(--strata);
+}
+
+.brand__engine.vulkan {
+  color: var(--vulkan);
+}
+
+.brand__engine.down {
+  color: var(--down);
+}
+
+.brand__model {
+  font-family: var(--mono);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .02em;
+}
+
 .clock {
   color: var(--text-dim);
   font-size: 0.9rem;
@@ -229,8 +283,9 @@ body {
 
 .hero__stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(5, auto);
+  gap: 14px 18px;
+  justify-content: center;
   margin: 12px 0 0;
 }
 
@@ -241,16 +296,62 @@ body {
 }
 
 .hero__value {
-  font-size: 1.9rem;
+  font-size: 1.55rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+.hero__state {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .02em;
 }
 
 .hero__unit {
   font-size: .75rem;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+/* The prefill speed meter lives in the sticky top bar so it stays pinned at the
+ * top while the page scrolls. A custom bar (the native <meter> cannot be gradient-lit),
+ * eased by a CSS transition on width; the reduced-motion block snaps it instead. */
+.topbar__prefill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.topbar__value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.topbar__unit {
+  font-size: .7rem;
+  color: var(--text-dim);
+}
+
+.topbar__meter {
+  display: block;
+  width: 96px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--bg-elev-2);
+  overflow: hidden;
+}
+
+.topbar__meter__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  box-shadow: 0 0 6px rgba(88, 166, 255, 0.5);
+  transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .masonry {
@@ -980,10 +1081,10 @@ body::before {
     column-count: 1;
   }
   .hero__stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, auto);
   }
   .hero__value {
-    font-size: 1.5rem;
+    font-size: 1.35rem;
   }
   .hardware__metrics,
   .gpu__metrics {

@@ -4,6 +4,27 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.6] - 2026-10-07
+
+### Added
+- **Header identity line**: the engine that owns the port and the model it is
+  serving now read large and bold in the top bar, with a monogram mark drawn per
+  engine (stacked layers for Strata, a V over a ring for Vulkan) colored with the
+  engine's own accent. Neither engine ships a logo asset, so the marks are inline
+  SVG drawn for this dashboard.
+- **Hero band gains prefill tok/s and model state** (Reading / Generating / Queued /
+  Idle), so the headline readings are decode speed, prefill speed, state, watts,
+  % context, % cache hit. The prefill reading carries a gradient speed meter that
+  eases to the value (custom bar, not the native `<meter>`, which cannot be gradient-lit).
+- The prefill speed meter was then **moved into the sticky header bar** (with its
+  number) so it stays pinned at the top while the page scrolls, rather than sitting
+  in the hero band.
+
+### Changed
+- The hero's % context reading now rounds to two decimals instead of printing the
+  raw float; the gauge still rounds to whole percents.
+- README documents the header identity line and the expanded hero band.
+
 ## [0.1.5] - 2026-10-07
 
 ### Fixed

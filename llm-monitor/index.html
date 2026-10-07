@@ -21,11 +21,17 @@
   <header class="topbar">
     <hgroup class="topbar__brand">
       <h1 class="topbar__title">Local LLM Monitor</h1>
-      <p class="topbar__tagline">Live status for the engine on port 8080 — Strata Coder or Vulkan llama.cpp</p>
+      <p class="topbar__tagline">Live status for the engine on port 8080</p>
     </hgroup>
+    <p class="topbar__identity" id="top-identity">
+      <span class="brand__mark" id="top-mark" aria-hidden="true"></span>
+      <strong class="brand__engine" id="top-engine">--</strong>
+      <span class="brand__model" id="top-model">--</span>
+    </p>
     <p class="topbar__meta">
       <time class="clock" id="clock">--:--:--</time>
       <span class="refresh-badge" id="refresh-badge" role="status">Booting</span>
+      <span class="topbar__prefill"><data class="topbar__value" id="top-prefill" value="0">--</data><span class="topbar__unit">prefill tok/s</span><span class="topbar__meter" id="top-prefill-meter" role="img" aria-label="prefill speed meter"><span class="topbar__meter__fill"></span></span></span>
     </p>
   </header>
 
@@ -53,6 +59,7 @@
       <h2 id="hero-h">At a glance</h2>
       <div class="hero__stats">
         <div class="hero__stat"><data class="hero__value" id="hero-tok" value="0">--</data><span class="hero__unit">tok/s</span></div>
+        <div class="hero__stat"><span class="hero__state" id="hero-state">idle</span><span class="hero__unit">model state</span></div>
         <div class="hero__stat"><data class="hero__value" id="hero-power" value="0">--</data><span class="hero__unit">watts</span></div>
         <div class="hero__stat"><data class="hero__value" id="hero-ctx" value="0">--</data><span class="hero__unit">% context</span></div>
         <div class="hero__stat"><data class="hero__value" id="hero-hit" value="0">--</data><span class="hero__unit">% cache hit</span></div>
