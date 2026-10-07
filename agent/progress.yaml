@@ -1,0 +1,189 @@
+# Project Progress Tracking
+# This file tracks the overall progress of the project, including milestones, tasks, and recent work.
+# Update this file regularly as work progresses.
+
+project:
+  name: llm-monitor
+  version: 0.1.1
+  started: 2026-10-07
+  status: in_progress
+  current_milestone: M1
+  description: |
+    A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
+    or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
+    workspace state, and adds a power model, SQLite telemetry, and windowed
+    performance analysis. Built on the ACP Enhanced framework.
+
+# Milestones represent major phases of the project
+milestones:
+  - id: M1
+    name: Dashboard Bootstrap
+    priority: 0
+    file: null
+    status: completed
+    progress: 100
+    started: 2026-10-07
+    completed: 2026-10-07
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Initial scaffold shipped in commit 85694bc (bootstrap) and fea5c7f
+      (identity). No milestone document exists; the milestone is tracked
+      here only.
+
+# Tasks are granular work items within milestones
+tasks:
+  milestone_1:
+    - id: task-1
+      name: Bootstrap dashboard and ACP framework
+      priority: 0
+      status: completed
+      started: 2026-10-07
+      file: null
+      estimated_hours: 8
+      actual_hours: null
+      completed_date: 2026-10-07
+      notes: |
+        Scaffold, identity, and ACP install committed as 85694bc and fea5c7f.
+
+# Documentation tracking
+documentation:
+  design_documents: 0
+  milestone_documents: 0
+  pattern_documents: 0
+  task_documents: 0
+  last_updated: 2026-10-07
+
+# Overall progress metrics
+progress:
+  planning: 100
+  implementation: 90
+  testing: 0
+  documentation: 80
+  overall: 85
+
+# Recent work log (most recent first)
+recent_work:
+  - date: 2026-10-07
+    description: |
+      Diagnosed and fixed the empty GPU/power trend bug, surfaced telemetry
+      status in the payload, and made the dashboard honest about why a series
+      is empty.
+    items:
+      - "✅ DB_PATH now .resolve()d — root cause of sqlite unable to open database file"
+      - "✅ telemetry() returns (rows, analysis, status); stats[telemetry] surfaced"
+      - "✅ renderAnalysis distinguishes telemetry off from awaiting history"
+      - "✅ falsy-zero trend guard (previous/recent requests presence, not truthiness)"
+      - "✅ dead duplicate ctx/cache/spec assignments removed in db_record"
+      - "✅ GPU panel caption explains empty readings on AMD HIP driver"
+      - "📋 a1-02 span-based grid redesign still open"
+      - "📋 a2-01 running :8090 process must be restarted to pick up the fix"
+      - "📋 r1-01 ACP CI harness absent — /acp-ci N/A for this repo"
+
+  - date: 2026-10-07
+    description: |
+      Project identity and ACP framework bootstrap.
+    items:
+      - "✅ Bootstrap llm-monitor project with ACP framework (85694bc)"
+      - "✅ Set project identity to llm-monitor (fea5c7f)"
+
+# Next steps (prioritized list)
+next_steps:
+  - Restart the dashboard on :8090 so the DB_PATH fix takes effect (kill old PID, relaunch python server.py 8090)
+  - a1-02: replace the fixed 2-col x 6-row grid area map with a span-based layout
+  - Decide on the ACP CI harness: install it or treat /acp-ci as N/A for this consumer repo
+  - Add a CHANGELOG.md entry for the 0.1.0 -> 0.1.1 patch bump
+
+# General notes and observations
+notes:
+  - "The ACP framework version (6.40.0) lives in AGENTS.md, CLAUDE.md, AGENT.md and identity.yml; keep it synced via /acp-sync. It is NOT bumped for project bug fixes."
+  - "The project's own version (0.1.0) is tracked in this file and CHANGELOG.md; there is no package manifest version for a stdlib-served dashboard."
+  - "GPU trend is empty by design on the AMD HIP driver — the engine returns zero gpu_* keys. It draws automatically on NVML builds."
+
+# Current blockers (remove when resolved)
+current_blockers:
+  - "a2-01: the running :8090 process predates the DB_PATH fix; trends stay empty until it is restarted"
+  - "r1-01: ACP CI harness (agent/configurables/ci.yml, scripts/, e2e/, .github/workflows/) absent, so /acp-ci --fast cannot run"
+
+# ── Recurring Tasks (v6.12.1+ M57) ──────────────────────────────
+# Scheduled periodic reviews surfaced at session start (AGENTS.md Step 4.5).
+# Each task has a cadence (frequency or event trigger) and can be
+# checked for overdue status: last_run > next_due = overdue.
+recurring_tasks:
+  # ── Time-based tasks ───────────────────────────────────────────
+  - id: weekly-code-review
+    command: /acp-review --report --carryover
+    frequency: weekly
+    executor: copilot
+    description: "Weekly code quality review"
+    # last_run: 2026-01-01
+    # next_due: 2026-01-08
+    # status: current
+
+  - id: weekly-integrity-scan
+    command: /acp-integrity --self --report --carryover
+    frequency: weekly
+    executor: copilot
+    description: "Weekly ACP framework integrity scan"
+    # last_run: 2026-01-01
+    # next_due: 2026-01-08
+    # status: current
+
+  - id: monthly-dependency-audit
+    command: /acp-integrity --rules dependencies
+    frequency: monthly
+    executor: deepseek-v4-pro
+    description: "Monthly dependency and supply chain audit"
+    # last_run: 2026-01-01
+    # next_due: 2026-02-01
+    # status: current
+
+  - id: quarterly-deep-scan
+    command: /acp-integrity --rules taint-flow,memory --report
+    frequency: quarterly
+    executor: claude-sonnet
+    description: "Quarterly deep semantic integrity scan"
+    # last_run: null
+    # next_due: 2026-04-01
+    # status: current
+
+  # ── Event-based tasks ──────────────────────────────────────────
+  - id: pre-commit-rule-audit
+    command: /acp-integrity --fast --ci
+    trigger: on-commit
+    executor: deepseek-v4-pro
+    description: "Pre-commit ACP rule file scan for Unicode injection"
+    # status: current
+
+# Team and contributors (if applicable)
+team:
+  - role: Lead Developer
+    name: Agent
+    focus: |
+      Closing out the telemetry/dashboard fix chain: validate, sync, update,
+      commit, and push.
+
+# Dependencies and integrations
+dependencies:
+  external_services:
+    - name: LLM engine on port 8080
+      status: configured
+      notes: |
+        Strata Coder or Vulkan llama.cpp; the dashboard reads /health /metrics
+        /status /slots /props /v1/models.
+  libraries:
+    - name: Python standard library
+      version: 3.x
+      purpose: |
+        http.server + sqlite3 only; no third-party packages.
+  infrastructure:
+    - name: Local SQLite telemetry
+      status: ready
+      notes: |
+        Bounded history (DB_MAX_ROWS 20000) beside server.py; gitignored.
+
+# Quality metrics (optional)
+quality:
+  test_coverage: 0
+  code_review_status: in

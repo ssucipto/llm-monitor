@@ -56,7 +56,11 @@ HTTP_TIMEOUT = 3.0
 # bounded to DB_MAX_ROWS (~1-2 MB), pruned in one cheap DELETE every DB_PRUNE_EVERY
 # writes. It is a side channel — every call into it is wrapped so a database problem
 # can never take the dashboard down.
-DB_PATH = str(Path(__file__).with_name("telemetry.sqlite3"))
+# DB_PATH is resolved to an absolute path so it points at the file beside server.py
+# no matter which working directory the process was started from. A relative path
+# silently resolves against the process cwd, which is how a server started elsewhere
+# ends up with sqlite unable to open the file (telemetry disabled, empty trends).
+DB_PATH = str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
 DB_MAX_ROWS = 20000
 DB_PRUNE_EVERY = 500
 DB_WINDOW_S = 3600  # the two analysis windows (recent vs previous)
@@ -573,9 +577,6 @@ def db_record(con, stats):
     cache = stats.get("cache") or {}
     spec = stats.get("spec") or {}
     hw = stats.get("hardware") or {}
-    ctx = stats.get("context") or {}
-    cache = stats.get("cache") or {}
-    spec = stats.get("spec") or {}
     power = stats.get("power") or {}
     live = stats.get("live") or {}
     thr = stats.get("throughput") or {}
@@ -708,10 +709,12 @@ _DB_WRITES = 0
 
 
 def telemetry(stats):
-    """Record this poll and return (history rows, window analysis).
+    """Record this poll and return (history rows, window analysis, status).
 
-    Returns (None, None) if the database is unavailable, in which case the caller falls
-    back to deriving series from the engine's own request records.
+    Returns (None, None, status) if the database is unavailable, in which case the caller
+    falls back to deriving series from the engine's own request records. The status is
+    part of the payload so a disabled DB is visible on the dashboard, not just in the
+    server's console — an empty trend is otherwise indistinguishable from a quiet engine.
     """
     global _DB, _DB_WRITES
     try:
@@ -721,10 +724,11 @@ def telemetry(stats):
         db_record(_DB, stats)
         if _DB_WRITES % DB_PRUNE_EVERY == 0:
             db_prune(_DB)
-        return db_rows(_DB), db_analysis(_DB)
+        rows = db_rows(_DB)
+        return rows, db_analysis(_DB), {"ok": True, "rows": len(rows)}
     except Exception as err:
         print(f"[telemetry] disabled: {err}")
-        return None, None
+        return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}
 
 
 def build_stats():
@@ -919,7 +923,8 @@ def build_stats():
 
     # Telemetry is the last step: it records this poll, then reads the history back so
     # the series and the analysis include the current sample.
-    rows, analysis = telemetry(stats)
+    rows, analysis, telemetry_status = telemetry(stats)
+    stats["telemetry"] = telemetry_status
     if rows:
         stats["history"] = {
             "tok_s": [r[1] for r in rows],

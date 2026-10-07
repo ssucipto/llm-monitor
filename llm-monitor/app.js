@@ -273,6 +273,7 @@ function renderPower(power, history) {
 // reading is null, so the panel states that in words instead of gauges at zero.
 function renderGpu(gpu, history) {
   if (!gpu) return;
+  const gpuCaption = $("gpu-caption");
   const state = $("gpu-state");
   if (state) {
     const has = gpu.util_pct != null || gpu.temp_c != null || gpu.mem_used != null || gpu.power_w != null;
@@ -290,13 +291,25 @@ function renderGpu(gpu, history) {
   setText("gpu-name", gpu.name ? `${gpu.name} ×${gpu.count ?? 1}` : (gpu.count ? `${gpu.count} GPU(s)` : "--"));
   if (history && gpu.history_available) {
     drawSpark("gpu", history.gpu_util, "% gpu util", "gpu utilisation, recent history");
+  } else if (gpuCaption) {
+    // No gpu_* series exists on this driver, so the figure would stay an empty box.
+    // Say why in the caption instead of leaving a blank chart to be read as "zero".
+    gpuCaption.textContent = gpu.history_available
+      ? "gpu utilisation, awaiting samples"
+      : gpu.name
+        ? `gpu utilisation — no counters on ${gpu.name}`
+        : "gpu utilisation — no counters on this driver";
   }
 }
-function renderAnalysis(analysis) {
+function renderAnalysis(analysis, telemetry) {
   const recent = analysis && analysis.recent;
   const previous = analysis && analysis.previous;
   if (!recent) {
-    setText("an-window", "awaiting history");
+    // Distinguish "the DB is off" from "the DB is warming up" — an empty trend with no
+    // explanation is otherwise read as a quiet engine.
+    setText("an-window", telemetry && telemetry.ok === false
+      ? `telemetry off — ${telemetry.error}`
+      : "awaiting history");
     ["an-requests", "an-tok", "an-prefill", "an-hit", "an-accept", "an-idle", "an-energy", "an-trend"].forEach((id) => setText(id, "--"));
     return;
   }
@@ -310,8 +323,9 @@ function renderAnalysis(analysis) {
   setText("an-energy", recent.energy_wh != null ? `${recent.energy_wh} Wh` : "--");
 
   // Trend: compare this window to the one before it, so the reading says whether the
-  // engine is working more or less than it was an hour ago.
-  if (previous && previous.requests) {
+  // engine is working more or less than it was an hour ago. A prior window can
+  // legitimately have 0 requests, so test for presence, not truthiness.
+  if (previous && previous.requests != null && recent.requests != null) {
     const d = recent.requests - previous.requests;
     const arrow = d > 0 ? "▲" : d < 0 ? "▼" : "=";
     setText("an-trend", `${arrow} ${Math.abs(d)} requests vs prior window`);
@@ -485,7 +499,7 @@ async function refresh() {
   renderCache(data.cache);
   renderSpec(data.spec);
   renderRequests(data.requests, data.requests_kept);
-  renderAnalysis(data.analysis);
+  renderAnalysis(data.analysis, data.telemetry);
   renderSwitch(data.switch);
   renderLog(data.log);
 }

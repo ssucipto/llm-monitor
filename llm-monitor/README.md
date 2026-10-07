@@ -90,6 +90,7 @@ files and log tails. Sections:
   "requests_kept": 272,
   "totals":   {"since","requests","prompt_tokens","reused","output_tokens","prompt_ms","decode_ms","drafts_offered","drafts_accepted"},
   "analysis": {"recent":{"polls","span_s","requests","prompt_tokens","reused","output_tokens","req_per_min","tok_s_mean","tok_s_max","prefill_mean","hit_pct_mean","accept_pct_mean","power_w_mean","energy_wh","idle_pct"},"previous":{...}},
+  "telemetry": {"ok":true,"rows":N} | {"ok":false,"error":"OperationalError: ..."},
   "switch":   {"engine_active","llama_active_profile","llama_last_profile","owner","pid","profiles"},
   "log":      [{"level","iso","msg","source"}],
   "endpoints":{"health","metrics","slots","models","status"},
@@ -99,7 +100,9 @@ files and log tails. Sections:
 
 `history` is the SQLite-backed series (drawn by the sparklines); `engine_history` is the
 engine's own `history` arrays passed through unchanged. `requests` in `history` is always
-per-interval, never the engine's cumulative counter.
+per-interval, never the engine's cumulative counter. `telemetry` reports whether the SQLite
+side channel is live — when it is not, the trends and the Telemetry panel say so rather than
+looking like a quiet engine.
 
 ## Configuration
 
