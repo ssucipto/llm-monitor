@@ -554,7 +554,13 @@ def gather_power(metrics, live):
 # these rows, so no JSON is stored and the file stays a couple of MB regardless of how
 # long the engine runs.
 def db_init():
-    """Open (creating if needed) the telemetry database."""
+    """Open (creating if needed) the telemetry database.
+
+    The connection is opened per poll, not cached across polls: ThreadingHTTPServer
+    handles each request in its own thread, and Python's sqlite3 refuses to use a
+    connection in a thread other than the one that created it (ProgrammingError). The
+    CREATE is guarded so the table surviving from a previous run is not an error.
+    """
     con = sqlite3.connect(DB_PATH)
     try:
         con.execute(
@@ -702,9 +708,10 @@ def db_rows(con, limit=240):
     return rows
 
 
-# The connection is opened once and reused for every poll; the write counter decides
-# when to prune. Both stay None/0 if sqlite cannot be used, and every use is guarded.
-_DB = None
+# The connection is opened per poll (see telemetry): ThreadingHTTPServer handles each
+# request in its own thread, and sqlite3 refuses to reuse a connection across threads
+# (ProgrammingError on the second poll). The write counter decides when to prune; it
+# stays 0 if sqlite cannot be used, and every use is guarded.
 _DB_WRITES = 0
 
 
@@ -716,19 +723,22 @@ def telemetry(stats):
     part of the payload so a disabled DB is visible on the dashboard, not just in the
     server's console — an empty trend is otherwise indistinguishable from a quiet engine.
     """
-    global _DB, _DB_WRITES
+    global _DB_WRITES
+    con = None
     try:
-        if _DB is None:
-            _DB = db_init()
+        con = db_init()
         _DB_WRITES += 1
-        db_record(_DB, stats)
+        db_record(con, stats)
         if _DB_WRITES % DB_PRUNE_EVERY == 0:
-            db_prune(_DB)
-        rows = db_rows(_DB)
-        return rows, db_analysis(_DB), {"ok": True, "rows": len(rows)}
+            db_prune(con)
+        rows = db_rows(con)
+        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}
     except Exception as err:
         print(f"[telemetry] disabled: {err}")
         return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}
+    finally:
+        if con is not None:
+            con.close()
 
 
 def build_stats():

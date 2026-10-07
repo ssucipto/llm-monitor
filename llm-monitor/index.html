@@ -48,6 +48,16 @@
   </nav>
 
   <main id="main" class="layout">
+    <section class="hero" id="hero" aria-labelledby="hero-h">
+      <h2 id="hero-h">At a glance</h2>
+      <div class="hero__stats">
+        <div class="hero__stat"><data class="hero__value" id="hero-tok" value="0">--</data><span class="hero__unit">tok/s</span></div>
+        <div class="hero__stat"><data class="hero__value" id="hero-power" value="0">--</data><span class="hero__unit">watts</span></div>
+        <div class="hero__stat"><data class="hero__value" id="hero-ctx" value="0">--</data><span class="hero__unit">% context</span></div>
+        <div class="hero__stat"><data class="hero__value" id="hero-hit" value="0">--</data><span class="hero__unit">% cache hit</span></div>
+      </div>
+    </section>
+    <div class="masonry">
     <section class="panel engine" id="engine" aria-labelledby="engine-h">
       <h2 id="engine-h">Engine</h2>
       <p class="engine__badge" id="engine-active">unknown</p>
@@ -248,6 +258,19 @@
       </dl>
     </section>
 
+    <section class="panel switch" id="switch" aria-labelledby="switch-h">
+      <h2 id="switch-h">Engine switch</h2>
+      <p class="switch__active" id="switch-engine">--</p>
+      <dl class="switch__facts">
+        <div class="fact"><dt>llama profile</dt><dd id="switch-profile">--</dd></div>
+        <div class="fact"><dt>Owner</dt><dd id="switch-owner">--</dd></div>
+        <div class="fact"><dt>PID</dt><dd id="switch-pid">--</dd></div>
+      </dl>
+      <ul class="switch__profiles" id="switch-profiles"></ul>
+    </section>
+    </div>
+
+    <div class="band">
     <section class="panel requests" id="requests" aria-labelledby="requests-h">
       <h2 id="requests-h">Requests</h2>
       <p class="requests__count" id="requests-count">--</p>
@@ -286,21 +309,11 @@
       </dl>
     </section>
 
-    <section class="panel switch" id="switch" aria-labelledby="switch-h">
-      <h2 id="switch-h">Engine switch</h2>
-      <p class="switch__active" id="switch-engine">--</p>
-      <dl class="switch__facts">
-        <div class="fact"><dt>llama profile</dt><dd id="switch-profile">--</dd></div>
-        <div class="fact"><dt>Owner</dt><dd id="switch-owner">--</dd></div>
-        <div class="fact"><dt>PID</dt><dd id="switch-pid">--</dd></div>
-      </dl>
-      <ul class="switch__profiles" id="switch-profiles"></ul>
-    </section>
-
     <section class="panel log" id="log" hidden="until-found" aria-labelledby="log-h">
       <h2 id="log-h">System log</h2>
       <ol class="log__list" id="log-list"></ol>
     </section>
+    </div>
   </main>
 
   <footer class="footer">

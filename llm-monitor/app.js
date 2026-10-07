@@ -510,6 +510,14 @@ function renderEndpoints(endpoints) {
     .map((k) => `${k} ${mark(ep[k])}`).join(" · ");
 }
 
+function renderHero(throughput, power, context, cache) {
+  const tok = throughput && throughput.now;
+  setText("hero-tok", tok != null ? `${tok.toFixed(1)}` : "--");
+  setText("hero-power", power && power.total_w != null ? `${power.total_w}` : "--");
+  setText("hero-ctx", context && context.pct != null ? `${context.pct}` : "--");
+  setText("hero-hit", cache && cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}` : "--");
+}
+
 async function refresh() {
   let data;
   try {
@@ -537,6 +545,7 @@ async function refresh() {
   renderSwitch(data.switch);
   renderLog(data.log);
   renderEndpoints(data.endpoints);
+  renderHero(data.throughput, data.power, data.context, data.cache);
 }
 
 async function init() {

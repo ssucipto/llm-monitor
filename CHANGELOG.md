@@ -4,6 +4,26 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.3] - 2026-10-07
+
+### Fixed
+- Telemetry no longer fails with `sqlite3.ProgrammingError` ("SQLite objects created
+  in a thread can only be used in that same thread") on every poll after the first.
+  `ThreadingHTTPServer` serves each request in its own thread, so the connection is
+  now opened per poll inside `telemetry()` in the using thread and closed afterwards
+  (`check_thread=False` is Python 3.13+ and the project runs 3.12, so per-poll open
+  is the correct fix). This was the cause of "telemetry off — ProgrammingError …".
+
+### Added
+- A full-width **hero band** ("At a glance") above the cards: the four headline
+  readings — tok/s, watts, % context, % cache hit — as large tabular-num figures,
+  collapsing to two columns under 900px.
+
+### Changed
+- **Layout**: the status cards now flow in a CSS multi-column masonry (two columns,
+  `break-inside: avoid`) instead of a fixed grid, so ragged-height cards pack with
+  no empty cells between blocks; the history panels remain a full-width band below.
+
 ## [0.1.2] - 2026-10-07
 
 ### Added
