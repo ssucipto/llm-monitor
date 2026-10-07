@@ -336,22 +336,54 @@ body {
   color: var(--text-dim);
 }
 
-.topbar__meter {
+/* The prefill speed gauge gets its own dedicated band pinned to the bottom
+ * edge of the sticky header, spanning the full width under the measurements.
+ * It reads like a slider/meter: a track with scale ticks, a gradient fill,
+ * and a knob that slides to the current reading. Both the fill width and the
+ * knob position are eased by a CSS transition, so the meter rises and falls
+ * in realtime as the prefill rate changes. The reduced-motion block snaps it. */
+.topbar__gauge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
   display: block;
-  width: 96px;
-  height: 7px;
-  border-radius: 999px;
   background: var(--bg-elev-2);
+  border-top: 1px solid var(--border);
   overflow: hidden;
 }
 
-.topbar__meter__fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
+.topbar__gauge__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
   background: linear-gradient(90deg, var(--accent), var(--ok));
-  box-shadow: 0 0 6px rgba(88, 166, 255, 0.5);
+  box-shadow: 0 0 8px rgba(88, 166, 255, 0.45);
   transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.topbar__gauge__knob {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  left: 0%;
+  background: var(--text);
+  box-shadow: 0 0 6px rgba(88, 166, 255, 0.8);
+  transition: left 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Scale ticks every 25% so the eye can read where the knob sits on the envelope. */
+.topbar__gauge::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - 1px), var(--border) 25%);
+  opacity: 0.6;
 }
 
 .masonry {

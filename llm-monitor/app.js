@@ -451,36 +451,58 @@ function renderPower(power, history) {
 
 // ---------- GPU ----------
 // Parity with the engine's own monitor, which draws gpu/gpu_mem/temp/power/pcie
-// cards. On builds whose driver exposes no userspace counter (AMD HIP) every
-// reading is null, so the panel states that in words instead of gauges at zero.
-function renderGpu(gpu, history) {
+// cards. On builds whose driver exposes no userspace counter (AMD HIP) the engine
+// leaves every gpu_* key null, so the payload labels each reading by where it came
+// from: measured (a real counter), derived (VRAM from the engine's live vram_free_mib),
+// modelled (engine state), or rated (this machine's card). Nothing is presented as a
+// measurement it cannot make.
+function renderGpu(gpu, history, power) {
   if (!gpu) return;
   const gpuCaption = $("gpu-caption");
   const state = $("gpu-state");
   if (state) {
-    const has = gpu.util_pct != null || gpu.temp_c != null || gpu.mem_used != null || gpu.power_w != null;
-    state.textContent = has ? "counters live" : gpu.name ? "no counters on this driver" : "no gpu readings";
+    const measured = gpu.util_source === "measured" || gpu.mem_source === "measured"
+      || gpu.power_source === "measured" || gpu.temp_c != null;
+    const inferred = gpu.util_source === "modelled" || gpu.mem_source === "derived";
+    state.textContent = measured ? "counters live"
+      : inferred ? "modelled — no driver counters"
+      : gpu.name ? "no counters on this driver" : "no gpu readings";
     state.classList.remove("measured");
-    if (has) state.classList.add("measured");
+    if (measured) state.classList.add("measured");
   }
   setGauge("gpu-util", "gpu-util-gauge", gpu.util_pct, false);
   setGauge("gpu-mem", "gpu-mem-gauge", gpu.mem_pct, false);
-  setText("gpu-mem-hint", gpu.mem_used && gpu.mem_total ? `${fmtBytes(gpu.mem_used)} / ${fmtBytes(gpu.mem_total)}` : "used / total");
+  // A derived figure is in MiB (the engine reports vram_free_mib); a counter the
+  // engine supplies would be bytes, so scale by the source rather than assume.
+  const scale = gpu.mem_source === "derived" ? 1048576 : 1;
+  setText("gpu-mem-hint", gpu.mem_used && gpu.mem_total
+    ? `${fmtBytes(gpu.mem_used * scale)} / ${fmtBytes(gpu.mem_total * scale)}${gpu.mem_source === "derived" ? " · derived" : ""}`
+    : "used / total");
   // Temperature is a fraction of a 100 °C ceiling, so the gauge reads severity.
   setGauge("gpu-temp", "gpu-temp-gauge", gpu.temp_c != null ? Math.min(100, gpu.temp_c) : null, false);
-  setText("gpu-power", gpu.power_w != null ? `${gpu.power_w} W${gpu.power_limit_w ? ` / ${gpu.power_limit_w} limit` : ""}` : "--");
+  const gpuW = gpu.power_w != null ? gpu.power_w : (power && power.gpu_w);
+  setText("gpu-power", gpuW != null
+    ? `${gpuW} W${gpu.power_limit_w ? ` / ${gpu.power_limit_w} limit` : ""}${gpu.power_source === "modelled" ? " · modelled" : ""}`
+    : "--");
   setText("gpu-pcie", gpu.pcie_rx_mb != null ? `${gpu.pcie_rx_mb.toFixed(1)} MB${gpu.pcie_gen ? ` · gen ${gpu.pcie_gen}/${gpu.pcie_gen_max ?? gpu.pcie_gen} · ${gpu.pcie_width ?? "--"}G` : ""}` : "--");
-  setText("gpu-name", gpu.name ? `${gpu.name} ×${gpu.count ?? 1}` : (gpu.count ? `${gpu.count} GPU(s)` : "--"));
-  if (history && gpu.history_available) {
-    drawSpark("gpu", history.gpu_util, "% gpu util", "gpu utilisation, recent history");
+  setText("gpu-name", gpu.name ? `${gpu.name} ×${gpu.count ?? 1}${gpu.name_source === "rated" ? " (rated)" : ""}` : (gpu.count ? `${gpu.count} GPU(s)` : "--"));
+  // VRAM is the one GPU reading this driver can supply, so prefer its series; a build
+  // with real gpu_* counters (e.g. NVML) still gets the utilisation sparkline.
+  const vramSeries = history && history.vram_pct;
+  const utilSeries = history && history.gpu_util;
+  if (vramSeries || utilSeries) {
+    const isVram = !!vramSeries;
+    drawSpark("gpu", isVram ? vramSeries : utilSeries,
+      isVram ? "% vram used" : "% gpu util",
+      isVram ? "vram in use, recent history" : "gpu utilisation, recent history");
   } else if (gpuCaption) {
-    // No gpu_* series exists on this driver, so the figure would stay an empty box.
-    // Say why in the caption instead of leaving a blank chart to be read as "zero".
+    // No series to draw yet, so say why in the caption rather than leaving a blank
+    // chart that reads as a flat zero.
     gpuCaption.textContent = gpu.history_available
-      ? "gpu utilisation, awaiting samples"
+      ? "vram in use, awaiting samples"
       : gpu.name
-        ? `gpu utilisation — no counters on ${gpu.name}`
-        : "gpu utilisation — no counters on this driver";
+        ? `no gpu counters on ${gpu.name}`
+        : "no gpu counters on this driver";
   }
 }
 function renderAnalysis(analysis, telemetry, totals) {
@@ -704,18 +726,23 @@ function renderHero(throughput, power, context, cache, status) {
   setText("hero-hit", cache && cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}` : "--");
 }
 
-// A hero meter: a custom bar (not the native <meter>, which cannot be styled
-// richly) that eases to a reading. The fill width is set inline; a CSS transition
-// animates it, and the reduced-motion block at the bottom of style.css zeroes the
-// transition duration so it snaps instead. Ceiling is the rated prefill envelope
-// for this model class on this GPU; only extreme tiny-span outliers peg it.
-function setMeter(id, val, ceiling = 2000) {
-  const meter = $(id);
-  if (!meter) return;
-  const fill = meter.firstElementChild;
+// The prefill speed gauge lives in the sticky top bar as its own full-width band
+// under the measurements (not the native <meter>, which cannot be gradient-lit or
+// given a sliding knob). setPrefillGauge drives both the fill width and the knob
+// position; a CSS transition on each eases them together so the meter rises and
+// falls in realtime as the prefill rate changes. The reduced-motion block snaps it.
+// Ceiling is the rated prefill envelope for this model class on this GPU; only
+// extreme tiny-span outliers peg it.
+function setPrefillGauge(val, ceiling = 2000) {
+  const gauge = $("top-gauge");
+  if (!gauge) return;
   const pct = val == null ? 0 : Math.max(0, Math.min(1, val / ceiling));
-  meter.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
-  if (fill) fill.style.width = `${(pct * 100).toFixed(1)}%`;
+  const width = `${(pct * 100).toFixed(1)}%`;
+  gauge.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+  const fill = $("top-gauge-fill");
+  if (fill) fill.style.width = width;
+  const knob = $("top-gauge-knob");
+  if (knob) knob.style.left = width;
 }
 
 function stateName(state) {
@@ -733,7 +760,7 @@ function stateName(state) {
 function renderTopbar(engine, throughput) {
   const pre = throughput && throughput.prefill;
   setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
-  setMeter("top-prefill-meter", pre);
+  setPrefillGauge(pre);
   const host = $("top-identity");
   if (!host) return;
   const svc = engine.service || engine.active;
@@ -896,7 +923,7 @@ async function refresh() {
   renderContext(data.context);
   renderThroughput(data.throughput, data.history);
   renderPower(data.power, data.history);
-  renderGpu(data.gpu, data.history);
+  renderGpu(data.gpu, data.history, data.power);
   renderHardware(data.hardware);
   renderCache(data.cache);
   renderSpec(data.spec);

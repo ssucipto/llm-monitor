@@ -94,10 +94,10 @@ carryovers:
     finding: running dashboard process (PID 17956 on :8090) predates the DB_PATH fix and still has telemetry disabled — trends and Telemetry panel empty until it is restarted
     location: llm-monitor/server.py:59
     severity: high
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-10-07
     verified_in_audit: 2
-    notes: code fix is in place; the running process must be restarted (kill 17956, relaunch `python server.py 8090`) to pick it up. After restart all 6 history series + analysis populate
+    notes: the running :8090 process was restarted; live /api/stats now returns telemetry {ok:true, rows:240} with daily rollups and periods populated, so all history series draw
   - id: r1-01
     audit: review-001
     finding: ACP CI harness not installed in this consumer project — agent/configurables/ci.yml, scripts/, e2e/, tests/, run-e2e-tests.sh, .github/workflows/ all absent, so /acp-ci --fast cannot run
@@ -179,3 +179,57 @@ carryovers:
     fix_applied_date: 2026-10-07
     verified_in_audit: 4
     notes: req_per_min now computed from cumulative_delta(window, 6) / span * 60
+  - id: a5-01
+    audit: 5
+    finding: VRAM used/total null despite live engine.vram_free_mib (367 MiB free); panel ignored the recoverable reading
+    location: llm-monitor/server.py:1055
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 5
+    notes: derive used = VRAM_TOTAL_MIB(24576) - vram_free; labelled derived. live /api/stats gpu.mem_pct=98.5, mem_used=24209, mem_total=24576
+  - id: a5-02
+    audit: 5
+    finding: GPU util gauge blank; no counter on driver, but activity inferable from engine state
+    location: llm-monitor/server.py:1057
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 5
+    notes: util_pct falls back to power.activity from GPU_ACTIVITY table, util_source=modelled. 0.0 while engine idle is correct
+  - id: a5-03
+    audit: 5
+    finding: GPU power card blank while the Power card already models gpu_w
+    location: llm-monitor/app.js:483
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 5
+    notes: renderGpu falls back to power.gpu_w with · modelled tag; gpu.power_w stays null so the two cards share one source
+  - id: a5-04
+    audit: 5
+    finding: device name printed "1 GPU(s)"; gpu_name null but the machine is fixed
+    location: llm-monitor/server.py:1080
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 5
+    notes: rated fallback to POWER_MODEL gpu_name; bug was hw.get(gpu_count) — gpu_count lives in hardware_static, not hardware. name_source=rated
+  - id: a5-05
+    audit: 5
+    finding: GPU sparkline blank; engine keeps no gpu_* history series
+    location: llm-monitor/server.py:1200
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 5
+    notes: vram_pct series built from own poll rows (db gained vram_used/vram_total cols + ALTER migration); history.vram_pct present, history_available=true
+  - id: a5-06
+    audit: 5
+    finding: gpu temp / PCIe RX have no counter and no honest proxy on this AMD HIP driver
+    location: llm-monitor/server.py (gpu dict)
+    severity: low
+    status: wontfix
+    fix_applied_date: null
+    verified_in_audit: 5
+    notes: engine sources hardware via psutil (hardware_static.psutil=true, no GPU API on Windows); amdgfxinfo64.dll won't load standalone (WinError 1114), no GFXINFO_* exports in System32/DriverStore. NOT ACTIONABLE — stays -- honestly

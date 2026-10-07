@@ -35,8 +35,9 @@ files and log tails. Sections:
 - **Header identity** — the engine that owns the port and the model it is serving,
   set large and bold in the top bar with a monogram mark (stacked layers for Strata,
   a V over a ring for Vulkan), colored with the engine's own accent. The prefill
-  speed reading lives here too, with a compact gradient speed meter pinned at the
-  top so it stays visible while the page scrolls.
+  speed reading lives here too, with a full-width gradient speed gauge pinned to the
+  bottom edge of the sticky header (scale ticks every 25% and a knob that slides to
+  the current reading) so it stays visible while the page scrolls.
 - **At a glance** — the hero band under the header: decode tok/s, model state (Reading /
   Generating / Queued / Idle), watts, % context (two decimals), and % cache hit.
 - **Engine** — which service owns the port (Strata / Vulkan), model, build, loaded
@@ -59,8 +60,15 @@ files and log tails. Sections:
   decode streams weights (bandwidth-bound, well under peak), idle is the card parked.
 - **GPU** — parity with the engine's own monitor's gpu/vram/temp/power/pcie cards:
   utilisation, VRAM used/total, temperature gauges, plus power, PCIe RX and device
-  identity. On a driver with no userspace counter (this AMD HIP build) every reading is
-  null and the panel says so in words rather than drawing gauges at zero.
+  identity. On this AMD HIP build the driver exposes no `gpu_*` counters, but the
+  readings split by what is honestly recoverable: **VRAM is derived** from the engine's
+  live `vram_free_mib` against the fixed card total (RX 7900 XTX = 24 GB), so the panel
+  shows real used/total tagged `derived`; **utilisation and power are modelled** from the
+  same engine-activity table that drives the Power card (prefill hot, decode bandwidth-bound,
+  idle parked), tagged `modelled`; the **device name falls back to the rated card** since
+  the machine is fixed. Temperature and PCIe RX have no counter and no honest proxy, so
+  they stay `--` and the panel says so in words rather than dressing a guess as a reading.
+  Every figure carries its source (`measured` / `derived` / `modelled` / `rated`).
 - **Hardware** — CPU %, RAM used/total, VRAM free, disk read/write, GPU and CPU
   identity. From `/metrics.hardware`.
 - **Cache** — prompt-token reuse hit-rate, KV cache type, expert slots/cache,
@@ -114,10 +122,10 @@ and the hero band is fixed.
   "hardware": {"cpu_pct","ram_used","ram_total","ram_pct","vram_free_mib","disk_read_mb","disk_write_mb","tok_s","tok_s_mean","gpu_util","gpu_mem_used","gpu_mem_total","gpu_temp","gpu_power","gpu_power_limit","gpu_pcie_rx_mb","gpu_pcie_gen","gpu_pcie_gen_max","gpu_pcie_width","gpu_name","gpu_count","cpu_name","cores","threads"},
   "throughput":{"now","mean","prefill","prefill_source","source"},
   "power":    {"total_w","gpu_w","cpu_w","gpu_measured_w","gpu_limit_w","peak_w","pct_of_peak","source","model"},
-  "gpu":      {"util_pct","mem_used","mem_total","mem_pct","temp_c","power_w","power_limit_w","pcie_rx_mb","pcie_gen","pcie_gen_max","pcie_width","name","count","history_available"},
+  "gpu":      {"util_pct","util_source","mem_used","mem_total","mem_pct","mem_source","vram_free_mib","temp_c","power_w","power_limit_w","power_source","pcie_rx_mb","pcie_gen","pcie_gen_max","pcie_width","name","name_source","count","history_available"},
   "config":   {"pool_workers","pcie_frac","spec","spec_min_p","mtp_max","lookup","expert_slots","expert_slots_primary","expert_cache_mib","expert_cache_primary_mib","arena_mib","cvec","vram_elastic","conversation_cache_slots","conversation_cache_min_free_mib","tail_role_token"},
   "engine_history": {"cpu":[...],"ram_used":[...],"tok_s":[...],"disk_read_mb":[...],"gpu_util":[...],"gpu_power":[...], ...},
-  "history":  {"tok_s":[...],"prefill":[...],"requests":[...],"power_w":[...],"cpu":[...],"hit_pct":[...],"gpu_util":[...]?},
+  "history":  {"tok_s":[...],"prefill":[...],"requests":[...],"power_w":[...],"cpu":[...],"hit_pct":[...],"gpu_util":[...]?,"vram_pct":[...]?},
   "history_bucket_s": 75,
   "requests": [{"duration_s","finish","prompt_tokens","prompt_read","reused","output_tokens","prompt_ms","decode_ms","decode_tok_s","hit_rate","pcie_share","drafts_offered","drafts_accepted","engine_generated","file_mb","ram_blobs","file_blobs","time"}],
   "requests_kept": 272,

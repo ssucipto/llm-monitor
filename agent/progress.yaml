@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.6
+  version: 0.1.8
   started: 2026-10-07
   status: in_progress
   current_milestone: M1
@@ -65,6 +65,36 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-07
+    description: |
+      Made the GPU panel honest and useful on the AMD HIP driver (audit-5). The five GPU
+      readings split by what the driver can supply: VRAM is derived from the engine's live
+      vram_free_mib, util/power are modelled from the engine-activity table, the device name
+      falls back to the rated card, and temp/PCIe stay -- because there is no counter and no
+      honest proxy.
+    items:
+      - "✅ VRAM used/total derived (used = VRAM_TOTAL_MIB 24576 - vram_free); live /api/stats gpu.mem_pct=98.5, mem_used=24209, mem_total=24576, mem_source=derived"
+      - "✅ GPU util gauge modelled from GPU_ACTIVITY (util_source=modelled); 0.0 while engine idle is correct"
+      - "✅ GPU power card falls back to power.gpu_w · modelled; GPU card and Power card share one source"
+      - "✅ device name rated fallback (AMD Radeon RX 7900 XTX (rated)); bug was hw.get(gpu_count) — gpu_count lives in hardware_static, not hardware"
+      - "✅ GPU sparkline draws a VRAM series from own poll rows (db gained vram_used/vram_total cols + ALTER migration); history.vram_pct present, history_available=true"
+      - "✅ temp / PCIe RX wontfix — engine sources hardware via psutil (no GPU API on Windows); amdgfxinfo64.dll won't load standalone (WinError 1114), no GFXINFO_* exports in System32/DriverStore"
+      - "✅ gates: node --check + py_compile pass; live :8091 probe confirmed gpu + history.vram_pct + telemetry {ok:true, rows:240}"
+      - "📋 running :8090 process (PID 19528) is owned by another user — Access denied on kill; must be restarted by the user to pick up the server.py changes"
+
+  - date: 2026-10-07
+    description: |
+      Promoted the prefill speed meter from a compact inline bar to a dedicated
+      full-width gauge band pinned to the bottom edge of the sticky header, and
+      confirmed the telemetry blocker is gone on the live server.
+    items:
+      - "✅ prefill gauge: full-width band under the measurements, scale ticks every 25%, gradient fill + sliding knob, both eased by one transition"
+      - "✅ setMeter generalized to setPrefillGauge (single gauge, no id argument); no stale topbar__meter refs remain"
+      - "✅ a2-01 resolved: live :8090 process now returns telemetry {ok:true, rows:240}, daily rollups + periods populated"
+      - "✅ gates: node --check + py_compile pass; div balance 76/76, no dup ids, CSS braces 0"
+      - "📋 r3-01 sparkline window label still open (per-series window must be threaded through drawSpark)"
+      - "📋 r1-01 ACP CI harness still absent — /acp-ci N/A for this repo"
+
   - date: 2026-10-07
     description: |
       Header identity line (engine + model, bold, per-engine monogram) and an
@@ -154,20 +184,17 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - Restart the dashboard on :8090 so the DB_PATH fix takes effect (kill old PID, relaunch python server.py 8090)
-  - a1-02: replace the fixed 2-col x 6-row grid area map with a span-based layout
   - Decide on the ACP CI harness: install it or treat /acp-ci as N/A for this consumer repo
-  - Add a CHANGELOG.md entry for the 0.1.0 -> 0.1.1 patch bump
+  - r3-01: thread a per-series sampling window through drawSpark so sparkline captions state the right x-axis
 
 # General notes and observations
 notes:
   - "The ACP framework version (6.40.0) lives in AGENTS.md, CLAUDE.md, AGENT.md and identity.yml; keep it synced via /acp-sync. It is NOT bumped for project bug fixes."
   - "The project's own version (0.1.0) is tracked in this file and CHANGELOG.md; there is no package manifest version for a stdlib-served dashboard."
-  - "GPU trend is empty by design on the AMD HIP driver — the engine returns zero gpu_* keys. It draws automatically on NVML builds."
+  - "GPU on the AMD HIP driver: VRAM is derived from engine.vram_free_mib, util/power are modelled from engine activity, name is rated. Only temp/PCIe stay empty (no counter, no honest proxy). Draws real gpu_* counters automatically on NVML builds."
 
 # Current blockers (remove when resolved)
 current_blockers:
-  - "a2-01: the running :8090 process predates the DB_PATH fix; trends stay empty until it is restarted"
   - "r1-01: ACP CI harness (agent/configurables/ci.yml, scripts/, e2e/, .github/workflows/) absent, so /acp-ci --fast cannot run"
 
 # ── Recurring Tasks (v6.12.1+ M57) ──────────────────────────────

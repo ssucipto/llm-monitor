@@ -4,6 +4,41 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.8] - 2026-10-07
+
+### Fixed
+- **The GPU panel no longer reads as all-zeros on the AMD HIP driver.** The five GPU
+  readings split by what the driver can honestly supply:
+  - **VRAM used/total is now derived** from the engine's live `vram_free_mib` against the
+    fixed card total (RX 7900 XTX = 24 GB), so the panel shows real used/total (e.g.
+    23.6 / 24.0 GB) tagged `derived`, and the GPU sparkline draws a VRAM series built from
+    the dashboard's own poll rows (the engine keeps no `gpu_*` history series).
+  - **Utilisation and power are modelled** from the same engine-activity table that drives
+    the Power card (prefill hot, decode bandwidth-bound, idle parked), tagged `modelled`,
+    so the GPU card and the Power card can never disagree.
+  - **Device name falls back to the rated card** ("AMD Radeon RX 7900 XTX (rated)") since
+    the machine is fixed, instead of printing "1 GPU(s)".
+  - **Temperature and PCIe RX stay `--`** — no counter and no honest proxy on this driver
+    (the engine sources hardware via psutil, which has no GPU API on Windows; the AMD
+    Graphics Info API shim won't load standalone). Shown honestly, never guessed.
+- Every GPU figure now carries its source (`measured` / `derived` / `modelled` / `rated`),
+  and the panel's state chip distinguishes live counters from modelled readings.
+
+### Changed
+- README's GPU bullet documents the recovered/derived/modelled split; the `/api/stats`
+  gpu shape gained the `*_source` fields and `history.vram_pct`.
+
+## [0.1.7] - 2026-10-07
+
+### Changed
+- **The prefill speed meter is now a dedicated full-width gauge band** pinned to the
+  bottom edge of the sticky header, under the measurements, rather than a compact
+  inline bar. It reads like a slider: a track with scale ticks every 25%, a gradient
+  fill, and a knob that slides to the current reading. The fill width and knob position
+  are eased by the same CSS transition so the meter rises and falls in realtime as the
+  prefill rate changes (the `prefers-reduced-motion` block still snaps it).
+- README documents the gauge band (ticks + sliding knob) instead of the compact meter.
+
 ## [0.1.6] - 2026-10-07
 
 ### Added

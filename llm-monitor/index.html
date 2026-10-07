@@ -31,8 +31,12 @@
     <p class="topbar__meta">
       <time class="clock" id="clock">--:--:--</time>
       <span class="refresh-badge" id="refresh-badge" role="status">Booting</span>
-      <span class="topbar__prefill"><data class="topbar__value" id="top-prefill" value="0">--</data><span class="topbar__unit">prefill tok/s</span><span class="topbar__meter" id="top-prefill-meter" role="img" aria-label="prefill speed meter"><span class="topbar__meter__fill"></span></span></span>
+      <span class="topbar__prefill"><data class="topbar__value" id="top-prefill" value="0">--</data><span class="topbar__unit">prefill tok/s</span></span>
     </p>
+    <div class="topbar__gauge" id="top-gauge" role="img" aria-label="prefill speed gauge">
+      <span class="topbar__gauge__fill" id="top-gauge-fill"></span>
+      <span class="topbar__gauge__knob" id="top-gauge-knob"></span>
+    </div>
   </header>
 
   <nav class="toc" aria-label="Jump to a section">

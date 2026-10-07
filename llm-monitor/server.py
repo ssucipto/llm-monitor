@@ -78,6 +78,17 @@ POWER_MODEL = {
     "cpu_max_w": 150.0,
 }
 
+# Total VRAM for THIS machine's card (RX 7900 XTX = 24 GB GDDR). Used only to turn the
+# engine's live `vram_free_mib` into a used/total VRAM reading on drivers that expose no
+# gpu_mem_* counters. The panel labels it derived, never as a driver measurement.
+VRAM_TOTAL_MIB = 24576
+
+# How hard the GPU works per engine state, as a fraction of its peak. The same table
+# drives both the modelled power draw and the modelled utilisation, so the two readings
+# can never disagree. Prefill is dense GEMM (compute-bound, hottest); decode streams
+# weights from VRAM (bandwidth-bound, well under peak on RDNA3); queued waits on the CPU.
+GPU_ACTIVITY = {"reading": 1.0, "generating": 0.65, "processing": 0.65, "queued": 0.1}
+
 
 def _get_json(path):
     """GET an engine endpoint; return parsed JSON or None.
@@ -511,6 +522,7 @@ def gather_power(metrics, live):
     hw = (metrics or {}).get("hardware") or {}
     measured = hw.get("gpu_power")
     limit = hw.get("gpu_power_limit")
+    activity = None
 
     if measured is not None:
         gpu_w = float(measured)
@@ -527,7 +539,7 @@ def gather_power(metrics, live):
             # sits well under peak on a memory-bandwidth-bound model. Idle is the card
             # parked. 0.65 for decode is the RDNA3 ballpark for a 27B-class decode.
             state = (live or {}).get("state")
-            activity = {"reading": 1.0, "generating": 0.65, "processing": 0.65, "queued": 0.1}.get(state or "", 0.0)
+            activity = GPU_ACTIVITY.get(state or "", 0.0)
             source = "modelled" if state else "unavailable"
         gpu_w = POWER_MODEL["gpu_idle_w"] + (POWER_MODEL["gpu_max_w"] - POWER_MODEL["gpu_idle_w"]) * activity
 
@@ -547,6 +559,9 @@ def gather_power(metrics, live):
         "pct_of_peak": round(total / peak * 100, 1) if total and peak else None,
         "source": source,
         "model": POWER_MODEL,
+        # The same activity fraction that scaled the power draw, exposed so the GPU
+        # panel's modelled utilisation and the power figure cannot drift apart.
+        "activity": round(activity * 100, 1) if source == "modelled" else None,
     }
 
 
@@ -569,10 +584,18 @@ def db_init():
             "t REAL, cpu REAL, ram REAL, tok_s REAL, prefill REAL,"
             "ctx_used REAL, ctx_pct REAL, hit_pct REAL, accept_pct REAL,"
             "reqs INTEGER, prompt_tokens INTEGER, reused INTEGER, output_tokens INTEGER,"
-            "power_w REAL, power_src TEXT, gpu_util REAL, gpu_power REAL, busy INTEGER)"
+            "power_w REAL, power_src TEXT, gpu_util REAL, gpu_power REAL, busy INTEGER,"
+            " vram_used REAL, vram_total REAL)"
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
+    # A table from an older build lacks the VRAM columns; ALTER them in so the
+    # existing history survives the schema change rather than being reset.
+    for col in ("vram_used", "vram_total"):
+        try:
+            con.execute(f"ALTER TABLE poll ADD COLUMN {col} REAL")
+        except sqlite3.OperationalError:
+            pass  # the column is already there
     try:
         con.execute(
             "CREATE TABLE day (d INTEGER, polls INTEGER, span_s REAL, reqs INTEGER,"
@@ -596,10 +619,12 @@ def db_record(con, stats):
     power = stats.get("power") or {}
     live = stats.get("live") or {}
     thr = stats.get("throughput") or {}
+    gpu = stats.get("gpu") or {}
     con.execute(
         "INSERT INTO poll (t, cpu, ram, tok_s, prefill, ctx_used, ctx_pct, hit_pct, accept_pct,"
-        " reqs, prompt_tokens, reused, output_tokens, power_w, power_src, gpu_util, gpu_power, busy)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " reqs, prompt_tokens, reused, output_tokens, power_w, power_src, gpu_util, gpu_power, busy,"
+        " vram_used, vram_total)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             now,
             hw.get("cpu_pct"), hw.get("ram_used"),
@@ -608,8 +633,9 @@ def db_record(con, stats):
             cache.get("hit_pct"), spec.get("accept_pct"),
             totals.get("requests"), totals.get("prompt_tokens"), totals.get("reused"), totals.get("output_tokens"),
             power.get("total_w"), power.get("source"),
-            hw.get("gpu_util"), hw.get("gpu_power"),
+            gpu.get("util_pct"), gpu.get("power_w"),
             1 if live.get("state") not in ("idle", None) else 0,
+            gpu.get("mem_used"), gpu.get("mem_total"),
         ),
     )
     con.commit()
@@ -893,7 +919,7 @@ def bucket_db_requests(rows, buckets=24, span_s=1800):
 def db_rows(con, limit=240):
     """The tail of the history, oldest first, for the sparklines to draw from."""
     rows = con.execute(
-        "SELECT t, tok_s, prefill, reqs, power_w, cpu, hit_pct, busy FROM poll"
+        "SELECT t, tok_s, prefill, reqs, power_w, cpu, hit_pct, busy, vram_used, vram_total FROM poll"
         " ORDER BY t DESC LIMIT ?", (limit,)).fetchall()
     rows.reverse()
     return rows
@@ -1015,27 +1041,53 @@ def build_stats():
     power = gather_power(metrics, live)
 
     # GPU parity with the engine's own monitor (its cards are speed/gpu/vram/temp/
-    # power/pcie/cpu/disk). On this AMD HIP build the counters come back null, so the
-    # section carries nulls and the panel says so rather than showing a fake zero.
+    # power/pcie/cpu/disk). On this AMD HIP build the gpu_* counters come back null —
+    # psutil has no GPU API on Windows — but the engine's own `vram_free_mib` is live,
+    # so VRAM is recoverable here: used = the card's total - free. Everything the panel
+    # shows from a counter it cannot read is labelled (derived / modelled / rated) so no
+    # figure is ever presented as a driver measurement.
     gpu_hist = gather_history() or {}
+    vram_free = eng.get("vram_free_mib")
+    vram_derived = hw.get("gpu_mem_used") is None and vram_free is not None
+    gpu_mem_used = hw.get("gpu_mem_used")
+    gpu_mem_total = hw.get("gpu_mem_total")
+    if vram_derived:
+        gpu_mem_used = max(0, VRAM_TOTAL_MIB - int(vram_free))
+        gpu_mem_total = VRAM_TOTAL_MIB
     gpu = {
-        "util_pct": hw.get("gpu_util"),
-        "mem_used": hw.get("gpu_mem_used"),
-        "mem_total": hw.get("gpu_mem_total"),
-        "mem_pct": (hw["gpu_mem_used"] / hw["gpu_mem_total"] * 100)
-                   if (hw.get("gpu_mem_used") and hw.get("gpu_mem_total")) else None,
+        # Utilisation has no counter on this driver, so the modelled activity from the
+        # power model fills the gauge — labelled modelled so it reads as an estimate.
+        "util_pct": hw.get("gpu_util") if hw.get("gpu_util") is not None
+                   else (power or {}).get("activity"),
+        "util_source": "measured" if hw.get("gpu_util") is not None else (
+            "modelled" if (power or {}).get("activity") is not None else None),
+        "mem_used": gpu_mem_used,
+        "mem_total": gpu_mem_total,
+        "mem_pct": (gpu_mem_used / gpu_mem_total * 100)
+                   if (gpu_mem_used is not None and gpu_mem_total) else None,
+        "mem_source": "measured" if hw.get("gpu_mem_used") is not None else (
+            "derived" if vram_derived else None),
+        "vram_free_mib": vram_free,
         "temp_c": hw.get("gpu_temp"),
         "power_w": hw.get("gpu_power"),
         "power_limit_w": hw.get("gpu_power_limit"),
+        "power_source": "measured" if hw.get("gpu_power") is not None else (
+            "modelled" if (power or {}).get("gpu_w") is not None else None),
         "pcie_rx_mb": hw.get("gpu_pcie_rx_mb"),
         "pcie_gen": hw.get("gpu_pcie_gen"),
         "pcie_gen_max": hw.get("gpu_pcie_gen_max"),
         "pcie_width": hw.get("gpu_pcie_width"),
-        "name": static.get("gpu_name"),
+        "name": static.get("gpu_name") or (POWER_MODEL["gpu_name"] if static.get("gpu_count") else None),
         "count": static.get("gpu_count"),
-        # True when the engine reports any gpu_* series, so the panel can offer a
-        # sparkline only where there is real history to draw.
-        "history_available": any(k in gpu_hist for k in ("gpu_util", "gpu_temp", "gpu_power", "gpu_mem_used")),
+        # The engine leaves gpu_name null on this driver (psutil has no GPU name on
+        # Windows), but the machine is fixed, so fall back to the rated card so the
+        # panel can name what it is modelling rather than printing "1 GPU(s)".
+        "name_source": "measured" if static.get("gpu_name") else (
+            "rated" if static.get("gpu_count") else None),
+        # True when the panel has any gpu_* series to draw, including the VRAM series
+        # derived from the engine's live vram_free_mib.
+        "history_available": any(k in gpu_hist for k in (
+            "gpu_util", "gpu_temp", "gpu_power", "gpu_mem_used")),
     }
 
     stats = {
@@ -1144,6 +1196,16 @@ def build_stats():
         for key in ("gpu_util", "gpu_temp", "gpu_mem_used", "gpu_pcie_rx_mb"):
             if gpu.get("history_available") and key in gpu_hist:
                 stats["history"][key] = gpu_hist[key]
+        # VRAM is the one GPU reading this driver can supply, and its history lives in
+        # our own poll rows (the engine keeps no vram_free_mib series), so derive the
+        # percentage here rather than waiting for a gpu_* series that never arrives.
+        vram_pct = [
+            (r[8] / (r[9] or VRAM_TOTAL_MIB) * 100) if r[8] is not None else None
+            for r in rows
+        ]
+        if any(v is not None for v in vram_pct):
+            stats["history"]["vram_pct"] = vram_pct
+            gpu["history_available"] = True
     else:
         stats["history"] = {}
         stats["history"]["requests"] = bucket_requests(metrics) or []
