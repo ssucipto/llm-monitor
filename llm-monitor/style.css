@@ -270,6 +270,20 @@ body {
   padding: 16px 18px;
 }
 
+/* Drag affordance: the heading is the handle — grabbing it never fights text
+ * selection inside the card. */
+.panel h2 {
+  cursor: grab;
+}
+
+.panel.dragging {
+  cursor: grabbing;
+  position: relative;
+  z-index: 5;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  border-color: var(--accent);
+}
+
 /* Cards stay whole (never split across a column) and butt up with a fixed gap. */
 .masonry > .panel {
   break-inside: avoid;

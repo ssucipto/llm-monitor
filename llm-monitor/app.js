@@ -110,6 +110,133 @@ function setGauge(valueId, gaugeId, pct, higherBetter) {
   }
 }
 
+// ---------- Drag-and-drop reordering ----------
+// Both the masonry columns and the band read document order, so a drag commits by
+// moving the panel's DOM node — no parallel order state to keep in sync. The
+// arrangement is persisted in localStorage and restored on load, so it survives
+// reloads. A drag may only start on the panel's own box or its heading (never
+// inside its text), so it never fights text selection; touch is excluded so
+// page scrolling over a panel is not hijacked. ?reset=1 in the URL clears the
+// saved arrangement and returns to the default order.
+const ORDER_KEY = "llm-monitor-order";
+let drag = null;
+
+function persistOrder() {
+  const order = {};
+  for (const cls of ["masonry", "band"]) {
+    const container = document.querySelector(`.${cls}`);
+    if (container) order[cls] = [...container.children].map((el) => el.id);
+  }
+  localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+}
+
+function restoreOrder() {
+  if (/[?&]reset=1/.test(location.search)) {
+    localStorage.removeItem(ORDER_KEY);
+    return;
+  }
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(ORDER_KEY) || "null");
+  } catch (err) {
+    saved = null;
+  }
+  if (!saved) return;
+  for (const [cls, ids] of Object.entries(saved)) {
+    const container = document.querySelector(`.${cls}`);
+    if (!container) continue;
+    const kids = [...container.children];
+    const byId = new Map(kids.map((k) => [k.id, k]));
+    const wanted = ids.map((id) => byId.get(id)).filter(Boolean);
+    // Saved order first, then any panel that is new since the save.
+    wanted.concat(kids.filter((k) => !wanted.includes(k)))
+      .forEach((el) => container.appendChild(el));
+  }
+}
+
+function wireContainer(container) {
+  container.addEventListener("pointerdown", (e) => {
+    if (drag || e.pointerType === "touch") return;
+    const panel = e.target.closest(".panel");
+    if (!panel || panel.parentElement !== container) return;
+    if (e.target !== panel && e.target.tagName.toLowerCase() !== "h2") return;
+    drag = { panel, container, x: e.clientX, y: e.clientY, moved: false };
+    panel.classList.add("dragging");
+  });
+
+  container.addEventListener("pointermove", (e) => {
+    if (!drag || drag.container !== container) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    drag.panel.style.transform = `translate(${dx}px, ${dy}px)`;
+  });
+
+  container.addEventListener("pointerup", (e) => {
+    if (!drag || drag.container !== container) return;
+    commitDrag(e);
+  });
+}
+
+function commitDrag(e) {
+  const { panel, container, moved } = drag;
+  drag = null;
+  panel.classList.remove("dragging");
+  panel.style.transform = "";
+  if (!moved) return; // a plain click, not a drag — leave the order alone
+
+  // The nearest sibling to the drop point decides the new slot; the drop point's
+  // side of that sibling's vertical midpoint decides before/after.
+  let best = null;
+  let bestD = Infinity;
+  for (const s of container.children) {
+    if (s === panel) continue;
+    const r = s.getBoundingClientRect();
+    if (!r.width || !r.height) continue; // collapsed panels (hidden=until-found)
+    const d = (r.left + r.width / 2 - e.clientX) ** 2 + (r.top + r.height / 2 - e.clientY) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  if (!best) return;
+
+  const first = new Map();
+  for (const k of container.children) first.set(k, k.getBoundingClientRect());
+
+  const r = best.getBoundingClientRect();
+  if (e.clientY > r.top + r.height / 2) {
+    if (best.nextSibling) container.insertBefore(panel, best.nextSibling);
+    else container.appendChild(panel);
+  } else {
+    container.insertBefore(panel, best);
+  }
+
+  // FLIP: every panel that moved gets an inverse translate, then eases back to
+  // its real position, so the reorder reads as a glide instead of a snap.
+  if (!reducedMotion()) {
+    for (const k of first.keys()) {
+      const f = first.get(k);
+      const l = k.getBoundingClientRect();
+      if (!f.width || !f.height || !l.width || !l.height) continue;
+      const dx = f.left - l.left;
+      const dy = f.top - l.top;
+      if (!dx && !dy) continue;
+      if (typeof k.animate === "function") {
+        k.animate(
+          [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+          { duration: 260, easing: "cubic-bezier(0.2, 0.85, 0.25, 1)" }
+        );
+      } else {
+        k.style.transition = "transform 260ms cubic-bezier(0.2, 0.85, 0.25, 1)";
+        k.style.transform = `translate(${dx}px, ${dy}px)`;
+        requestAnimationFrame(() => (k.style.transform = ""));
+      }
+    }
+  }
+  persistOrder();
+}
+
 // ---------- Data source ----------
 async function fetchStats() {
   const res = await fetch(STATS_ENDPOINT, { cache: "no-store" });
@@ -548,10 +675,19 @@ async function refresh() {
   renderHero(data.throughput, data.power, data.context, data.cache);
 }
 
+async function wireDragDrop() {
+  for (const cls of ["masonry", "band"]) {
+    const container = document.querySelector(`.${cls}`);
+    if (container) wireContainer(container);
+  }
+}
+
 async function init() {
   // The countdown ring on the badge sweeps once per poll, so it has to know the
   // interval that JS actually uses.
   document.documentElement.style.setProperty("--poll-ms", `${REFRESH_MS}ms`);
+  restoreOrder();
+  wireDragDrop();
   tickClock();
   wireLogReveal();
   await refresh();

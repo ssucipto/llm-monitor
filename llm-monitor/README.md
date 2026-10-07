@@ -73,6 +73,16 @@ files and log tails. Sections:
 - **System log** — merged tails of `watchdog.log`, `autostart.log`, `server.log.err`,
   collapsed with `hidden="until-found"`.
 
+## Drag-and-drop layout
+
+Any panel can be dragged by its heading and dropped anywhere in the card masonry
+or the history band — document order drives both, so a drop reorders the DOM and
+the arrangement is remembered in `localStorage` between reloads. The drop point's
+nearest sibling decides the new slot, and a FLIP animation glides the panels to
+their places. `?reset=1` in the URL clears the saved arrangement and restores the
+default priority order. Touch is excluded (so page scrolling is never hijacked),
+and the hero band is fixed.
+
 ## `/api/stats` shape
 
 ```json

@@ -4,6 +4,21 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.4] - 2026-10-07
+
+### Added
+- **Drag-and-drop layout**: grab any panel by its heading and drop it anywhere in
+  the card masonry or the history band. Document order drives both containers, so
+  a drop reorders the DOM; the arrangement is remembered in `localStorage` and
+  restored on load, and `?reset=1` in the URL clears it. A FLIP animation glides
+  the panels to their new slots, and a dragged panel lifts with a deeper shadow
+  and accent border. Touch is excluded so page scrolling is never hijacked, and
+  drags start only on the panel box or its heading, never inside its text.
+- Footer hint stating the drag affordance and the reset URL.
+
+### Changed
+- README documents the drag-and-drop layout alongside the monitoring sections.
+
 ## [0.1.3] - 2026-10-07
 
 ### Fixed
