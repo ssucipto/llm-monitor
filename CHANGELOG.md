@@ -4,6 +4,24 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.2] - 2026-10-07
+
+### Added
+- A lifetime **session-totals** line in the Telemetry panel (since / requests / prompt / output
+  from the engine's cumulative counters) — a look-back that stays useful before the SQLite
+  window has enough samples to analyse.
+- A compact **endpoint-status** chip in the footer marking which engine endpoints
+  (`health`/`metrics`/`slots`/`models`/`status`) the backend reached this poll, so a partial
+  outage is visible without opening the console.
+
+### Changed
+- **Layout**: replaced the fixed 2-col × 6-row grid area map with a dense auto-flow grid that
+  packs panels by importance (`order`) with no forced empty cells, and lays the three history
+  panels (telemetry / requests / log) full-width as a bottom band. This removes the whitespace
+  around sparse panels (carryover a1-02).
+- README documents the new session-totals line and endpoint chip.
+- Contributor identity set to `ssucipto` in `agent/core/identity.yml`.
+
 ## [0.1.1] - 2026-10-07
 
 ### Fixed

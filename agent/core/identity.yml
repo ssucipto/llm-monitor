@@ -15,7 +15,7 @@ stack:
   - backend: sqlite3           # bounded telemetry history (local, gitignored)
   - deployment: None           # runs locally on this machine
 
-team: solo-developer
+team: ssucipto
 priorities:
   - code-quality
   - correctness

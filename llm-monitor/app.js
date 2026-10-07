@@ -301,7 +301,7 @@ function renderGpu(gpu, history) {
         : "gpu utilisation — no counters on this driver";
   }
 }
-function renderAnalysis(analysis, telemetry) {
+function renderAnalysis(analysis, telemetry, totals) {
   const recent = analysis && analysis.recent;
   const previous = analysis && analysis.previous;
   if (!recent) {
@@ -311,6 +311,7 @@ function renderAnalysis(analysis, telemetry) {
       ? `telemetry off — ${telemetry.error}`
       : "awaiting history");
     ["an-requests", "an-tok", "an-prefill", "an-hit", "an-accept", "an-idle", "an-energy", "an-trend"].forEach((id) => setText(id, "--"));
+    renderSession(totals);
     return;
   }
   setText("an-window", `last ${Math.round((recent.span_s || 0) / 60)} min`);
@@ -332,6 +333,28 @@ function renderAnalysis(analysis, telemetry) {
   } else {
     setText("an-trend", "no prior window yet");
   }
+  renderSession(totals);
+}
+
+// Lifetime totals for the running engine session — a "look back" line that stays
+// useful even before the SQLite window has enough samples to analyse.
+function renderSession(totals) {
+  const t = totals || {};
+  setText("an-session", `session totals — since ${fmtSince(t.since)} · ${fmtInt(t.requests)} requests · ${fmtInt(t.prompt_tokens)} prompt · ${fmtInt(t.output_tokens)} output`);
+}
+
+// The engine's `since` is an epoch (seconds or ms) or an ISO string depending on
+// build; normalise both to a clock time, and fall back to the raw value if it is
+// neither, so the line never reads "Invalid Date".
+function fmtSince(v) {
+  if (v === null || v === undefined) return "--";
+  let d = null;
+  if (typeof v === "number") {
+    d = new Date(v < 1e12 ? v * 1000 : v);
+  } else {
+    d = new Date(v);
+  }
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleString() : String(v);
 }
 
 // ---------- Hardware ----------
@@ -476,6 +499,17 @@ function setBadge(error) {
   badge.textContent = error ? "Stale" : "Live";
 }
 
+// Which engine endpoints the backend could reach this poll — a compact health
+// readout so a partial outage is visible without opening the console.
+function renderEndpoints(endpoints) {
+  const node = $("endpoints-status");
+  if (!node) return;
+  const ep = endpoints || {};
+  const mark = (ok) => ok ? "✓" : "✗";
+  node.textContent = ["health", "metrics", "slots", "models", "status"]
+    .map((k) => `${k} ${mark(ep[k])}`).join(" · ");
+}
+
 async function refresh() {
   let data;
   try {
@@ -499,9 +533,10 @@ async function refresh() {
   renderCache(data.cache);
   renderSpec(data.spec);
   renderRequests(data.requests, data.requests_kept);
-  renderAnalysis(data.analysis, data.telemetry);
+  renderAnalysis(data.analysis, data.telemetry, data.totals);
   renderSwitch(data.switch);
   renderLog(data.log);
+  renderEndpoints(data.endpoints);
 }
 
 async function init() {

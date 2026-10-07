@@ -273,6 +273,7 @@
     <section class="panel analysis" id="analysis" aria-labelledby="analysis-h">
       <h2 id="analysis-h">Telemetry</h2>
       <p class="analysis__window" id="an-window">awaiting history</p>
+      <p class="analysis__session" id="an-session">session totals — since -- · requests -- · prompt -- · output --</p>
       <dl class="analysis__facts">
         <div class="fact"><dt>Requests</dt><dd id="an-requests">--</dd></div>
         <div class="fact"><dt>Tok/s</dt><dd id="an-tok">--</dd></div>
@@ -303,6 +304,7 @@
   </main>
 
   <footer class="footer">
+    <p class="endpoints__status" id="endpoints-status">endpoints — health -- · metrics -- · slots -- · models -- · status --</p>
     <p>Reads the live engine on <code>http://127.0.0.1:8080</code> (<code>/health</code>, <code>/metrics</code>,
       <code>/status</code>, <code>/slots</code>, <code>/props</code>, <code>/v1/models</code>) plus the Hermes workspace state files and log tails.
       The <code>id</code> attributes here are the contract: <code>app.js</code> updates them from <code>/api/stats</code>.</p>

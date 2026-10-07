@@ -22,10 +22,10 @@ carryovers:
     finding: fixed 2-col × 6-row grid area map pairs unequal panels → ragged bottoms and whitespace in sparse panels
     location: llm-monitor/style.css:201
     severity: high
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: 2
-    notes: partially improved (panels now paired by content volume, log gets full-width row) but still a fixed area map, not span-based. STILL OPEN
+    status: fixed
+    fix_applied_date: 2026-10-07
+    verified_in_audit: 3
+    notes: layout is now a dense auto-flow grid (grid-auto-flow: row dense) with per-panel order by importance and align-items:start; the three history panels (telemetry/requests/log) span full width as a bottom band. No forced empty cells. Mobile resets span to 1
   - id: a1-03
     audit: 1
     finding: footer endpoint list omits /status and /props that the backend now probes
@@ -107,3 +107,12 @@ carryovers:
     fix_applied_date: null
     verified_in_audit: null
     notes: not a code defect; a tooling gap. Either install the harness or treat /acp-ci as N/A for this repo. Local gates (node --check, py_compile, review-scan) are the substitute
+  - id: r3-01
+    audit: 3
+    finding: sparkline captions say "recent history" without the sampling window; history_bucket_s (75s) applies only to the requests series, while tok_s/power_w/cpu are per-poll (~5s), so a single blanket label would be inaccurate
+    location: llm-monitor/app.js:249
+    severity: low
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: 3
+    notes: deliberately NOT shortcut in audit-3/review — a blanket window label would misstate the per-series x-axis. Correct fix threads a per-series window through drawSpark. Left open, not half-done

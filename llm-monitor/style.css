@@ -193,26 +193,21 @@ body {
 }
 
 /* ---------- Layout ----------
- * A 2-column grid, but paired by content volume rather than by reading order:
- * tall panels sit opposite tall ones and medium opposite medium, so no row is
- * stretched by a sparse neighbour. The log gets its own full-width row because
- * it ships collapsed (hidden="until-found").
+ * A dense auto-flow grid, not a fixed area map: panels pack by `order` (importance)
+ * with no forced empty cells, and the wide history panels (telemetry, requests,
+ * log) span the full width so they get a whole row instead of being paired with a
+ * sparse neighbour that leaves whitespace. align-items:start keeps a short panel
+ * hugging its own content rather than stretching to a taller neighbour's height.
  */
 .layout {
   max-width: 1240px;
   margin: 0 auto;
   padding: 22px;
   display: grid;
-  gap: 18px;
-  grid-template-columns: 1fr 1fr;
-  grid-template-areas:
-    "engine     throughput"
-    "live       context"
-    "power      gpu"
-    "hardware   cache"
-    "requests   analysis"
-    "spec       switch"
-    "log        log";
+  gap: 16px;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-flow: row dense;
+  align-items: start;
 }
 
 .panel {
@@ -229,19 +224,22 @@ body {
   font-weight: 600;
 }
 
-.panel.engine { grid-area: engine; }
-.panel.live { grid-area: live; }
-.panel.context { grid-area: context; }
-.panel.throughput { grid-area: throughput; }
-.panel.hardware { grid-area: hardware; }
-.panel.cache { grid-area: cache; }
-.panel.spec { grid-area: spec; }
-.panel.requests { grid-area: requests; }
-.panel.switch { grid-area: switch; }
-.panel.power { grid-area: power; }
-.panel.analysis { grid-area: analysis; }
-.panel.gpu { grid-area: gpu; }
-.panel.log { grid-area: log; }
+/* Priority layout: `order` drives auto-placement, so the visual sequence is by
+ * importance (headline status pairs on top), not source order. The three history
+ * panels span the full width and form a bottom band for looking back. */
+.panel.engine { order: 1; }
+.panel.throughput { order: 2; }
+.panel.live { order: 3; }
+.panel.context { order: 4; }
+.panel.power { order: 5; }
+.panel.gpu { order: 6; }
+.panel.hardware { order: 7; }
+.panel.cache { order: 8; }
+.panel.spec { order: 9; }
+.panel.switch { order: 10; }
+.panel.analysis { order: 11; grid-column: span 2; }
+.panel.requests { order: 12; grid-column: span 2; }
+.panel.log { order: 13; grid-column: span 2; }
 
 /* ---------- Generic fact list (dt/dd pairs) ---------- */
 .facts,
@@ -681,6 +679,13 @@ meter {
   font-size: 0.75rem;
 }
 
+.endpoints__status {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Power ---------- */
 .power__hint {
   margin: 6px 0 0;
@@ -692,6 +697,13 @@ meter {
   margin: 0 0 8px;
   font-size: 0.8rem;
   color: var(--text-dim);
+}
+
+.analysis__session {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- Sparkline variants ---------- */
@@ -825,20 +837,11 @@ body::before {
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
-    grid-template-areas:
-      "engine"
-      "live"
-      "context"
-      "throughput"
-      "power"
-      "gpu"
-      "hardware"
-      "cache"
-      "spec"
-      "requests"
-      "analysis"
-      "switch"
-      "log";
+  }
+  .panel.analysis,
+  .panel.requests,
+  .panel.log {
+    grid-column: span 1;
   }
   .hardware__metrics,
   .gpu__metrics {

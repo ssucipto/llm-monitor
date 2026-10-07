@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.1
+  version: 0.1.2
   started: 2026-10-07
   status: in_progress
   current_milestone: M1
@@ -67,6 +67,21 @@ progress:
 recent_work:
   - date: 2026-10-07
     description: |
+      Interface redesign: dense priority grid (resolves a1-02), new look-back
+      monitoring items (session totals + endpoint chip), and contributor identity.
+    items:
+      - "✅ layout is now a dense auto-flow grid with order-by-importance (a1-02 fixed)"
+      - "✅ history panels (telemetry/requests/log) span full width as a bottom band"
+      - "✅ session-totals line surfaces lifetime totals (look-back affordance)"
+      - "✅ endpoint-status chip surfaces per-endpoint reachability in the footer"
+      - "✅ contributor identity set to ssucipto in identity.yml"
+      - "✅ README doc parity for the new items"
+      - "📋 r3-01 sparkline window label deliberately deferred (blanket label would be inaccurate)"
+      - "📋 a2-01 running :8090 process must be restarted to pick up the fix"
+      - "📋 r1-01 ACP CI harness absent — /acp-ci N/A for this repo"
+
+  - date: 2026-10-07
+    description: |
       Diagnosed and fixed the empty GPU/power trend bug, surfaced telemetry
       status in the payload, and made the dashboard honest about why a series
       is empty.
@@ -77,9 +92,6 @@ recent_work:
       - "✅ falsy-zero trend guard (previous/recent requests presence, not truthiness)"
       - "✅ dead duplicate ctx/cache/spec assignments removed in db_record"
       - "✅ GPU panel caption explains empty readings on AMD HIP driver"
-      - "📋 a1-02 span-based grid redesign still open"
-      - "📋 a2-01 running :8090 process must be restarted to pick up the fix"
-      - "📋 r1-01 ACP CI harness absent — /acp-ci N/A for this repo"
 
   - date: 2026-10-07
     description: |

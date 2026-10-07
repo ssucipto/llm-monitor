@@ -62,7 +62,12 @@ files and log tails. Sections:
 - **Requests** — recent generations (duration, finish reason, prompt/read/output
   tokens, tok/s, hit-rate) from `/metrics.requests`.
 - **Telemetry** — windowed analysis from the SQLite history: requests, tok/s mean/peak,
-  prefill mean, hit/accept rate, idle %, energy, and a trend vs the prior window.
+  prefill mean, hit/accept rate, idle %, energy, and a trend vs the prior window. A
+  lifetime **session-totals** line (since / requests / prompt / output from `totals`) sits
+  alongside it as a look-back that stays useful before the window has enough samples.
+- **Endpoints** — a compact footer chip marks which engine endpoints (`health`/`metrics`/
+  `slots`/`models`/`status`) the backend reached this poll, so a partial outage is visible
+  without opening the console.
 - **Switch** — `engine-active.txt`, the active llama profile, owner, PID, and the
   full profile inventory with the active one highlighted.
 - **System log** — merged tails of `watchdog.log`, `autostart.log`, `server.log.err`,
