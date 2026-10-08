@@ -83,10 +83,10 @@ packages:
         - name: acp.wiki-update.md
         - name: git.commit.md
         - name: git.init.md
-      patterns:
+    patterns:
         - name: bootstrap.template.md
         - name: pattern.template.md
-      designs:
+    designs:
         - name: design.template.md
         - name: requirements.template.md
 manifest_version: 1.0.0

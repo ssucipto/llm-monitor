@@ -112,10 +112,10 @@ carryovers:
     finding: sparkline captions say "recent history" without the sampling window; history_bucket_s (75s) applies only to the requests series, while tok_s/power_w/cpu are per-poll (~5s), so a single blanket label would be inaccurate
     location: llm-monitor/app.js:249
     severity: low
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: 3
-    notes: deliberately NOT shortcut in audit-3/review — a blanket window label would misstate the per-series x-axis. Correct fix threads a per-series window through drawSpark. Left open, not half-done
+    status: fixed
+    fix_applied_date: 2026-10-08
+    verified_in_audit: 8
+    notes: drawSpark now takes a per-series windowMs and states the real x-axis (per-sample interval + span) in the caption. tok_s/power_w/cpu/vram pass REFRESH_MS (5s); requests passes historyBucketMs (set from data.history_bucket_s*1000, default 75s); hist passes 86400000 (per-day). No blanket label — each series states its own window.
   - id: a4-01
     audit: 4
     finding: drag froze over hero/gaps/footer and cross-container drops failed — pointermove/up were bound to the container, not the page
@@ -233,3 +233,39 @@ carryovers:
     fix_applied_date: null
     verified_in_audit: 5
     notes: engine sources hardware via psutil (hardware_static.psutil=true, no GPU API on Windows); amdgfxinfo64.dll won't load standalone (WinError 1114), no GFXINFO_* exports in System32/DriverStore. NOT ACTIONABLE — stays -- honestly
+  - id: a7-01
+    audit: 7
+    finding: day rollup table never pruned — db_prune only deletes poll rows, so the day table grows unbounded on disk
+    location: llm-monitor/server.py:645
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-08
+    verified_in_audit: 7
+    notes: added db_prune_days (DELETE day WHERE d < today - DB_DAILY_MAX), called in telemetry() after db_finalize_days; day rows are tiny so a full-scan DELETE is trivial
+  - id: a7-02
+    audit: 7
+    finding: retention was 400 days (~13 months), not the requested 3 months
+    location: llm-monitor/server.py:68
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-08
+    verified_in_audit: 7
+    notes: DB_DAILY_MAX 400 -> 90 (~3 months); bounds both the finalize write-loop floor and db_prune_days, so exactly ~90 days retained and overwritten
+  - id: a7-03
+    audit: 7
+    finding: no way to share/export collected data to an agent for review/dogfooding/troubleshooting
+    location: llm-monitor/server.py:serve
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-08
+    verified_in_audit: 7
+    notes: added GET /api/export (JSON: named poll_rows + days + meta{generated,window_days,poll_cols}) and /api/export.csv (header + rows). db_export always returns a str; build_export returns body or None. Data ships with field names + provenance = usable, not garbage
+  - id: a7-05
+    audit: 7
+    finding: engine exposes per-request fields we do not capture (pcie_share, ram_blobs, file_blobs, file_mb, reasoning_recoveries, drafts_offered/accepted; totals.drafts_*)
+    location: llm-monitor/server.py (db_record / poll schema)
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-08
+    verified_in_audit: 8
+    notes: implemented in audit-8. Added drafts_offered/drafts_accepted (from totals) + pcie_share (from requests[0]) to poll schema, ALTER loop, INSERT, and db_export poll_cols. Sourced from the SAME /metrics dict the poll already reads -> zero extra engine requests. Blob counts (ram_blobs/file_blobs/reasoning_recoveries) deliberately NOT added — not numeric time-series material. INSERT arity bug (22 vs 23 ?) caught by migration test, fixed.

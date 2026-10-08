@@ -64,7 +64,7 @@ DB_PATH = str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
 DB_MAX_ROWS = 20000
 DB_PRUNE_EVERY = 500
 DB_WINDOW_S = 3600  # the two analysis windows (recent vs previous)
-DB_DAILY_MAX = 400  # finalized days kept in the rollup table (covers 13+ months)
+DB_DAILY_MAX = 90   # finalized days kept in the rollup table (~3 months, pruned in telemetry)
 
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
@@ -585,15 +585,21 @@ def db_init():
             "ctx_used REAL, ctx_pct REAL, hit_pct REAL, accept_pct REAL,"
             "reqs INTEGER, prompt_tokens INTEGER, reused INTEGER, output_tokens INTEGER,"
             "power_w REAL, power_src TEXT, gpu_util REAL, gpu_power REAL, busy INTEGER,"
-            " vram_used REAL, vram_total REAL)"
+            " vram_used REAL, vram_total REAL,"
+            " drafts_offered INTEGER, drafts_accepted INTEGER, pcie_share REAL)"
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
-    # A table from an older build lacks the VRAM columns; ALTER them in so the
-    # existing history survives the schema change rather than being reset.
-    for col in ("vram_used", "vram_total"):
+    # A table from an older build lacks the newer columns; ALTER them in so the
+    # existing history survives each schema change rather than being reset. The
+    # draft counters + pcie_share are the richer dogfooding fields (a7-05): they
+    # come from data the poll already fetches (totals + request records), so they
+    # add no extra engine request.
+    for col, ctype in (("vram_used", "REAL"), ("vram_total", "REAL"),
+                       ("drafts_offered", "INTEGER"), ("drafts_accepted", "INTEGER"),
+                       ("pcie_share", "REAL")):
         try:
-            con.execute(f"ALTER TABLE poll ADD COLUMN {col} REAL")
+            con.execute(f"ALTER TABLE poll ADD COLUMN {col} {ctype}")
         except sqlite3.OperationalError:
             pass  # the column is already there
     try:
@@ -620,11 +626,13 @@ def db_record(con, stats):
     live = stats.get("live") or {}
     thr = stats.get("throughput") or {}
     gpu = stats.get("gpu") or {}
+    reqs = stats.get("requests") or []
+    last_req = reqs[0] if reqs and isinstance(reqs[0], dict) else None
     con.execute(
         "INSERT INTO poll (t, cpu, ram, tok_s, prefill, ctx_used, ctx_pct, hit_pct, accept_pct,"
         " reqs, prompt_tokens, reused, output_tokens, power_w, power_src, gpu_util, gpu_power, busy,"
-        " vram_used, vram_total)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " vram_used, vram_total, drafts_offered, drafts_accepted, pcie_share)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             now,
             hw.get("cpu_pct"), hw.get("ram_used"),
@@ -636,6 +644,8 @@ def db_record(con, stats):
             gpu.get("util_pct"), gpu.get("power_w"),
             1 if live.get("state") not in ("idle", None) else 0,
             gpu.get("mem_used"), gpu.get("mem_total"),
+            totals.get("drafts_offered"), totals.get("drafts_accepted"),
+            (last_req or {}).get("pcie_share"),
         ),
     )
     con.commit()
@@ -648,6 +658,21 @@ def db_prune(con):
     if cut:
         con.execute("DELETE FROM poll WHERE t <= ?", (cut[0],))
         con.commit()
+
+
+def db_prune_days(con):
+    """Drop rollup days older than the retention window so history stays ~3 months.
+
+    db_finalize_days bounds which days it WRITES but never deletes old ones, so without
+    this the day table grows unbounded on disk. Days are tiny (one row/day), so a full-scan
+    DELETE over a <=90-row table is trivial and runs every poll.
+    """
+    latest = con.execute("SELECT t FROM poll ORDER BY t DESC LIMIT 1").fetchone()
+    if not latest:
+        return
+    today = int(latest[0] // 86400)
+    con.execute("DELETE FROM day WHERE d < ?", (today - DB_DAILY_MAX,))
+    con.commit()
 
 
 def cumulative_delta(rows, idx):
@@ -777,6 +802,40 @@ def db_daily(con, limit=DB_DAILY_MAX):
         agg["date"] = _iso_day(d)
         out.append(agg)
     return out[-limit:]
+
+
+def db_export(con, fmt="json"):
+    """Serialize the retained history for sharing with an agent (JSON string or CSV text).
+
+    The poll table is already bounded to DB_MAX_ROWS and the day rollup to DB_DAILY_MAX
+    (pruned in telemetry), so this is exactly the window we keep -- nothing older leaks out.
+    Poll rows are emitted as NAMED fields (not positional tuples) so a reader can use them
+    without the source, and a meta block states the window and schema. This is the
+    "usable data, not garbage" contract: field names, units, and provenance travel with it.
+    Always returns a string (JSON is pre-serialized) so the caller never juggles types.
+    """
+    poll_cols = ("t", "cpu", "ram", "tok_s", "prefill", "ctx_used", "ctx_pct", "hit_pct",
+                 "accept_pct", "reqs", "prompt_tokens", "reused", "output_tokens",
+                 "power_w", "power_src", "gpu_util", "gpu_power", "busy", "vram_used", "vram_total",
+                 "drafts_offered", "drafts_accepted", "pcie_share")
+    rows = con.execute("SELECT * FROM poll ORDER BY t").fetchall()
+    days = db_daily(con)
+    if fmt == "csv":
+        import csv
+        import io
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(poll_cols)
+        for r in rows:
+            w.writerow(r)
+        return buf.getvalue()
+    return json.dumps({
+        "generated": datetime.now(timezone.utc).timestamp(),
+        "window_days": DB_DAILY_MAX,
+        "poll_cols": list(poll_cols),
+        "poll_rows": [dict(zip(poll_cols, r)) for r in rows],
+        "days": days,
+    })
 
 
 def db_periods(dlist):
@@ -947,6 +1006,7 @@ def telemetry(stats):
         _DB_WRITES += 1
         db_record(con, stats)
         db_finalize_days(con)  # before pruning, so a closed day is captured
+        db_prune_days(con)     # keep the rollup to ~3 months (day rows are tiny)
         if _DB_WRITES % DB_PRUNE_EVERY == 0:
             db_prune(con)
         rows = db_rows(con)
@@ -1216,24 +1276,51 @@ def build_stats():
 
 
 # ---------- HTTP server ----------
+def build_export(fmt="json"):
+    """Open a fresh connection and serialize the retained history for the export routes.
+
+    Opened per request (not shared across threads) for the same cross-thread reason as
+    telemetry(). Returns the body string, or None if the DB is unavailable so the caller
+    can fall through to a 404 rather than crash.
+    """
+    try:
+        con = db_init()
+    except Exception:
+        return None
+    try:
+        return db_export(con, fmt)
+    except Exception as err:
+        print(f"[export] disabled: {err}")
+        return None
+    finally:
+        con.close()
 
 
-# ---------- HTTP server ----------
 def serve(port):
     import http.server
     from functools import partial
 
     class _Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            if self.path.rstrip("/") == "/api/stats":
+            path = self.path.rstrip("/")
+            if path == "/api/stats":
                 body = json.dumps(build_stats()).encode()
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                ctype = "application/json"
+            elif path == "/api/export" or path == "/api/export.csv":
+                payload = build_export("csv" if path.endswith(".csv") else "json")
+                if payload is None:
+                    super().do_GET()
+                    return
+                body = payload.encode()
+                ctype = "text/csv" if path.endswith(".csv") else "application/json"
+            else:
+                super().do_GET()
                 return
-            super().do_GET()
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
     root = str(Path(__file__).resolve().parent)
     handler = partial(_Handler, directory=root)

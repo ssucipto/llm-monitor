@@ -4,6 +4,25 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.9] - 2026-10-08
+
+### Added
+- **Export endpoints for sharing collected telemetry with an outside reviewer.** `GET /api/export`
+  returns JSON (`poll_rows` named-keyed, `days`, and `meta{generated, window_days, poll_cols}` so
+  a reader can map columns); `GET /api/export.csv` returns plain CSV (header + rows). Data ships
+  with field names and provenance, so it is usable, not garbage.
+- **Richer dogfooding fields in the poll row.** `drafts_offered`, `drafts_accepted` (from the
+  engine totals) and `pcie_share` (from the latest request) are now captured and exported. They come
+  from the same `/metrics` dict the poll already reads, so there is zero extra engine cost.
+- **Per-series sparkline window labels.** Each sparkline caption now states its own real x-axis
+  (per-sample interval + span) instead of a blanket "recent history": tok/s/power/CPU/VRAM are
+  per-poll (~5 s), requests follow `history_bucket_s` (default 75 s), and the history panel is per-day.
+- **Decode throughput (tok/s) in the sticky header**, mirroring the prefill meter.
+
+### Fixed
+- **Backward-compatible poll schema growth.** The three new columns are added via an idempotent
+  ALTER loop, so existing SQLite DBs migrate cleanly (20 → 23 columns) without losing history.
+
 ## [0.1.8] - 2026-10-07
 
 ### Fixed

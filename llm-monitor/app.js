@@ -12,6 +12,10 @@
 const REFRESH_MS = 5000;
 const SPARK_SAMPLES = 24;
 const STATS_ENDPOINT = "api/stats";
+// Per-sample width of the server-bucketed requests series (history_bucket_s seconds).
+// Set from the payload each poll so drawSpark can label the requests x-axis honestly;
+// the per-poll series (tok_s/prefill/power/cpu/vram) use REFRESH_MS instead.
+let historyBucketMs = 75 * 1000;
 
 // ---------- Helpers ----------
 const $ = (id) => document.getElementById(id);
@@ -383,14 +387,14 @@ function renderThroughput(throughput, history) {
   const src = throughput && throughput.source === "last" ? "last request" : throughput && throughput.source === "live" ? "live" : "";
   setText("thr-source", src || "--");
   setText("thr-prefill-source", psrc || "--");
-  drawSpark("thr", history && history.tok_s, "tokens/s", "tokens/s, recent history");
-  drawSpark("req", history && history.requests, "requests", "requests per interval — a flat stretch is an idle engine");
+  drawSpark("thr", history && history.tok_s, "tokens/s", "tokens/s, recent history", REFRESH_MS);
+  drawSpark("req", history && history.requests, "requests", "requests per interval — a flat stretch is an idle engine", historyBucketMs);
 }
 
 // A sparkline drawn into any <prefix>-* group. The engine keeps no request-count or
 // prefill history, so those series are derived server-side; a flat stretch is the
 // whole point of the request chart — it means the engine sat idle.
-function drawSpark(prefix, samples, unit, fallbackCaption) {
+function drawSpark(prefix, samples, unit, fallbackCaption, windowMs) {
   const line = $(`${prefix}-spark`);
   const area = $(`${prefix}-area`);
   const head = $(`${prefix}-head`);
@@ -428,7 +432,15 @@ function drawSpark(prefix, samples, unit, fallbackCaption) {
   if (area) restart(area, "spark-fade", 900);
   if (caption) {
     const min = Math.min(...vals);
-    caption.textContent = `${unit}, last ${vals.length} samples (peak ${max.toFixed(0)} · min ${min.toFixed(0)})`;
+    // The x-axis window differs per series: tok_s/prefill/power_w/cpu/hit_pct/vram are
+    // one sample per poll (~REFRESH_MS), while the requests series is bucketed server-side
+    // into history_bucket_s intervals. State the real per-sample window so the caption
+    // never mislabels a bucketed series as per-poll (r3-01).
+    const per = windowMs || REFRESH_MS;
+    const span = per * vals.length;
+    const perLabel = per >= 60000 ? `${(per / 60000).toFixed(0)} min` : `${(per / 1000).toFixed(0)} s`;
+    const spanLabel = span >= 60000 ? `≈${(span / 60000).toFixed(0)} min` : `≈${(span / 1000).toFixed(0)} s`;
+    caption.textContent = `${unit}, last ${vals.length} samples · ${perLabel}/sample (${spanLabel}) · peak ${max.toFixed(0)} · min ${min.toFixed(0)}`;
   }
 }
 
@@ -446,7 +458,7 @@ function renderPower(power, history) {
     : power.source === "modelled" ? `modelled (${power.model && power.model.gpu_name})`
     : power.source === "unavailable" ? "unavailable" : "--";
   setText("power-source", src);
-  drawSpark("pw", history && history.power_w, "watts", "watts, recent history");
+  drawSpark("pw", history && history.power_w, "watts", "watts, recent history", REFRESH_MS);
 }
 
 // ---------- GPU ----------
@@ -475,7 +487,9 @@ function renderGpu(gpu, history, power) {
   // A derived figure is in MiB (the engine reports vram_free_mib); a counter the
   // engine supplies would be bytes, so scale by the source rather than assume.
   const scale = gpu.mem_source === "derived" ? 1048576 : 1;
-  setText("gpu-mem-hint", gpu.mem_used && gpu.mem_total
+  // Guard with != null, not truthiness: a fully-free card legitimately reports mem_used
+  // === 0, which must render as "0 MiB / 24 GiB", not fall back to the placeholder.
+  setText("gpu-mem-hint", gpu.mem_used != null && gpu.mem_total != null
     ? `${fmtBytes(gpu.mem_used * scale)} / ${fmtBytes(gpu.mem_total * scale)}${gpu.mem_source === "derived" ? " · derived" : ""}`
     : "used / total");
   // Temperature is a fraction of a 100 °C ceiling, so the gauge reads severity.
@@ -494,7 +508,7 @@ function renderGpu(gpu, history, power) {
     const isVram = !!vramSeries;
     drawSpark("gpu", isVram ? vramSeries : utilSeries,
       isVram ? "% vram used" : "% gpu util",
-      isVram ? "vram in use, recent history" : "gpu utilisation, recent history");
+      isVram ? "vram in use, recent history" : "gpu utilisation, recent history", REFRESH_MS);
   } else if (gpuCaption) {
     // No series to draw yet, so say why in the caption rather than leaving a blank
     // chart that reads as a flat zero.
@@ -761,6 +775,8 @@ function renderTopbar(engine, throughput) {
   const pre = throughput && throughput.prefill;
   setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
   setPrefillGauge(pre);
+  const tok = throughput && throughput.now;
+  setText("top-tok", tok != null ? `${tok.toFixed(1)}` : "--");
   const host = $("top-identity");
   if (!host) return;
   const svc = engine.service || engine.active;
@@ -831,7 +847,7 @@ function renderHistory(periods, daily) {
   setText("hist-day", periods && periodLine(periods.day));
   setText("hist-week", periods && periodLine(periods.week));
   setText("hist-month", periods && periodLine(periods.month));
-  drawSpark("hist", days.map((x) => x.requests), "req/day", "requests per day, recorded history");
+  drawSpark("hist", days.map((x) => x.requests), "req/day", "requests per day, recorded history", 86400000);
   selectDay(Math.min(scrubIdx, Math.max(0, days.length - 1)), true);
 }
 
@@ -917,6 +933,10 @@ async function refresh() {
     setBadge(true);
     return;
   }
+
+  // Stash the bucketed-series window before rendering so drawSpark labels the requests
+  // x-axis with the real interval rather than the per-poll default (r3-01).
+  if (data.history_bucket_s) historyBucketMs = data.history_bucket_s * 1000;
 
   renderEngine(data.engine, data.config);
   renderLive(data.live, data.status);

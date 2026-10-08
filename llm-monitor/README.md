@@ -147,6 +147,21 @@ per-interval, never the engine's cumulative counter. `telemetry` reports whether
 side channel is live — when it is not, the trends and the Telemetry panel say so rather than
 looking like a quiet engine.
 
+## Export
+
+Two endpoints ship the collected telemetry to an outside reviewer (agent, dogfooding,
+troubleshooting) with field names and provenance so the data is usable, not garbage:
+
+- `GET /api/export` — JSON: `{poll_rows, days, meta:{generated, window_days, poll_cols}}`.
+  `poll_rows` are named-keyed (never positional), `poll_cols` lists the schema so a reader
+  can map columns. Retention is bounded to ~90 days (`DB_DAILY_MAX`), so the export window
+  never exceeds ~3 months of data.
+- `GET /api/export.csv` — plain CSV (header row + rows) for spreadsheet/agent ingestion.
+
+The poll row now carries the richer dogfooding fields `drafts_offered`, `drafts_accepted`,
+and `pcie_share` (read from the same `/metrics` dict the poll already reads — zero extra
+engine cost), so speculative-decode and PCIe-share signals are available for analysis.
+
 ## Configuration
 
 All sources are at the top of `server.py`:

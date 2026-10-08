@@ -324,6 +324,13 @@ body {
   white-space: nowrap;
 }
 
+.topbar__tok {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
 .topbar__value {
   font-size: 1.05rem;
   font-weight: 700;

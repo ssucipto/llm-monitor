@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.8
+  version: 0.1.9
   started: 2026-10-07
   status: in_progress
   current_milestone: M1
@@ -65,6 +65,65 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-08
+    description: |
+      Ran the maintenance/commit pipeline (validate -> sync -> update -> commit -> push).
+      Fixed a pre-existing YAML defect and shipped the a7-05 + r3-01 features.
+    items:
+      - "✅ /acp-validate: progress.yaml + sessions.md parse clean; agent/manifest.yaml had a real YAML indentation error (patterns:/designs: nested inside files: list at indent 6) — re-indented to indent 4 so they are siblings of files:"
+      - "✅ deleted stray llm-monitor/tmp_mig.sqlite3 (leftover migration-probe artifact, not gitignored)"
+      - "✅ /acp-sync: README gained an Export section (/api/export JSON + /api/export.csv, ~90d window, richer drafts/pcie fields)"
+      - "✅ /acp-commit: promoted sqlite-additive-column-migration pattern to patterns.md; audit-carryovers a7-05/r3-01 already fixed; 7 sessions entries (<15, no compaction)"
+      - "✅ /git-commit: version bump 0.1.8 -> 0.1.9 (progress.yaml + CHANGELOG.md); staged tracked files only (no gitignored reports/sessions/telemetry)"
+      - "✅ gates: py_compile PASS; node --check PASS; INSERT arity 23/23/23 verified; manifest.yaml + progress.yaml parse OK"
+    items:
+      - "✅ r3-01 fixed: drawSpark takes a per-series windowMs and states the real x-axis (per-sample interval + span) in the caption — no blanket label"
+      - "✅ per-series windows: tok_s/power_w/cpu/vram pass REFRESH_MS (5s); requests passes historyBucketMs (from data.history_bucket_s*1000, default 75s); hist passes 86400000 (per-day)"
+      - "✅ module-level historyBucketMs set from data.history_bucket_s each poll in refresh()"
+      - "✅ header tok/s: new top-tok <data> in index.html (mirrors top-prefill), set in renderTopbar from throughput.now, .topbar__tok CSS added"
+      - "✅ gates: node --check app.js PASS; app.js/index.html/style.css diagnostics clean"
+  - date: 2026-10-08
+    description: |
+      2nd-pass audit of the telemetry lifecycle (audit-8). Confirmed audit-7's fixes landed and
+      are consistent, and closed the open a7-05 by capturing richer engine fields into the poll row.
+    items:
+      - "✅ re-verified audit-7 fixes present + consistent: DB_DAILY_MAX=90, db_prune_days called in telemetry(), /api/export + /api/export.csv routed in serve()"
+      - "✅ a7-05 implemented: added drafts_offered/drafts_accepted (from totals) + pcie_share (from requests[0]) to poll schema, ALTER loop, INSERT, and db_export poll_cols"
+      - "✅ zero extra engine cost: new fields come from the SAME /metrics dict the poll already reads; overhead stays flat"
+      - "✅ backward-compatible: ALTER loop extended to (col,ctype) pairs; old 20-col DBs migrate cleanly to 23"
+      - "✅ caught INSERT arity bug (22 vs 23 ?) via migration test — fixed to 23 placeholders; py_compile alone would not have caught it"
+      - "📋 blob counts (ram_blobs/file_blobs/reasoning_recoveries) deliberately NOT added — not numeric time-series material"
+      - "✅ gates: py_compile PASS; migration test (old DB -> ALTER -> named INSERT) OK; test artifacts deleted"
+  - date: 2026-10-08
+    description: |
+      Audited the full telemetry lifecycle (audit-7): persistence, purge, export, data
+      quality, overhead, and the engine's own log capability. Fixed two real defects and
+      added an export path.
+    items:
+      - "✅ history IS persistent across sessions — telemetry.sqlite3 is a gitignored file beside server.py (692 KB, 6239 poll rows live)"
+      - "✅ A7-01 day rollup was never pruned (unbounded disk) — added db_prune_days (DELETE day WHERE d < today - DB_DAILY_MAX), called in telemetry() after db_finalize_days"
+      - "✅ A7-02 retention 400d (~13mo) -> DB_DAILY_MAX=90 (~3 months); bounds both the write-loop floor and the prune, so exactly ~90 days retained and overwritten"
+      - "✅ A7-03 added GET /api/export (JSON: named poll_rows + days + meta{generated,window_days,poll_cols}) and /api/export.csv (header + rows) — data ships with field names + provenance = usable, not garbage"
+      - "✅ data quality verified live: poll row cpu 67.0, tok_s 90.1, prefill 1357, ctx 73047, hit 84.6, accept 79.3, vram 22854/24576 — all real/plausible"
+      - "✅ overhead low: 5s poll (REFRESH_MS), cheap GETs + one sqlite INSERT/poll; no engine-side cost"
+      - "✅ engine log capability: /metrics.history = 60 samples/series, requests 12, requests_kept 30, NO /log or /logs endpoint (404) — our DB is the only durable record"
+      - "📋 A7-05 pending: engine exposes per-request fields we don't capture (pcie_share, ram_blobs, file_blobs, file_mb, reasoning_recoveries, drafts_offered/accepted) — deferred, needs poll-column + ALTER migration if wanted"
+      - "✅ gates: py_compile PASS; server.py diagnostics clean for new code (remaining errors pre-existing false positives on guarded code)"
+
+  - date: 2026-10-08
+    description: |
+      2nd-pass audit/review of the committed GPU fix (audit-6 + review-003). Resolved the
+      open reference-frame question and confirmed the derived-VRAM reading is sound (not a
+      shortcut). One real defect found and fixed; no regressions.
+    items:
+      - "✅ vram_free_mib reference frame CONFIRMED card-relative — live values rise when idle (1722) and fall when busy (250); arena_mib+expert_cache_mib constant 27458 > 24576 so they overlap inside the card. Derived-VRAM fix kept, a5-01 stays fixed"
+      - "✅ live build_stats() probe: gpu.mem_pct=92.99 derived, util 0.0 modelled (idle), name rated, history.vram_pct populated, history_available=true"
+      - "✅ CR-101 (MEDIUM) fixed: app.js gpu-mem-hint guard changed from truthiness (mem_used && mem_total) to != null so a fully-free card renders 0 MiB / 24 GiB instead of the placeholder"
+      - "✅ /acp-ci --fast = SKIP (harness absent, r1-01) — reported honestly, never PASS with 0 executed steps"
+      - "✅ gates after edit: node --check + py_compile pass; app.js diagnostics clean"
+      - "📋 server.py static-analysis warnings (blind except, int(None) on guarded code) are pre-existing false positives — not touched this pass"
+      - "📋 audit-6/review-003 reports are gitignored (ADR-27); remediation edit is in app.js only"
+
   - date: 2026-10-07
     description: |
       Made the GPU panel honest and useful on the AMD HIP driver (audit-5). The five GPU
@@ -185,7 +244,6 @@ recent_work:
 # Next steps (prioritized list)
 next_steps:
   - Decide on the ACP CI harness: install it or treat /acp-ci as N/A for this consumer repo
-  - r3-01: thread a per-series sampling window through drawSpark so sparkline captions state the right x-axis
 
 # General notes and observations
 notes:
