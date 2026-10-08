@@ -46,7 +46,9 @@ files and log tails. Sections:
   tokens, elapsed, queued. From `/metrics.live` (Strata) or `/slots` (llama).
 - **Context window** — used/max tokens with a gauge.
 - **Throughput** — current + mean tok/s, prefill rate, and a self-redrawing
-  sparkline of the engine's own `history.tok_s` array.
+  sparkline of the engine's own `history.tok_s` array. The current reading is the
+  **decode** speed (labeled `decode tok/s` in the header chip and suffixed `decode`
+  on the panel's big number, so the two never disagree).
 - **Requests activity** — a second sparkline of requests-per-interval. The engine
   keeps no request-count history, so the backend buckets the request records' own
   timestamps (or the SQLite counter) into fixed intervals; a flat stretch is an

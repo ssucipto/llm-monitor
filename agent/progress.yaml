@@ -67,6 +67,17 @@ progress:
 recent_work:
   - date: 2026-10-08
     description: |
+      Surfaced decode speed in the interface, then audited that change (audit-9) and removed a
+      redundant shortcut it introduced.
+    items:
+      - "✅ header chip relabeled tok/s -> decode tok/s (index.html)"
+      - "✅ throughput panel big number now suffixed 'decode' (renderThroughput) so it matches the chip"
+      - "✅ audit-9 A-1: first pass added a Decode fact row (thr-decode) that duplicated thr-now (both throughput.now) — removed it; no orphan thr-decode ref remains"
+      - "✅ audit-9 A-2: label inconsistency (chip said decode, big number bare tok/s) resolved by suffixing the big number"
+      - "✅ gates: node --check PASS; app.js/index.html diagnostics clean; acp.review-scan.sh (agent mode) no findings on changed files"
+      - "📋 /acp-ci --fast = SKIP/NO-OP: agent/configurables/ci.yml + scripts/ + e2e/ absent (r1-01); never presented as PASS"
+  - date: 2026-10-08
+    description: |
       Ran the maintenance/commit pipeline (validate -> sync -> update -> commit -> push).
       Fixed a pre-existing YAML defect and shipped the a7-05 + r3-01 features.
     items:

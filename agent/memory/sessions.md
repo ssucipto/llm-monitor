@@ -6,7 +6,12 @@
   executor: strata-coder
   tasks: []
   done:
-    - r3-01-per-series-sparkline-window
+    - decode-speed-surfaced-header-chip
+    - throughput-panel-big-number-labeled-decode
+    - audit-9-removed-redundant-decode-fact-row
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "Decode speed surfaced once per surface: header chip 'decode tok/s' + panel big number suffixed 'decode'. audit-9 caught that the first pass added a redundant Decode fact row (thr-decode duplicated thr-now, both from throughput.now) + a label inconsistency; removed it. No orphan thr-decode ref. Scanner clean."
     - drawspark-windowms-caption
     - header-tok-reading-added
   deferred:

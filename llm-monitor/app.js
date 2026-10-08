@@ -372,7 +372,7 @@ function renderThroughput(throughput, history) {
   const now = $("thr-now");
   if (now) {
     const t = throughput && throughput.now;
-    now.textContent = t != null ? `${t.toFixed(1)} tok/s` : "idle";
+    now.textContent = t != null ? `${t.toFixed(1)} tok/s decode` : "idle";
     now.classList.remove("is-ok", "is-warn", "is-bad");
   }
   const mean = throughput && throughput.mean;
