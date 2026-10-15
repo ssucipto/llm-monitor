@@ -269,3 +269,12 @@ carryovers:
     fix_applied_date: 2026-10-08
     verified_in_audit: 8
     notes: implemented in audit-8. Added drafts_offered/drafts_accepted (from totals) + pcie_share (from requests[0]) to poll schema, ALTER loop, INSERT, and db_export poll_cols. Sourced from the SAME /metrics dict the poll already reads -> zero extra engine requests. Blob counts (ram_blobs/file_blobs/reasoning_recoveries) deliberately NOT added — not numeric time-series material. INSERT arity bug (22 vs 23 ?) caught by migration test, fixed.
+  - id: c21-01
+    audit: 21
+    finding: Windows service task (LLMMonitor, ONLOGON) never registered — install-service.bat cannot run from this MSYS/Git-Bash shell (schtasks /create -> Access denied); feature inert until user runs installer in a native Windows shell
+    location: llm-monitor/install-service.bat
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-15
+    verified_in_audit: 21
+    notes: launcher runtime logic verified natively (Start-Process served :8090 -> HTTP 200). Registration now DONE by the user in a native PowerShell shell (outside this restricted tool shell) — install-service.bat reported SUCCESS and schtasks /query /tn LLMMonitor confirms the task exists (Status: Ready, Logon Mode: Interactive only, ONLOGON trigger). Only the post-login :8090 load remains for the user to eyeball.

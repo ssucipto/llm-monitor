@@ -4,6 +4,17 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.11] - 2026-10-15
+
+### Added
+- **Windows auto-start service.** Two batch files beside `server.py` start the dashboard by
+  itself when the machine starts: `install-service.bat` registers two per-user scheduled tasks
+  (no admin privileges) — `LLMMonitorBoot` (ONSTART, runs at every system startup/boot/restart)
+  and `LLMMonitor` (ONLOGON, runs at every interactive sign-in). `llm-monitor-start.bat` spawns
+  `server.py` on port 8090 detached via PowerShell `Start-Process` (so each task returns
+  immediately) and resolves a real Win32 `python.exe`. Logs go to `%LOCALAPPDATA%\LLMMonitor`. The
+  installer is idempotent; stop with `schtasks /delete /tn "…" /f`.
+
 ## [0.1.10] - 2026-10-12
 
 ### Added

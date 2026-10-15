@@ -1,6 +1,6 @@
 {
   "name": "llm-monitor-acp-tooling",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "ACP Enhanced tooling harness for llm-monitor (validators + review-scan YAML rules).",
   "type": "module",

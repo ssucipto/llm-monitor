@@ -4,7 +4,7 @@
 
 project:
   name: llm-monitor
-  version: 0.1.10
+  version: 0.1.11
   started: 2026-10-07
   status: in_progress
   current_milestone: M75

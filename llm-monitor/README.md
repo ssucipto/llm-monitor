@@ -27,6 +27,36 @@ to **Stale** and the page keeps its last rendered state (unlike the homelab
 template, there is no simulation fallback — a monitor should show truth, not
 fabricated numbers).
 
+## Run it as a service (start on boot and login)
+
+Two batch files sit beside `server.py` so the dashboard can start itself when the
+machine starts — no administrator privileges are needed:
+
+| File                    | Purpose                                                        |
+|-------------------------|---------------------------------------------------------------|
+| `llm-monitor-start.bat` | Starts `server.py` on port 8090 as a detached process.        |
+| `install-service.bat`   | Registers two per-user scheduled tasks: `LLMMonitorBoot` (runs at every system startup — boot/restart) and `LLMMonitor` (runs at every interactive sign-in). |
+
+Run the installer **once** from a normal Windows shell (double-click, `cmd /c`, or
+PowerShell — not from Git-Bash/MSYS, which cannot register tasks):
+
+```bat
+llm-monitor\install-service.bat
+```
+
+It is idempotent: it removes any existing task of the same name before re-creating
+each one, so re-running does not stack up. The launcher spawns `server.py` detached
+via PowerShell `Start-Process` (so each task returns immediately) and resolves a real
+Win32 `python.exe`, since a shell alias is not a valid Win32 application. stdout/stderr
+go to `%LOCALAPPDATA%\LLMMonitor\service.out.log` / `service.err.log`.
+
+To stop the service:
+
+```bat
+schtasks /delete /tn "LLMMonitorBoot" /f
+schtasks /delete /tn "LLMMonitor" /f
+```
+
 ## What it monitors
 
 The backend reads the engine's own HTTP endpoints plus the Hermes workspace state
