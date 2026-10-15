@@ -2,6 +2,96 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-10-12
+  executor: strata-coder
+  tasks: []
+  done:
+    - acp-validate-version-and-pointer-checks
+    - fixed-stale-current-milestone-M1-to-M75
+    - added-missing-status-field-to-milestone-75-doc
+    - confirmed-code-gates-py-compile-node-check-pass
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "progress.yaml had a stale current_milestone (M1) while M71-M75 were completed; and milestone-75 doc was missing the **Status** field that the other three milestone docs carry. Both corrected so /acp-validate cross-layer status + file-pointer checks pass. YAML parses clean after edits."
+  done:
+    - m74-backend-timeseries-aggregation-endpoint
+    - m74-sub-day-minute-and-hourly-bucketing-with-counter-reset-safety
+    - m74-multi-day-rollups-with-live-today-merge
+    - m74-interactive-svg-timeseries-charts
+    - m74-metric-tabs-all-throughput-tokens-requests
+    - m74-range-selectors-15m-1h-3h-6h-24h-7d-30d-90d
+    - m74-hover-crosshair-and-interactive-tooltips
+    - m74-client-side-fallback-downsampling
+    - audit-17-pre-impl-readiness
+    - audit-18-post-impl-verification
+    - review-008-coderabbit-diff-review
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "M74 landed: Interactive SVG timeseries chart panel (#charts) across 8 configurable timeframes (15m, 1h, 3h, 6h, 24h, 7d, 30d, 90d) and 4 metric modes (All Combined, Tokens/s, Token Usage, Requests). Endpoint GET /api/timeseries aggregates SQLite poll and day tables with counter-reset protection. High-density SVG canvas renders vector geometry, hover crosshair, and floating tooltip. Client-side fallback provides seamless downsampling resilience."
+
+- date: 2026-10-12
+  executor: antigravity-coordinator
+  tasks:
+    - task-73
+  done:
+    - m73-average-tok-s-and-average-prefill
+    - m73-peak-throughput-rates-and-ttft-latency
+    - m73-dedicated-prefill-sparkline
+    - m73-compact-hud-average-prefill
+    - audit-15-pre-impl-readiness
+    - audit-16-post-impl-verification
+    - review-007-coderabbit-diff-review
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "M73 landed: Throughput panel expanded to 9 metrics: Average decode tok/s, Peak decode, Current prefill, Average prefill, Peak prefill, Prompt latency (TTFT), and Request rate. Added dedicated SVG prefill sparkline (#prefill-spark) in emerald green. Compact HUD gained average prefill readout (#hud-prefill-sub). Client-side fallback derivation provides zero-restart resilience."
+
+- date: 2026-10-12
+  executor: antigravity-coordinator
+  tasks:
+    - task-72
+  done:
+    - m72-compact-hud-half-page-interface
+    - m72-accessible-multi-tab-system
+    - m72-desktop-overlay-popout-window
+    - audit-13-pre-impl-readiness
+    - audit-14-post-impl-verification
+    - review-006-coderabbit-diff-review
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "M72 landed: Multi-tab navigation with Full Dashboard and Compact HUD views. Compact HUD provides high-density layout (identity orb, hero speed, 2x2 vitals matrix, last generation spotlight, micro trends, sparkline, endpoint pills) bound to live /api/stats. Pop-out launcher opens standalone 480x820 overlay window with TOC and chrome suppressed. 100% non-regressed with zero DOM collisions."
+
+- date: 2026-10-12
+  executor: antigravity-coordinator
+  tasks:
+    - task-71
+  done:
+    - m71-total-tokens-per-request
+    - m71-token-history-hour-today-yesterday-week-month
+    - m71-history-comparison-table-hour-today-week-month
+    - m71-last-request-vs-previous-comparison
+    - audit-11-pre-impl-readiness
+    - audit-12-post-impl-verification
+    - review-005-coderabbit-diff-review
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "M71 landed: Requests table renders Total tokens (prompt + out) and live request delta. History panel displays token totals (last request, this hour, today, yesterday, this week, this month) and a 5-row comparison table (Last request vs Previous, This hour vs Last hour, Today vs Yesterday, This week vs Last week, This month vs Last month) with deltas, request counts, and speeds. Resilient to backend restarts with client fallback."
+
+- date: 2026-10-11
+  executor: antigravity-coordinator
+  tasks: []
+  done:
+    - audit-10-remediations-landed
+    - review-004-coderabbit-fixes
+    - db-prune-catastrophic-truncation-fixed
+    - sqlite-indexes-idx-poll-t-idx-day-d
+    - strip-dead-gather-functions
+    - urlsplit-query-string-support
+    - sessions-yaml-syntax-repaired
+    - requests-table-time-column-added
+  deferred:
+    - r1-01-ci-harness-na
+  key_fact: "Engine exposes unix epoch timestamp in /metrics.requests ('time'), but Requests table omitted Time column; added HH:MM:SS Time column to Requests table in index.html & app.js. Engine has no caller IP/client source telemetry."
+
 - date: 2026-10-08
   executor: strata-coder
   tasks: []
@@ -12,6 +102,11 @@
   deferred:
     - r1-01-ci-harness-na
   key_fact: "Decode speed surfaced once per surface: header chip 'decode tok/s' + panel big number suffixed 'decode'. audit-9 caught that the first pass added a redundant Decode fact row (thr-decode duplicated thr-now, both from throughput.now) + a label inconsistency; removed it. No orphan thr-decode ref. Scanner clean."
+
+- date: 2026-10-08
+  executor: strata-coder
+  tasks: []
+  done:
     - drawspark-windowms-caption
     - header-tok-reading-added
   deferred:

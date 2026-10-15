@@ -4,6 +4,32 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.10] - 2026-10-12
+
+### Added
+- **Token usage history & comparison table (M71).** Total token usage per request, a 4-period
+  token history (today, yesterday, this week, this month), and a 3-row history comparison table
+  (today vs yesterday, this week vs last week, this month vs last month).
+- **Compact half-page HUD & multi-tab interface (M72).** Accessible tab switcher (Full Dashboard
+  vs Compact HUD), high-density HUD layout, one-click pop-out overlay launcher, `?view=compact`
+  URL support, and standalone desktop overlay styling.
+- **Comprehensive throughput analytics & prefill sparkline (M73).** Average decode tok/s, average
+  prefill tok/s, rolling peak decode/prefill, prompt processing latency (TTFT), request rate,
+  a dedicated SVG prefill sparkline, and a compact HUD average-prefill readout.
+- **Configurable timeseries charts (M74).** Interactive SVG chart panel across 8 timeframes
+  (15m, 1h, 3h, 6h, 24h, 7d, 30d, 90d) and 4 metric modes (All, Tokens/s, Token Usage,
+  Requests), backed by a new `GET /api/timeseries` endpoint that aggregates the SQLite poll
+  and day tables with counter-reset protection, hover crosshair, and tooltips.
+
+### Fixed
+- **History & period comparison calculations remediation (M75).** Eliminated rolling-window
+  decays, ghost idle throughput comparisons, day rollover underflows, falsy-zero delta
+  suppressions, and hourly boundary request losses; hour buckets now bridge so
+  `sum(hours) == requests`; zero-safe percentage deltas (`+100%` / `±0%`) render correctly.
+- **Progress tracking consistency.** Re-pointed the stale `current_milestone` (M1 → M75) and
+  added the missing `**Status**` field to the milestone-75 doc so `/acp-validate` cross-layer
+  status and file-pointer checks pass.
+
 ## [0.1.9] - 2026-10-08
 
 ### Added

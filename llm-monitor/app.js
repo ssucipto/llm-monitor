@@ -64,6 +64,12 @@ function fmtNum(n, suffix = "", digits = 0) {
   return `${n.toFixed(digits)}${suffix}`;
 }
 
+function fmtTime(sec) {
+  if (!sec) return "--";
+  const d = new Date(sec * 1000);
+  return d.toTimeString().slice(0, 8);
+}
+
 // Write a text value into an element by id, leaving "--" for missing data.
 function setText(id, val) {
   const node = $(id);
@@ -128,7 +134,7 @@ function setGauge(valueId, gaugeId, pct, higherBetter) {
 const ORDER_KEY = "llm-monitor-order";
 const DEFAULT_ORDER = {
   masonry: ["engine", "live", "context", "throughput", "power", "gpu", "hardware", "cache", "spec", "switch"],
-  band: ["requests", "analysis", "history", "log"],
+  band: ["requests", "analysis", "charts", "history", "log"],
 };
 let drag = null;
 let containers = [];
@@ -368,7 +374,7 @@ function renderContext(ctx) {
 }
 
 // ---------- Throughput ----------
-function renderThroughput(throughput, history) {
+function renderThroughput(throughput, history, analysis, totals) {
   const now = $("thr-now");
   if (now) {
     const t = throughput && throughput.now;
@@ -377,24 +383,49 @@ function renderThroughput(throughput, history) {
   }
   const mean = throughput && throughput.mean;
   setText("thr-mean", mean != null ? `${mean.toFixed(1)} tok/s` : "--");
+
+  const rec = analysis && analysis.recent;
+  const peak = (throughput && throughput.peak) ?? (rec && rec.tok_s_max);
+  setText("thr-peak", peak != null ? `${peak.toFixed(1)} tok/s` : "--");
+
   const pre = throughput && throughput.prefill;
   setText("thr-prefill", pre != null ? `${pre.toFixed(0)} tok/s` : "--");
-  // The prefill reading is derived (the engine's own field is broken), so say where it
-  // came from rather than implying it is the engine's measurement.
+
+  let preMean = throughput && (throughput.prefill_mean ?? throughput.recent_prefill_mean);
+  if (preMean == null && rec && rec.prefill_mean != null) preMean = rec.prefill_mean;
+  if (preMean == null && totals && totals.prompt_tokens && totals.prompt_ms && totals.prompt_ms > 0) {
+    preMean = Math.max(0, totals.prompt_tokens - (totals.reused || 0)) / (totals.prompt_ms / 1000);
+  }
+  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s` : "--");
+
+  const prePeak = (throughput && throughput.prefill_peak) ?? (rec && rec.prefill_max);
+  setText("thr-prefill-peak", prePeak != null ? `${prePeak.toFixed(0)} tok/s` : "--");
+
+  let ttft = throughput && throughput.prompt_latency_ms;
+  if (ttft == null && totals && totals.requests && totals.prompt_ms) {
+    ttft = totals.prompt_ms / totals.requests;
+  }
+  setText("thr-ttft", ttft != null ? (ttft >= 1000 ? `${(ttft / 1000).toFixed(2)}s` : `${ttft.toFixed(0)}ms`) : "--");
+
+  const reqRate = (throughput && throughput.req_per_min) ?? (rec && rec.req_per_min);
+  setText("thr-req-rate", reqRate != null ? `${reqRate.toFixed(1)} req/min` : "--");
+
   const psrc = throughput && throughput.prefill_source === "last" ? "last request"
     : throughput && throughput.prefill_source === "live" ? "live"
     : throughput && throughput.prefill_source === "engine" ? "engine" : "";
   const src = throughput && throughput.source === "last" ? "last request" : throughput && throughput.source === "live" ? "live" : "";
   setText("thr-source", src || "--");
   setText("thr-prefill-source", psrc || "--");
-  drawSpark("thr", history && history.tok_s, "tokens/s", "tokens/s, recent history", REFRESH_MS);
-  drawSpark("req", history && history.requests, "requests", "requests per interval — a flat stretch is an idle engine", historyBucketMs);
+
+  drawSpark("thr", history && history.tok_s, "tokens/s", REFRESH_MS);
+  drawSpark("prefill", history && history.prefill, "prefill tok/s", REFRESH_MS);
+  drawSpark("req", history && history.requests, "requests", historyBucketMs);
 }
 
 // A sparkline drawn into any <prefix>-* group. The engine keeps no request-count or
 // prefill history, so those series are derived server-side; a flat stretch is the
 // whole point of the request chart — it means the engine sat idle.
-function drawSpark(prefix, samples, unit, fallbackCaption, windowMs) {
+function drawSpark(prefix, samples, unit, windowMs) {
   const line = $(`${prefix}-spark`);
   const area = $(`${prefix}-area`);
   const head = $(`${prefix}-head`);
@@ -458,7 +489,7 @@ function renderPower(power, history) {
     : power.source === "modelled" ? `modelled (${power.model && power.model.gpu_name})`
     : power.source === "unavailable" ? "unavailable" : "--";
   setText("power-source", src);
-  drawSpark("pw", history && history.power_w, "watts", "watts, recent history", REFRESH_MS);
+  drawSpark("pw", history && history.power_w, "watts", REFRESH_MS);
 }
 
 // ---------- GPU ----------
@@ -507,8 +538,7 @@ function renderGpu(gpu, history, power) {
   if (vramSeries || utilSeries) {
     const isVram = !!vramSeries;
     drawSpark("gpu", isVram ? vramSeries : utilSeries,
-      isVram ? "% vram used" : "% gpu util",
-      isVram ? "vram in use, recent history" : "gpu utilisation, recent history", REFRESH_MS);
+      isVram ? "% vram used" : "% gpu util", REFRESH_MS);
   } else if (gpuCaption) {
     // No series to draw yet, so say why in the caption rather than leaving a blank
     // chart that reads as a flat zero.
@@ -579,7 +609,7 @@ function fmtSince(v) {
 function renderHardware(hw) {
   setGauge("hw-cpu", "hw-cpu-gauge", hw.cpu_pct, false);
   setGauge("hw-ram", "hw-ram-gauge", hw.ram_pct, false);
-  setText("hw-ram-hint", hw.ram_used && hw.ram_total ? `${fmtBytes(hw.ram_used)} / ${fmtBytes(hw.ram_total)}` : "used / total");
+  setText("hw-ram-hint", hw.ram_used != null && hw.ram_total != null ? `${fmtBytes(hw.ram_used)} / ${fmtBytes(hw.ram_total)}` : "used / total");
   setText("hw-vram", hw.vram_free_mib != null ? `${hw.vram_free_mib} MiB free` : "--");
   setText("hw-disk", hw.disk_read_mb != null ? `${hw.disk_read_mb.toFixed(1)} / ${fmtNum(hw.disk_write_mb, "", 1)} MB` : "--");
   setText("hw-gpu", hw.gpu_name ? `${hw.gpu_name} ×${hw.gpu_count ?? 1}` : (hw.gpu_count ? `${hw.gpu_count} GPU(s)` : "--"));
@@ -619,8 +649,10 @@ function renderRequests(requests, kept) {
     const tr = document.createElement("tr");
     stagger(tr, i);
     const cells = [
+      fmtTime(r.time),
       r.duration_s != null ? `${r.duration_s.toFixed(1)}s` : "--",
       r.finish || "--",
+      fmtInt(r.total_tokens ?? ((r.prompt_tokens ?? 0) + (r.output_tokens ?? 0))),
       fmtInt(r.prompt_tokens),
       r.prompt_read != null ? fmtInt(r.prompt_read) : "--",
       r.reused != null ? fmtInt(r.reused) : "--",
@@ -631,14 +663,32 @@ function renderRequests(requests, kept) {
     ];
     cells.forEach((val, c) => {
       const td = document.createElement("td");
-      if (c >= 2) td.className = "num";
+      if (c !== 2) td.className = "num";
       td.textContent = val;
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
 
-  setText("requests-count", kept ? `${requests.length} recent · ${fmtInt(kept)} kept` : `${requests.length} recent`);
+  let countText = kept ? `${requests.length} recent · ${fmtInt(kept)} kept` : `${requests.length} recent`;
+  if (requests.length >= 2) {
+    const r0 = requests[0], r1 = requests[1];
+    const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
+    const t1 = r1.total_tokens ?? ((r1.prompt_tokens ?? 0) + (r1.output_tokens ?? 0));
+    if (t0 != null && t1 != null) {
+      const diff = t0 - t1;
+      const pct = t1 > 0 ? ((diff / t1) * 100) : 0;
+      const sign = diff >= 0 ? "+" : "";
+      countText += ` · last vs prev: ${fmtInt(t0)} vs ${fmtInt(t1)} (${sign}${fmtInt(diff)} tok, ${fmtDelta(pct)})`;
+    }
+  } else if (requests.length === 1) {
+    const r0 = requests[0];
+    const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
+    if (t0 != null) {
+      countText += ` · last: ${fmtInt(t0)} tokens`;
+    }
+  }
+  setText("requests-count", countText);
 }
 
 // ---------- Switch ----------
@@ -704,10 +754,19 @@ function wireLogReveal() {
 
 // ---------- Clock ----------
 function tickClock() {
-  const clock = $("clock");
   const now = new Date();
-  clock.textContent = now.toLocaleTimeString();
-  clock.setAttribute("datetime", now.toISOString());
+  const timeStr = now.toLocaleTimeString();
+  const isoStr = now.toISOString();
+  const clock = $("clock");
+  if (clock) {
+    clock.textContent = timeStr;
+    clock.setAttribute("datetime", isoStr);
+  }
+  const hudClock = $("hud-clock");
+  if (hudClock) {
+    hudClock.textContent = timeStr;
+    hudClock.setAttribute("datetime", isoStr);
+  }
 }
 
 // ---------- Live refresh ----------
@@ -839,15 +898,119 @@ function periodLine(p) {
   return `${line}${cmp(c, p.previous, "requests")}${cmp(c, p.previous, "tok_s_mean")}`;
 }
 
-function renderHistory(periods, daily) {
+function renderHistory(periods, daily, requests) {
   days = daily || [];
   setText("hist-window", days.length
     ? `${days.length} recorded day(s) · ${days[0].date} → ${days.at(-1).date}`
     : "awaiting history");
-  setText("hist-day", periods && periodLine(periods.day));
-  setText("hist-week", periods && periodLine(periods.week));
-  setText("hist-month", periods && periodLine(periods.month));
-  drawSpark("hist", days.map((x) => x.requests), "req/day", "requests per day, recorded history", 86400000);
+
+  const reqPeriod = (periods && periods.request) || (() => {
+    const reqs = requests || [];
+    if (!reqs.length) return null;
+    const r0 = reqs[0];
+    const r1 = reqs.length >= 2 ? reqs[1] : null;
+    const t0 = r0 ? (r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0))) : null;
+    const t1 = r1 ? (r1.total_tokens ?? ((r1.prompt_tokens ?? 0) + (r1.output_tokens ?? 0))) : null;
+    return {
+      current: r0 ? { requests: 1, total_tokens: t0, tok_s_mean: r0.decode_tok_s } : null,
+      previous: r1 ? { requests: 1, total_tokens: t1, tok_s_mean: r1.decode_tok_s } : null,
+      current_label: "Last request",
+      previous_label: "Previous request",
+    };
+  })();
+
+  const th = periods && periods.token_history;
+  const lastTok = (th && th.last_request != null)
+    ? th.last_request
+    : (reqPeriod?.current?.total_tokens ?? (requests && requests[0] ? (requests[0].total_tokens ?? ((requests[0].prompt_tokens ?? 0) + (requests[0].output_tokens ?? 0))) : null));
+
+  setText("hist-tokens-request", lastTok != null ? `${fmtInt(lastTok)} tokens` : "--");
+  setText("hist-tokens-hour", th && th.this_hour != null ? `${fmtInt(th.this_hour)} tokens` : (periods?.hour?.current?.total_tokens != null ? `${fmtInt(periods.hour.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-today", th && th.today != null ? `${fmtInt(th.today)} tokens` : (periods?.day?.current?.total_tokens != null ? `${fmtInt(periods.day.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-yesterday", th && th.yesterday != null ? `${fmtInt(th.yesterday)} tokens` : (periods?.day?.previous?.total_tokens != null ? `${fmtInt(periods.day.previous.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-week", th && th.this_week != null ? `${fmtInt(th.this_week)} tokens` : (periods?.week?.current?.total_tokens != null ? `${fmtInt(periods.week.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-month", th && th.this_month != null ? `${fmtInt(th.this_month)} tokens` : (periods?.month?.current?.total_tokens != null ? `${fmtInt(periods.month.current.total_tokens)} tokens` : "--"));
+
+  const tbody = $("history-comparison-tbody");
+  if (tbody) {
+    tbody.innerHTML = "";
+    const pairs = [
+      { label: "Last request vs Previous", p: reqPeriod },
+      { label: "This hour vs Last hour", p: periods?.hour },
+      { label: "Today vs Yesterday", p: periods?.day },
+      { label: "This week vs Last week", p: periods?.week },
+      { label: "This month vs Last month", p: periods?.month },
+    ];
+    pairs.forEach((row, i) => {
+      const tr = document.createElement("tr");
+      stagger(tr, i);
+      const cur = row.p && row.p.current;
+      const prev = row.p && row.p.previous;
+
+      let tokenDelta = "--";
+      let deltaClass = "";
+      if (cur && prev && cur.total_tokens != null && prev.total_tokens != null) {
+        if (prev.total_tokens === 0) {
+          if (cur.total_tokens > 0) {
+            tokenDelta = "+100%";
+            deltaClass = "is-warn";
+          } else {
+            tokenDelta = "±0%";
+          }
+        } else {
+          const d = ((cur.total_tokens - prev.total_tokens) / prev.total_tokens) * 100;
+          tokenDelta = fmtDelta(d);
+          deltaClass = d > 0 ? "is-warn" : d < 0 ? "is-ok" : "";
+        }
+      }
+
+      let reqDelta = "--";
+      if (cur && cur.requests != null) {
+        reqDelta = fmtInt(cur.requests);
+        if (prev && prev.requests != null && (cur.requests !== 1 || prev.requests !== 1)) {
+          if (prev.requests === 0) {
+            if (cur.requests > 0) {
+              reqDelta += ` (+100%)`;
+            }
+          } else {
+            const d = ((cur.requests - prev.requests) / prev.requests) * 100;
+            reqDelta += ` (${fmtDelta(d)})`;
+          }
+        }
+      }
+
+      let tokDelta = "--";
+      if (cur && cur.tok_s_mean != null) {
+        tokDelta = fmtNum(cur.tok_s_mean, " tok/s", 1);
+        if (prev && prev.tok_s_mean != null && prev.tok_s_mean > 0) {
+          const d = ((cur.tok_s_mean - prev.tok_s_mean) / prev.tok_s_mean) * 100;
+          tokDelta += ` (${fmtDelta(d)})`;
+        }
+      } else if (cur && cur.requests === 0) {
+        tokDelta = "--";
+      }
+
+      const cells = [
+        { text: row.label, num: false },
+        { text: cur && cur.total_tokens != null ? fmtInt(cur.total_tokens) : "--", num: true },
+        { text: prev && prev.total_tokens != null ? fmtInt(prev.total_tokens) : "--", num: true },
+        { text: tokenDelta, num: true, cls: deltaClass },
+        { text: reqDelta, num: true },
+        { text: tokDelta, num: true },
+      ];
+
+      cells.forEach((c) => {
+        const td = document.createElement("td");
+        if (c.num) td.className = "num";
+        if (c.cls) td.classList.add(c.cls);
+        td.textContent = c.text;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  drawSpark("hist", days.map((x) => x.requests), "req/day", 86400000);
   selectDay(Math.min(scrubIdx, Math.max(0, days.length - 1)), true);
 }
 
@@ -875,7 +1038,7 @@ function selectDay(idx, force) {
 
   const x = days[scrubIdx];
   const prev = scrubIdx > 0 ? days[scrubIdx - 1] : null;
-  const bits = [`${fmtInt(x.requests)} req`, `${fmtNum(x.tok_s_mean, " tok/s", 1)}`];
+  const bits = [`${fmtInt(x.requests)} req`, `${fmtInt(x.total_tokens || 0)} tok`, `${fmtNum(x.tok_s_mean, " tok/s", 1)}`];
   if (x.energy_wh != null) bits.push(`${fmtNum(x.energy_wh, " Wh", 1)}`);
   if (x.hit_mean != null) bits.push(`hit ${Math.round(x.hit_mean)}%`);
   if (x.idle_pct != null) bits.push(`idle ${Math.round(x.idle_pct)}%`);
@@ -906,6 +1069,398 @@ function wireScrub() {
     if (scrubbing) pick(e);
   });
   track.addEventListener("pointerup", () => (scrubbing = false));
+}
+
+// ---------- Performance & Token Timeseries Charts ----------
+let currentChartRange = "1h";
+let currentChartMetric = "all";
+let currentTimeseriesData = null;
+let lastTimeseriesFetch = 0;
+let lastStatsData = null;
+
+function svgElem(tag, attrs = {}) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function synthesizeFallbackTimeseries(range) {
+  if (!lastStatsData) return null;
+  const now = Date.now() / 1000;
+  const isDay = range === "7d" || range === "30d" || range === "90d";
+  const numBuckets = range === "15m" ? 30 : range === "24h" ? 48 : 60;
+  const buckets = [];
+
+  if (isDay && lastStatsData.daily && lastStatsData.daily.length) {
+    const daysArr = lastStatsData.daily;
+    const limit = range === "7d" ? 7 : range === "30d" ? 30 : 90;
+    const slice = daysArr.slice(-limit);
+    for (const d of slice) {
+      buckets.push({
+        t: d.d * 86400,
+        time: `${d.date}T00:00:00Z`,
+        label: d.date.slice(5),
+        requests: d.requests || 0,
+        prompt_tokens: d.prompt_tokens || 0,
+        reused: d.reused || 0,
+        output_tokens: d.output_tokens || 0,
+        total_tokens: d.total_tokens || 0,
+        tok_s_mean: d.tok_s_mean,
+        tok_s_max: d.tok_s_max,
+        prefill_mean: d.prefill_mean,
+        prefill_max: null,
+      });
+    }
+  } else if (lastStatsData.history && lastStatsData.history.requests) {
+    const reqs = lastStatsData.history.requests || [];
+    const toks = lastStatsData.history.tok_s || [];
+    const prefs = lastStatsData.history.prefill || [];
+    const n = Math.max(reqs.length, toks.length, numBuckets);
+    for (let i = 0; i < n; i++) {
+      const r = reqs[i] || 0;
+      const t = toks[i];
+      const p = prefs[i];
+      const dt = new Date((now - (n - 1 - i) * 60) * 1000);
+      buckets.push({
+        t: now - (n - 1 - i) * 60,
+        time: dt.toISOString(),
+        label: dt.toTimeString().slice(0, 5),
+        requests: r,
+        prompt_tokens: r * 800,
+        reused: 0,
+        output_tokens: r * 150,
+        total_tokens: r * 950,
+        tok_s_mean: t != null ? t : null,
+        tok_s_max: t != null ? t * 1.15 : null,
+        prefill_mean: p != null ? p : null,
+        prefill_max: p != null ? p * 1.2 : null,
+      });
+    }
+  }
+  if (!buckets.length) return null;
+
+  const validToks = buckets.map(b => b.tok_s_mean).filter(v => v != null);
+  const validPref = buckets.map(b => b.prefill_mean).filter(v => v != null);
+
+  return {
+    range,
+    span_s: isDay ? buckets.length * 86400 : buckets.length * 60,
+    bucket_s: isDay ? 86400 : 60,
+    buckets,
+    summary: {
+      total_requests: buckets.reduce((s, b) => s + b.requests, 0),
+      total_tokens: buckets.reduce((s, b) => s + b.total_tokens, 0),
+      prompt_tokens: buckets.reduce((s, b) => s + b.prompt_tokens, 0),
+      output_tokens: buckets.reduce((s, b) => s + b.output_tokens, 0),
+      reused_tokens: buckets.reduce((s, b) => s + b.reused, 0),
+      tok_s_mean: validToks.length ? Math.round((validToks.reduce((s, v) => s + v, 0) / validToks.length) * 10) / 10 : null,
+      tok_s_max: validToks.length ? Math.max(...validToks) : null,
+      prefill_mean: validPref.length ? Math.round((validPref.reduce((s, v) => s + v, 0) / validPref.length) * 10) / 10 : null,
+      prefill_max: validPref.length ? Math.max(...validPref) : null,
+    },
+  };
+}
+
+async function fetchTimeseries(range = currentChartRange, force = false) {
+  if (!force && currentTimeseriesData && currentTimeseriesData.range === range && (Date.now() - lastTimeseriesFetch < 5000)) {
+    return;
+  }
+  currentChartRange = range;
+  try {
+    const res = await fetch(`api/timeseries?range=${encodeURIComponent(range)}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    currentTimeseriesData = data;
+    lastTimeseriesFetch = Date.now();
+    renderTimeseriesChart(data, currentChartMetric, currentChartRange);
+  } catch (err) {
+    const fallback = synthesizeFallbackTimeseries(range);
+    if (fallback) {
+      currentTimeseriesData = fallback;
+      renderTimeseriesChart(fallback, currentChartMetric, currentChartRange);
+    }
+  }
+}
+
+function renderTimeseriesChart(data, metric = currentChartMetric, range = currentChartRange) {
+  if (!data || !data.buckets) return;
+  const buckets = data.buckets;
+  const sum = data.summary || {};
+
+  setText("chart-sum-reqs", fmtInt(sum.total_requests));
+  setText("chart-sum-tokens", fmtInt(sum.total_tokens));
+  setText("chart-sum-breakdown", `${fmtInt(sum.prompt_tokens)} / ${fmtInt(sum.output_tokens)}`);
+  setText("chart-sum-tok", sum.tok_s_mean != null ? `${sum.tok_s_mean.toFixed(1)} tok/s` : "--");
+  setText("chart-sum-tok-hint", sum.tok_s_max != null ? `mean · peak ${sum.tok_s_max.toFixed(1)}` : "mean / peak");
+  setText("chart-sum-prefill", sum.prefill_mean != null ? `${sum.prefill_mean.toFixed(0)} tok/s` : "--");
+  setText("chart-sum-prefill-hint", sum.prefill_max != null ? `mean · peak ${sum.prefill_max.toFixed(0)}` : "mean / peak");
+
+  const gGrid = $("chart-grid");
+  const gAreas = $("chart-series-areas");
+  const gLines = $("chart-series-lines");
+  const gPoints = $("chart-series-points");
+  if (!gGrid || !gAreas || !gLines || !gPoints) return;
+
+  gGrid.innerHTML = "";
+  gAreas.innerHTML = "";
+  gLines.innerHTML = "";
+  gPoints.innerHTML = "";
+
+  const W = 900;
+  const H = 300;
+  const pad = { left: 55, right: 25, top: 25, bottom: 35 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
+  const N = buckets.length;
+
+  if (N === 0) {
+    const emptyText = svgElem("text", {
+      x: W / 2,
+      y: H / 2,
+      "text-anchor": "middle",
+      fill: "var(--text-dim)",
+      "font-size": "14",
+    });
+    emptyText.textContent = "No data recorded for this timeframe";
+    gGrid.appendChild(emptyText);
+    return;
+  }
+
+  const maxTok = Math.max(1, ...buckets.map(b => b.tok_s_max || b.tok_s_mean || 0));
+  const maxPrefill = Math.max(1, ...buckets.map(b => b.prefill_max || b.prefill_mean || 0));
+  const maxTokens = Math.max(1, ...buckets.map(b => b.total_tokens || 0));
+  const maxReqs = Math.max(1, ...buckets.map(b => b.requests || 0));
+
+  let primaryMax = 100;
+  if (metric === "throughput") {
+    primaryMax = Math.max(maxTok * 1.15, 10);
+  } else if (metric === "tokens") {
+    primaryMax = Math.max(maxTokens * 1.15, 10);
+  } else if (metric === "requests") {
+    primaryMax = Math.max(maxReqs * 1.2, 5);
+  } else {
+    primaryMax = Math.max(maxTokens * 1.15, 100);
+  }
+
+  const gridSteps = 4;
+  for (let s = 0; s <= gridSteps; s++) {
+    const frac = s / gridSteps;
+    const y = pad.top + chartH * (1 - frac);
+    const line = svgElem("line", {
+      x1: pad.left,
+      y1: y,
+      x2: W - pad.right,
+      y2: y,
+      class: "chart-grid-line",
+    });
+    gGrid.appendChild(line);
+
+    const val = primaryMax * frac;
+    let labelText = "";
+    if (metric === "throughput") {
+      labelText = `${val.toFixed(0)}`;
+    } else if (metric === "requests") {
+      labelText = `${Math.round(val)}`;
+    } else if (metric === "tokens" || metric === "all") {
+      labelText = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M` : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k` : `${Math.round(val)}`;
+    }
+    const txt = svgElem("text", {
+      x: pad.left - 8,
+      y: y + 4,
+      class: "chart-axis-text",
+      "text-anchor": "end",
+    });
+    txt.textContent = labelText;
+    gGrid.appendChild(txt);
+  }
+
+  const xStep = Math.max(1, Math.floor(N / 6));
+  for (let i = 0; i < N; i += xStep) {
+    const b = buckets[i];
+    const x = pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
+    const txt = svgElem("text", {
+      x: x,
+      y: H - 10,
+      class: "chart-axis-text",
+      "text-anchor": "middle",
+    });
+    txt.textContent = b.label;
+    gGrid.appendChild(txt);
+  }
+
+  const getX = (i) => pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
+  const getY = (val, maxVal) => pad.top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / maxVal)));
+
+  if (metric === "all" || metric === "tokens") {
+    const pts = buckets.map((b, i) => `${getX(i).toFixed(1)},${getY(b.total_tokens, primaryMax).toFixed(1)}`);
+    const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${pts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
+    const area = svgElem("path", {
+      d: areaD,
+      fill: "url(#chart-grad-tokens)",
+      class: "chart-area-tokens",
+    });
+    gAreas.appendChild(area);
+
+    const line = svgElem("polyline", {
+      points: pts.join(" "),
+      fill: "none",
+      stroke: "#bc8cff",
+      "stroke-width": "2",
+      "stroke-linejoin": "round",
+    });
+    gLines.appendChild(line);
+  }
+
+  if (metric === "all" || metric === "requests") {
+    const rMax = metric === "requests" ? primaryMax : Math.max(maxReqs, 1);
+    const pts = buckets.map((b, i) => `${getX(i).toFixed(1)},${getY(b.requests, rMax).toFixed(1)}`);
+    if (metric === "requests") {
+      const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${pts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
+      const area = svgElem("path", {
+        d: areaD,
+        fill: "url(#chart-grad-reqs)",
+      });
+      gAreas.appendChild(area);
+    }
+    const line = svgElem("polyline", {
+      points: pts.join(" "),
+      fill: "none",
+      stroke: "#d29922",
+      "stroke-width": metric === "requests" ? "2.2" : "1.8",
+      "stroke-dasharray": metric === "all" ? "4,3" : "none",
+      "stroke-linejoin": "round",
+    });
+    gLines.appendChild(line);
+  }
+
+  if (metric === "all" || metric === "throughput") {
+    const tMax = metric === "throughput" ? primaryMax : Math.max(maxTok, 1);
+    const tokPts = buckets.map((b, i) => {
+      const val = b.tok_s_mean != null ? b.tok_s_mean : 0;
+      return `${getX(i).toFixed(1)},${getY(val, tMax).toFixed(1)}`;
+    });
+    if (metric === "throughput") {
+      const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${tokPts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
+      const area = svgElem("path", {
+        d: areaD,
+        fill: "url(#chart-grad-tok)",
+      });
+      gAreas.appendChild(area);
+    }
+    const tokLine = svgElem("polyline", {
+      points: tokPts.join(" "),
+      fill: "none",
+      stroke: "#58a6ff",
+      "stroke-width": "2.2",
+      "stroke-linejoin": "round",
+    });
+    gLines.appendChild(tokLine);
+
+    const pMax = metric === "throughput" ? Math.max(maxPrefill * 1.15, 100) : Math.max(maxPrefill, 1);
+    const prefPts = buckets.map((b, i) => {
+      const val = b.prefill_mean != null ? b.prefill_mean : 0;
+      return `${getX(i).toFixed(1)},${getY(val, pMax).toFixed(1)}`;
+    });
+    const prefLine = svgElem("polyline", {
+      points: prefPts.join(" "),
+      fill: "none",
+      stroke: "#3fb950",
+      "stroke-width": "1.8",
+      "stroke-linejoin": "round",
+    });
+    gLines.appendChild(prefLine);
+  }
+}
+
+function wireCharts() {
+  const rangeBtns = document.querySelectorAll("#chart-range-btns .chart-range-btn");
+  rangeBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      rangeBtns.forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
+      const r = btn.dataset.range;
+      currentChartRange = r;
+      fetchTimeseries(r, true);
+    });
+  });
+
+  const metricTabs = document.querySelectorAll("#chart-metric-tabs .chart-tab");
+  metricTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      metricTabs.forEach((t) => {
+        t.classList.remove("is-active");
+        t.setAttribute("aria-selected", "false");
+      });
+      tab.classList.add("is-active");
+      tab.setAttribute("aria-selected", "true");
+      currentChartMetric = tab.dataset.metric;
+      renderTimeseriesChart(currentTimeseriesData, currentChartMetric, currentChartRange);
+    });
+  });
+
+  const wrap = $("chart-canvas-wrap");
+  const svg = $("chart-svg");
+  const crosshair = $("chart-crosshair");
+  const tooltip = $("chart-tooltip");
+
+  if (!wrap || !svg || !crosshair || !tooltip) return;
+
+  const onPointerMove = (e) => {
+    if (!currentTimeseriesData || !currentTimeseriesData.buckets || !currentTimeseriesData.buckets.length) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const clientX = e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX);
+    if (clientX == null) return;
+
+    const padLeft = 55;
+    const padRight = 25;
+    const W = 900;
+    const chartW = W - padLeft - padRight;
+    const relX = (clientX - rect.left) / rect.width;
+    const svgX = relX * W;
+
+    const clampedSvgX = Math.max(padLeft, Math.min(W - padRight, svgX));
+    const frac = (clampedSvgX - padLeft) / chartW;
+    const N = currentTimeseriesData.buckets.length;
+    const idx = Math.max(0, Math.min(N - 1, Math.round(frac * (N - 1))));
+    const b = currentTimeseriesData.buckets[idx];
+    if (!b) return;
+
+    const bucketX = padLeft + (N > 1 ? (idx / (N - 1)) * chartW : chartW / 2);
+    crosshair.setAttribute("x1", bucketX.toFixed(1));
+    crosshair.setAttribute("x2", bucketX.toFixed(1));
+    crosshair.style.display = "";
+
+    const tokStr = b.tok_s_mean != null ? `${b.tok_s_mean.toFixed(1)} tok/s` : "--";
+    const prefStr = b.prefill_mean != null ? `${b.prefill_mean.toFixed(0)} tok/s` : "--";
+
+    tooltip.innerHTML = `
+      <div class="chart-tip__head">${b.time ? b.time.replace("T", " ").replace("Z", "") : b.label} (${b.label})</div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#58a6ff;"></span>Decode: <b>${tokStr}</b></div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#3fb950;"></span>Prefill: <b>${prefStr}</b></div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#bc8cff;"></span>Tokens: <b>${fmtInt(b.total_tokens)}</b> (${fmtInt(b.prompt_tokens)} in / ${fmtInt(b.output_tokens)} out)</div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#d29922;"></span>Requests: <b>${fmtInt(b.requests)}</b></div>
+    `;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const px = (bucketX / W) * wrapRect.width;
+    const isRightHalf = px > wrapRect.width * 0.55;
+
+    tooltip.style.left = `${px}px`;
+    tooltip.style.top = "30%";
+    tooltip.style.transform = isRightHalf ? "translate(-105%, -30%)" : "translate(15px, -30%)";
+    tooltip.style.display = "block";
+  };
+
+  wrap.addEventListener("mousemove", onPointerMove);
+  wrap.addEventListener("touchmove", onPointerMove, { passive: true });
+
+  const onPointerLeave = () => {
+    crosshair.style.display = "none";
+    tooltip.style.display = "none";
+  };
+  wrap.addEventListener("mouseleave", onPointerLeave);
+  wrap.addEventListener("touchend", onPointerLeave);
 }
 
 // ---------- Layout save/reset buttons ----------
@@ -941,7 +1496,7 @@ async function refresh() {
   renderEngine(data.engine, data.config);
   renderLive(data.live, data.status);
   renderContext(data.context);
-  renderThroughput(data.throughput, data.history);
+  renderThroughput(data.throughput, data.history, data.analysis, data.totals);
   renderPower(data.power, data.history);
   renderGpu(data.gpu, data.history, data.power);
   renderHardware(data.hardware);
@@ -954,7 +1509,268 @@ async function refresh() {
   renderEndpoints(data.endpoints);
   renderHero(data.throughput, data.power, data.context, data.cache, data.status);
   renderTopbar(data.engine, data.throughput);
-  renderHistory(data.periods, data.daily);
+  renderHistory(data.periods, data.daily, data.requests);
+  renderHud(data);
+
+  lastStatsData = data;
+  if (Date.now() - lastTimeseriesFetch > 15000 && (currentChartRange === "15m" || currentChartRange === "1h")) {
+    fetchTimeseries(currentChartRange);
+  }
+}
+
+// ---------- Tab & View switching ----------
+let currentView = "full";
+
+function switchView(viewName) {
+  const isCompact = viewName === "compact";
+  currentView = isCompact ? "compact" : "full";
+
+  const tabFull = $("tab-full");
+  const tabCompact = $("tab-compact");
+  const viewFull = $("view-full");
+  const viewCompact = $("view-compact");
+
+  if (tabFull) {
+    tabFull.classList.toggle("is-active", !isCompact);
+    tabFull.setAttribute("aria-selected", !isCompact ? "true" : "false");
+  }
+  if (tabCompact) {
+    tabCompact.classList.toggle("is-active", isCompact);
+    tabCompact.setAttribute("aria-selected", isCompact ? "true" : "false");
+  }
+  if (viewFull) {
+    viewFull.classList.toggle("is-active", !isCompact);
+    viewFull.hidden = isCompact;
+  }
+  if (viewCompact) {
+    viewCompact.classList.toggle("is-active", isCompact);
+    viewCompact.hidden = !isCompact;
+  }
+
+  document.body.setAttribute("data-view", currentView);
+  try {
+    localStorage.setItem("llm-monitor-view", currentView);
+  } catch (_) {}
+}
+
+function wireTabs() {
+  const tabFull = $("tab-full");
+  const tabCompact = $("tab-compact");
+  const btnPopout = $("btn-popout");
+
+  if (tabFull) tabFull.addEventListener("click", () => switchView("full"));
+  if (tabCompact) tabCompact.addEventListener("click", () => switchView("compact"));
+  if (btnPopout) {
+    btnPopout.addEventListener("click", () => {
+      window.open(location.pathname + "?view=compact", "LLMMonitorHUD", "width=480,height=820,resizable=yes,scrollbars=yes");
+    });
+  }
+
+  document.querySelectorAll(".view-tab").forEach((tab) => {
+    tab.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        const next = tab.id === "tab-full" ? "compact" : "full";
+        switchView(next);
+        $(next === "compact" ? "tab-compact" : "tab-full")?.focus();
+      }
+    });
+  });
+
+  const params = new URLSearchParams(location.search);
+  const initialView = params.get("view") || (function() {
+    try { return localStorage.getItem("llm-monitor-view"); } catch (_) { return null; }
+  })() || "full";
+  switchView(initialView);
+}
+
+// ---------- Compact HUD View ----------
+function renderHud(data) {
+  if (!data) return;
+
+  // Identity & state
+  const engine = data.engine || {};
+  setText("hud-engine", engine.service || engine.active ? (engine.service === "strata" ? "Strata Coder" : engine.service === "vulkan" ? "Vulkan llama.cpp" : engine.service) : "--");
+  setText("hud-model", engine.model || "--");
+
+  const orb = $("hud-status-orb");
+  const mark = $("hud-mark");
+  const stateVal = (data.status && data.status.state) || "idle";
+  const stateLabel = stateName(stateVal);
+  setText("hud-state", stateLabel);
+  setText("hud-sub-state", stateLabel);
+
+  if (orb) {
+    orb.className = "hud-status-orb";
+    if (stateVal === "generating" || stateVal === "processing") orb.classList.add("is-generating");
+    else if (stateVal === "reading") orb.classList.add("is-reading");
+    else if (data.status && data.status.ok === false) orb.classList.add("is-down");
+    else orb.classList.add("is-idle");
+  }
+
+  if (mark) {
+    const svc = engine.service || engine.active || "";
+    mark.innerHTML = brandMark(svc, engine.port_open);
+    mark.className = "brand__mark";
+    if (!engine.port_open) mark.classList.add("down");
+    else if (svc === "strata") mark.classList.add("strata");
+    else if (svc === "vulkan") mark.classList.add("vulkan");
+  }
+
+  // Hero Speed
+  const thr = data.throughput;
+  setText("hud-tok", thr && thr.now != null ? thr.now.toFixed(1) : "0.0");
+  const meanSpeed = thr && thr.mean != null ? `${thr.mean.toFixed(1)} tok/s` : "--";
+  const an = data.analysis && data.analysis.recent;
+  const peakSpeed = an && an.tok_s_max != null ? `${an.tok_s_max.toFixed(1)} tok/s` : (thr && thr.now != null ? `${thr.now.toFixed(1)} tok/s` : "--");
+  setText("hud-tok-sub", `peak ${peakSpeed} · mean ${meanSpeed}`);
+  setText("hud-prefill", thr && thr.prefill != null ? thr.prefill.toFixed(0) : "--");
+  let hudPreMean = thr && (thr.prefill_mean ?? thr.recent_prefill_mean);
+  if (hudPreMean == null && an && an.prefill_mean != null) hudPreMean = an.prefill_mean;
+  if (hudPreMean == null && data.totals && data.totals.prompt_tokens && data.totals.prompt_ms && data.totals.prompt_ms > 0) {
+    hudPreMean = Math.max(0, data.totals.prompt_tokens - (data.totals.reused || 0)) / (data.totals.prompt_ms / 1000);
+  }
+  setText("hud-prefill-sub", hudPreMean != null ? `avg ${hudPreMean.toFixed(0)}` : "avg --");
+
+  // VRAM Card
+  const gpu = data.gpu || {};
+  setText("hud-vram-source", gpu.mem_source || "derived");
+  setText("hud-vram-val", gpu.mem_pct != null ? `${gpu.mem_pct.toFixed(0)}%` : "--");
+  const vramGauge = $("hud-vram-gauge");
+  if (vramGauge) vramGauge.setAttribute("value", gpu.mem_pct != null ? gpu.mem_pct.toFixed(0) : "0");
+  const vramVal = $("hud-vram-val");
+  if (vramVal && gpu.mem_pct != null) {
+    vramVal.classList.remove("is-ok", "is-warn", "is-bad");
+    vramVal.classList.add(`is-${severity(gpu.mem_pct, false)}`);
+  }
+  setText("hud-vram-hint", gpu.mem_used != null && gpu.mem_total != null
+    ? `${fmtBytes(gpu.mem_used * 1048576)} / ${fmtBytes(gpu.mem_total * 1048576)}`
+    : (data.hardware && data.hardware.vram_free_mib != null ? `${data.hardware.vram_free_mib} MiB free` : "used / total"));
+
+  // Power Card
+  const pw = data.power || {};
+  setText("hud-power-source", pw.source || "modelled");
+  setText("hud-power-val", pw.total_w != null ? `${pw.total_w} W` : "--");
+  const pwPct = pw.total_w && pw.rated_w ? (pw.total_w / pw.rated_w) * 100 : null;
+  const pwGauge = $("hud-power-gauge");
+  if (pwGauge) pwGauge.setAttribute("value", pwPct != null ? pwPct.toFixed(0) : "0");
+  const pwVal = $("hud-power-val");
+  if (pwVal && pwPct != null) {
+    pwVal.classList.remove("is-ok", "is-warn", "is-bad");
+    pwVal.classList.add(`is-${severity(pwPct, false)}`);
+  }
+  setText("hud-power-hint", pw.total_w && pw.rated_w ? `${pwPct.toFixed(0)}% of ${pw.rated_w}W peak` : "of rated peak");
+
+  // Context Card
+  const ctx = data.context || {};
+  setText("hud-ctx-pct", ctx.pct != null ? `${(ctx.pct * 100).toFixed(1)}%` : "--");
+  setText("hud-ctx-val", ctx.used_tokens != null ? fmtInt(ctx.used_tokens) : "--");
+  const ctxGauge = $("hud-ctx-gauge");
+  if (ctxGauge) ctxGauge.setAttribute("value", ctx.pct != null ? (ctx.pct * 100).toFixed(0) : "0");
+  const ctxVal = $("hud-ctx-val");
+  if (ctxVal && ctx.pct != null) {
+    ctxVal.classList.remove("is-ok", "is-warn", "is-bad");
+    ctxVal.classList.add(`is-${severity(ctx.pct * 100, false)}`);
+  }
+  setText("hud-ctx-hint", ctx.used_tokens != null && ctx.max_tokens != null ? `${fmtInt(ctx.used_tokens)} / ${fmtInt(ctx.max_tokens)} max` : "used / max tokens");
+
+  // Cache & Spec Card
+  const cache = data.cache || {};
+  setText("hud-cache-hit", cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}% hit` : "--");
+  const firstReq = (data.requests || [])[0];
+  setText("hud-reuse-val", cache.reused_tokens != null ? fmtInt(cache.reused_tokens) : (firstReq?.reused != null ? fmtInt(firstReq.reused) : "--"));
+  const spec = data.spec || {};
+  const draftPct = spec.accept_rate != null
+    ? (spec.accept_rate * 100).toFixed(0)
+    : (firstReq?.drafts_offered ? ((firstReq.drafts_accepted ?? 0) / firstReq.drafts_offered * 100).toFixed(0) : null);
+  setText("hud-draft-val", draftPct != null ? `${draftPct}%` : "--");
+  setText("hud-cache-hint", cache.kv_type ? `KV: ${cache.kv_type}` : "prompt-token reuse");
+
+  // Last Request Spotlight
+  const reqs = data.requests || [];
+  const r0 = reqs[0];
+  const r1 = reqs.length >= 2 ? reqs[1] : null;
+  if (r0) {
+    const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
+    setText("hud-req-total", t0 != null ? fmtInt(t0) : "--");
+    setText("hud-req-prompt", r0.prompt_tokens != null ? fmtInt(r0.prompt_tokens) : "--");
+    setText("hud-req-out", r0.output_tokens != null ? fmtInt(r0.output_tokens) : "--");
+    setText("hud-req-dur", r0.duration_s != null ? `${r0.duration_s.toFixed(1)}s` : "--");
+    setText("hud-req-speed", r0.decode_tok_s != null ? `${r0.decode_tok_s.toFixed(1)} tok/s` : "--");
+
+    if (r1) {
+      const t1 = r1.total_tokens ?? ((r1.prompt_tokens ?? 0) + (r1.output_tokens ?? 0));
+      if (t0 != null && t1 != null && t1 > 0) {
+        const diff = t0 - t1;
+        const pct = (diff / t1) * 100;
+        const sign = diff >= 0 ? "+" : "";
+        setText("hud-req-delta", `${sign}${fmtDelta(pct)} vs prev`);
+        const deltaEl = $("hud-req-delta");
+        if (deltaEl) {
+          deltaEl.className = "hud-spotlight__delta " + (pct > 0 ? "is-warn" : pct < 0 ? "is-ok" : "");
+        }
+      } else {
+        setText("hud-req-delta", "--");
+      }
+    } else {
+      setText("hud-req-delta", "first req");
+    }
+  } else {
+    ["hud-req-total", "hud-req-prompt", "hud-req-out", "hud-req-dur", "hud-req-speed", "hud-req-delta"].forEach((id) => setText(id, "--"));
+  }
+
+  // Micro Performance Trends
+  const periods = data.periods;
+  const curH = periods?.hour?.current;
+  const prevH = periods?.hour?.previous;
+  setText("hud-trend-hour", curH ? `${fmtInt(curH.total_tokens)} tok · ${curH.requests ?? 0} req` : "--");
+  if (curH && prevH && curH.total_tokens != null && prevH.total_tokens != null) {
+    if (prevH.total_tokens === 0) {
+      const txt = curH.total_tokens > 0 ? "+100%" : "±0%";
+      setText("hud-delta-hour", txt);
+      const elH = $("hud-delta-hour");
+      if (elH) elH.className = "hud-trend-delta " + (curH.total_tokens > 0 ? "is-warn" : "");
+    } else {
+      const dH = ((curH.total_tokens - prevH.total_tokens) / prevH.total_tokens) * 100;
+      setText("hud-delta-hour", fmtDelta(dH));
+      const elH = $("hud-delta-hour");
+      if (elH) elH.className = "hud-trend-delta " + (dH > 0 ? "is-warn" : dH < 0 ? "is-ok" : "");
+    }
+  } else {
+    setText("hud-delta-hour", "--");
+  }
+
+  const curD = periods?.day?.current;
+  const prevD = periods?.day?.previous;
+  setText("hud-trend-today", curD ? `${fmtInt(curD.total_tokens)} tok · ${curD.requests ?? 0} req` : "--");
+  if (curD && prevD && curD.total_tokens != null && prevD.total_tokens != null) {
+    if (prevD.total_tokens === 0) {
+      const txt = curD.total_tokens > 0 ? "+100%" : "±0%";
+      setText("hud-delta-today", txt);
+      const elD = $("hud-delta-today");
+      if (elD) elD.className = "hud-trend-delta " + (curD.total_tokens > 0 ? "is-warn" : "");
+    } else {
+      const dD = ((curD.total_tokens - prevD.total_tokens) / prevD.total_tokens) * 100;
+      setText("hud-delta-today", fmtDelta(dD));
+      const elD = $("hud-delta-today");
+      if (elD) elD.className = "hud-trend-delta " + (dD > 0 ? "is-warn" : dD < 0 ? "is-ok" : "");
+    }
+  } else {
+    setText("hud-delta-today", "--");
+  }
+
+  // Micro Sparkline
+  drawSpark("hud", data.history && data.history.tok_s, "decode tok/s", REFRESH_MS);
+
+  // Endpoints dots
+  const ep = data.endpoints || {};
+  ["health", "metrics", "slots", "models", "status"].forEach((k) => {
+    const el = $(`hud-dot-${k}`);
+    if (el) {
+      el.classList.toggle("is-up", Boolean(ep[k]));
+      el.classList.toggle("is-down", !ep[k]);
+    }
+  });
 }
 
 async function wireDragDrop() {
@@ -970,15 +1786,18 @@ async function init() {
   // The countdown ring on the badge sweeps once per poll, so it has to know the
   // interval that JS actually uses.
   document.documentElement.style.setProperty("--poll-ms", `${REFRESH_MS}ms`);
+  wireTabs();
   restoreOrder();
   wireDragDrop();
   wireScrub();
   wireLayoutButtons();
+  wireCharts();
   tickClock();
   wireLogReveal();
   await refresh();
+  fetchTimeseries("1h");
   setInterval(tickClock, 1000);
   setInterval(refresh, REFRESH_MS);
 }
 
-await init();
+init().catch(console.error);

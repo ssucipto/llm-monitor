@@ -28,6 +28,20 @@
       <strong class="brand__engine" id="top-engine">--</strong>
       <span class="brand__model" id="top-model">--</span>
     </p>
+    <nav class="view-tabs" role="tablist" aria-label="Dashboard views">
+      <button class="view-tab is-active" id="tab-full" role="tab" aria-selected="true" aria-controls="view-full" data-view="full" type="button">
+        <span class="view-tab__icon" aria-hidden="true">▤</span>
+        <span class="view-tab__label">Full Dashboard</span>
+      </button>
+      <button class="view-tab" id="tab-compact" role="tab" aria-selected="false" aria-controls="view-compact" data-view="compact" type="button">
+        <span class="view-tab__icon" aria-hidden="true">🗗</span>
+        <span class="view-tab__label">Compact HUD</span>
+      </button>
+      <button class="view-tab__popout" id="btn-popout" title="Open Compact HUD in a standalone overlay window" aria-label="Pop out HUD into window" type="button">
+        <span class="view-tab__icon" aria-hidden="true">↗</span>
+        <span class="view-tab__label">Pop-out</span>
+      </button>
+    </nav>
     <p class="topbar__meta">
       <time class="clock" id="clock">--:--:--</time>
       <span class="refresh-badge" id="refresh-badge" role="status">Booting</span>
@@ -53,6 +67,7 @@
       <li><a href="#spec">Speculative</a></li>
       <li><a href="#requests">Requests</a></li>
       <li><a href="#analysis">Telemetry</a></li>
+      <li><a href="#charts">Performance charts</a></li>
       <li><a href="#history">History</a></li>
       <li><a href="#switch">Switch</a></li>
       <li><a href="#log">System log</a></li>
@@ -60,10 +75,11 @@
   </nav>
 
   <main id="main" class="layout">
+    <div class="view-panel is-active" id="view-full" role="tabpanel" aria-labelledby="tab-full">
     <section class="hero" id="hero" aria-labelledby="hero-h">
       <h2 id="hero-h">At a glance</h2>
       <div class="hero__stats">
-        <div class="hero__stat"><data class="hero__value" id="hero-tok" value="0">--</data><span class="hero__unit">tok/s</span></div>
+        <div class="hero__stat"><data class="hero__value" id="hero-tok" value="0">--</data><span class="hero__unit">decode tok/s</span></div>
         <div class="hero__stat"><span class="hero__state" id="hero-state">idle</span><span class="hero__unit">model state</span></div>
         <div class="hero__stat"><data class="hero__value" id="hero-power" value="0">--</data><span class="hero__unit">watts</span></div>
         <div class="hero__stat"><data class="hero__value" id="hero-ctx" value="0">--</data><span class="hero__unit">% context</span></div>
@@ -123,8 +139,13 @@
       <h2 id="throughput-h">Throughput</h2>
       <p class="throughput__now" id="thr-now">-- tok/s</p>
       <dl class="throughput__facts">
-        <div class="fact"><dt>Mean</dt><dd id="thr-mean">--</dd></div>
-        <div class="fact"><dt>Prefill</dt><dd id="thr-prefill">--</dd></div>
+        <div class="fact"><dt>Average tok/s</dt><dd id="thr-mean">--</dd></div>
+        <div class="fact"><dt>Peak tok/s</dt><dd id="thr-peak">--</dd></div>
+        <div class="fact"><dt>Current prefill</dt><dd id="thr-prefill">--</dd></div>
+        <div class="fact"><dt>Average prefill</dt><dd id="thr-prefill-mean">--</dd></div>
+        <div class="fact"><dt>Peak prefill</dt><dd id="thr-prefill-peak">--</dd></div>
+        <div class="fact"><dt>Prompt latency</dt><dd id="thr-ttft">--</dd></div>
+        <div class="fact"><dt>Request rate</dt><dd id="thr-req-rate">--</dd></div>
         <div class="fact"><dt>Decode source</dt><dd id="thr-source">--</dd></div>
         <div class="fact"><dt>Prefill source</dt><dd id="thr-prefill-source">--</dd></div>
       </dl>
@@ -142,6 +163,15 @@
           <circle class="spark__head" id="thr-head" r="1.4" cx="0" cy="30" fill="currentColor" />
         </svg>
         <figcaption class="spark__caption" id="thr-caption">tokens/s, recent history</figcaption>
+      </figure>
+      <figure class="spark spark--prefill">
+        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Prefill speed over recent history">
+          <polygon class="spark__area" id="prefill-area" points="" fill="url(#spark-fill)" />
+          <polyline class="spark__line" id="prefill-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          <circle class="spark__halo" id="prefill-halo" r="2.2" cx="0" cy="30" fill="currentColor" />
+          <circle class="spark__head" id="prefill-head" r="1.4" cx="0" cy="30" fill="currentColor" />
+        </svg>
+        <figcaption class="spark__caption" id="prefill-caption">prefill tok/s, recent history</figcaption>
       </figure>
       <figure class="spark spark--requests">
         <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Requests per interval over recent history">
@@ -291,8 +321,10 @@
         <caption class="request-table__caption" id="request-caption">Recent generations, newest first</caption>
         <thead>
           <tr>
+            <th scope="col">Time</th>
             <th scope="col">Dur</th>
             <th scope="col">Finish</th>
+            <th scope="col">Total</th>
             <th scope="col">Prompt</th>
             <th scope="col">Read</th>
             <th scope="col">Re</th>
@@ -322,14 +354,116 @@
       </dl>
     </section>
 
+    <section class="panel charts" id="charts" aria-labelledby="charts-h">
+      <div class="charts__head">
+        <h2 id="charts-h">Performance & Token Charts</h2>
+        <div class="chart-controls">
+          <div class="chart-btn-group" id="chart-metric-tabs" role="tablist" aria-label="Chart metrics">
+            <button class="chart-tab is-active" data-metric="all" role="tab" aria-selected="true" type="button">All Combined</button>
+            <button class="chart-tab" data-metric="throughput" role="tab" aria-selected="false" type="button">Tokens / s</button>
+            <button class="chart-tab" data-metric="tokens" role="tab" aria-selected="false" type="button">Token Usage</button>
+            <button class="chart-tab" data-metric="requests" role="tab" aria-selected="false" type="button">Requests</button>
+          </div>
+          <div class="chart-btn-group" id="chart-range-btns" role="group" aria-label="Timeframe range">
+            <button class="chart-range-btn" data-range="15m" type="button">15m</button>
+            <button class="chart-range-btn is-active" data-range="1h" type="button">1h</button>
+            <button class="chart-range-btn" data-range="3h" type="button">3h</button>
+            <button class="chart-range-btn" data-range="6h" type="button">6h</button>
+            <button class="chart-range-btn" data-range="24h" type="button">24h</button>
+            <button class="chart-range-btn" data-range="7d" type="button">7d</button>
+            <button class="chart-range-btn" data-range="30d" type="button">30d</button>
+            <button class="chart-range-btn" data-range="90d" type="button">90d</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-summary-strip">
+        <div class="chart-stat">
+          <span class="chart-stat__label">Total Requests</span>
+          <data class="chart-stat__value" id="chart-sum-reqs" value="0">--</data>
+        </div>
+        <div class="chart-stat">
+          <span class="chart-stat__label">Total Tokens</span>
+          <data class="chart-stat__value" id="chart-sum-tokens" value="0">--</data>
+        </div>
+        <div class="chart-stat">
+          <span class="chart-stat__label">Prompt / Output</span>
+          <span class="chart-stat__value chart-stat__sub" id="chart-sum-breakdown">-- / --</span>
+        </div>
+        <div class="chart-stat">
+          <span class="chart-stat__label">Decode Speed</span>
+          <span class="chart-stat__value" id="chart-sum-tok">-- tok/s</span>
+          <span class="chart-stat__hint" id="chart-sum-tok-hint">mean / peak</span>
+        </div>
+        <div class="chart-stat">
+          <span class="chart-stat__label">Prefill Speed</span>
+          <span class="chart-stat__value" id="chart-sum-prefill">-- tok/s</span>
+          <span class="chart-stat__hint" id="chart-sum-prefill-hint">mean / peak</span>
+        </div>
+      </div>
+
+      <div class="chart-canvas-wrap" id="chart-canvas-wrap">
+        <svg id="chart-svg" viewBox="0 0 900 300" preserveAspectRatio="none" role="img" aria-label="Interactive performance and token usage timeseries chart">
+          <defs>
+            <linearGradient id="chart-grad-tok" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.35" />
+              <stop offset="100%" stop-color="#58a6ff" stop-opacity="0.0" />
+            </linearGradient>
+            <linearGradient id="chart-grad-prefill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#3fb950" stop-opacity="0.30" />
+              <stop offset="100%" stop-color="#3fb950" stop-opacity="0.0" />
+            </linearGradient>
+            <linearGradient id="chart-grad-tokens" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#bc8cff" stop-opacity="0.32" />
+              <stop offset="100%" stop-color="#bc8cff" stop-opacity="0.0" />
+            </linearGradient>
+            <linearGradient id="chart-grad-reqs" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#d29922" stop-opacity="0.35" />
+              <stop offset="100%" stop-color="#d29922" stop-opacity="0.0" />
+            </linearGradient>
+          </defs>
+          <g id="chart-grid"></g>
+          <g id="chart-series-areas"></g>
+          <g id="chart-series-lines"></g>
+          <g id="chart-series-points"></g>
+          <line id="chart-crosshair" x1="0" y1="0" x2="0" y2="300" stroke="rgba(255,255,255,0.4)" stroke-width="1" stroke-dasharray="3,3" style="display:none;" />
+        </svg>
+        <div class="chart-tooltip" id="chart-tooltip" style="display:none;" role="tooltip"></div>
+      </div>
+
+      <div class="chart-legend" id="chart-legend">
+        <span class="legend-item legend-tok"><span class="legend-dot"></span> Decode (tok/s)</span>
+        <span class="legend-item legend-prefill"><span class="legend-dot"></span> Prefill (tok/s)</span>
+        <span class="legend-item legend-tokens"><span class="legend-dot"></span> Tokens (Prompt + Out)</span>
+        <span class="legend-item legend-reqs"><span class="legend-dot"></span> Requests</span>
+      </div>
+    </section>
+
     <section class="panel history" id="history" aria-labelledby="history-h">
       <h2 id="history-h">History</h2>
       <p class="hist__window" id="hist-window">awaiting history</p>
-      <dl class="hist__periods">
-        <div class="fact"><dt>Day</dt><dd id="hist-day">--</dd></div>
-        <div class="fact"><dt>Week</dt><dd id="hist-week">--</dd></div>
-        <div class="fact"><dt>Month</dt><dd id="hist-month">--</dd></div>
+      <dl class="hist__periods" id="hist-periods">
+        <div class="fact"><dt>Last request</dt><dd id="hist-tokens-request">--</dd></div>
+        <div class="fact"><dt>This hour</dt><dd id="hist-tokens-hour">--</dd></div>
+        <div class="fact"><dt>Today</dt><dd id="hist-tokens-today">--</dd></div>
+        <div class="fact"><dt>Yesterday</dt><dd id="hist-tokens-yesterday">--</dd></div>
+        <div class="fact"><dt>This week</dt><dd id="hist-tokens-week">--</dd></div>
+        <div class="fact"><dt>This month</dt><dd id="hist-tokens-month">--</dd></div>
       </dl>
+      <table class="history-table" id="history-comparison-table">
+        <caption class="history-table__caption">Period comparison & token usage</caption>
+        <thead>
+          <tr>
+            <th scope="col">Comparison</th>
+            <th scope="col">Current Tokens</th>
+            <th scope="col">Previous Tokens</th>
+            <th scope="col">Token Change</th>
+            <th scope="col">Requests</th>
+            <th scope="col">tok/s</th>
+          </tr>
+        </thead>
+        <tbody id="history-comparison-tbody"></tbody>
+      </table>
       <figure class="spark spark--hist">
         <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Requests per day over recorded history">
           <polygon class="spark__area" id="hist-area" points="" fill="url(#spark-fill)" />
@@ -348,6 +482,161 @@
       <h2 id="log-h">System log</h2>
       <ol class="log__list" id="log-list"></ol>
     </section>
+    </div>
+    </div>
+
+    <div class="view-panel" id="view-compact" role="tabpanel" aria-labelledby="tab-compact" hidden>
+      <div class="hud-container">
+        <!-- HUD Header: Engine identity, model, glowing status orb, live clock -->
+        <header class="hud-header">
+          <div class="hud-header__identity">
+            <span class="hud-status-orb" id="hud-status-orb" aria-hidden="true"></span>
+            <span class="brand__mark" id="hud-mark" aria-hidden="true"></span>
+            <div class="hud-titles">
+              <h2 class="hud-engine" id="hud-engine">--</h2>
+              <p class="hud-model" id="hud-model">--</p>
+            </div>
+          </div>
+          <div class="hud-header__meta">
+            <span class="hud-badge" id="hud-state">idle</span>
+            <time class="clock hud-clock" id="hud-clock">--:--:--</time>
+          </div>
+        </header>
+
+        <!-- Hero Primary Readout: Live Decode Speed -->
+        <section class="hud-hero" aria-labelledby="hud-speed-label">
+          <div class="hud-hero__primary">
+            <span class="hud-hero__label" id="hud-speed-label">Decode Speed</span>
+            <div class="hud-hero__number">
+              <data class="hud-hero__value" id="hud-tok" value="0">--</data>
+              <span class="hud-hero__unit">decode tok/s</span>
+            </div>
+            <p class="hud-hero__sub" id="hud-tok-sub">peak -- · mean --</p>
+          </div>
+          <div class="hud-hero__secondary">
+            <div class="hud-micro-stat">
+              <span class="hud-micro-stat__label">Prefill Speed</span>
+              <div class="hud-micro-stat__value-wrap">
+                <data class="hud-micro-stat__value" id="hud-prefill" value="0">--</data>
+                <span class="hud-micro-stat__unit">tok/s</span>
+              </div>
+              <span class="hud-micro-stat__sub" id="hud-prefill-sub">avg --</span>
+            </div>
+            <div class="hud-micro-stat">
+              <span class="hud-micro-stat__label">Model State</span>
+              <span class="hud-micro-stat__state" id="hud-sub-state">idle</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- High-Density Vitals Matrix (2x2) -->
+        <section class="hud-matrix" aria-label="Hardware and memory vitals">
+          <!-- VRAM Card -->
+          <div class="hud-card">
+            <div class="hud-card__head">
+              <span class="hud-card__title">VRAM in use</span>
+              <span class="hud-card__source" id="hud-vram-source">derived</span>
+            </div>
+            <div class="hud-card__main">
+              <data class="hud-card__value" id="hud-vram-val">--</data>
+              <meter class="hud-gauge" id="hud-vram-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
+            </div>
+            <p class="hud-card__hint" id="hud-vram-hint">used / total</p>
+          </div>
+
+          <!-- Power Draw Card -->
+          <div class="hud-card">
+            <div class="hud-card__head">
+              <span class="hud-card__title">Power Draw</span>
+              <span class="hud-card__source" id="hud-power-source">modelled</span>
+            </div>
+            <div class="hud-card__main">
+              <data class="hud-card__value" id="hud-power-val">--</data>
+              <meter class="hud-gauge" id="hud-power-gauge" min="0" max="100" low="50" high="80" optimum="10" value="0">--</meter>
+            </div>
+            <p class="hud-card__hint" id="hud-power-hint">of rated peak</p>
+          </div>
+
+          <!-- Context Usage Card -->
+          <div class="hud-card">
+            <div class="hud-card__head">
+              <span class="hud-card__title">Context Fill</span>
+              <span class="hud-card__tag" id="hud-ctx-pct">--%</span>
+            </div>
+            <div class="hud-card__main">
+              <data class="hud-card__value" id="hud-ctx-val">--</data>
+              <meter class="hud-gauge" id="hud-ctx-gauge" min="0" max="100" low="50" high="80" optimum="10" value="0">--</meter>
+            </div>
+            <p class="hud-card__hint" id="hud-ctx-hint">used / max tokens</p>
+          </div>
+
+          <!-- Cache & Speculation Card -->
+          <div class="hud-card">
+            <div class="hud-card__head">
+              <span class="hud-card__title">Cache & Spec</span>
+              <span class="hud-card__tag" id="hud-cache-hit">--% hit</span>
+            </div>
+            <div class="hud-card__metrics">
+              <div class="hud-metric-row"><span class="hud-metric-lbl">Prompt reuse</span><span class="hud-metric-val num" id="hud-reuse-val">--</span></div>
+              <div class="hud-metric-row"><span class="hud-metric-lbl">Draft accept</span><span class="hud-metric-val num" id="hud-draft-val">--%</span></div>
+            </div>
+            <p class="hud-card__hint" id="hud-cache-hint">prompt-token reuse</p>
+          </div>
+        </section>
+
+        <!-- Last Request Spotlight -->
+        <section class="hud-spotlight" aria-labelledby="hud-spotlight-h">
+          <h3 class="hud-spotlight__heading" id="hud-spotlight-h">
+            <span>Last Request</span>
+            <span class="hud-spotlight__delta" id="hud-req-delta">--</span>
+          </h3>
+          <div class="hud-spotlight__body">
+            <div class="hud-spotlight__tokens">
+              <data class="hud-spotlight__total" id="hud-req-total">--</data>
+              <span class="hud-spotlight__total-lbl">total tokens</span>
+            </div>
+            <div class="hud-spotlight__details">
+              <div class="hud-detail-line"><span class="hud-detail-lbl">Prompt:</span> <span class="num" id="hud-req-prompt">--</span> · <span class="hud-detail-lbl">Out:</span> <span class="num" id="hud-req-out">--</span></div>
+              <div class="hud-detail-line"><span class="hud-detail-lbl">Duration:</span> <span class="num" id="hud-req-dur">--</span> · <span class="hud-detail-lbl">Speed:</span> <span class="num" id="hud-req-speed">--</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Micro Performance Trends Strip -->
+        <section class="hud-trends" aria-label="Recent period trends">
+          <div class="hud-trend-row">
+            <span class="hud-trend-lbl">This hour</span>
+            <span class="hud-trend-val num" id="hud-trend-hour">--</span>
+            <span class="hud-trend-delta" id="hud-delta-hour">--</span>
+          </div>
+          <div class="hud-trend-row">
+            <span class="hud-trend-lbl">Today</span>
+            <span class="hud-trend-val num" id="hud-trend-today">--</span>
+            <span class="hud-trend-delta" id="hud-delta-today">--</span>
+          </div>
+        </section>
+
+        <!-- Compact Sparkline (Throughput) -->
+        <figure class="hud-spark" aria-label="Recent throughput trendline">
+          <svg viewBox="0 0 100 24" width="100" height="24" role="img" aria-label="Throughput sparkline">
+            <polygon class="spark__area" id="hud-area" points="" fill="url(#spark-fill)" />
+            <polyline class="spark__line" id="hud-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+            <circle class="spark__head" id="hud-head" r="1.4" cx="0" cy="24" fill="currentColor" />
+          </svg>
+          <figcaption class="hud-spark__caption" id="hud-caption">decode tok/s, recent polling history</figcaption>
+        </figure>
+
+        <!-- Mini Endpoints Health Bar -->
+        <footer class="hud-footer">
+          <div class="hud-endpoints" id="hud-endpoints">
+            <span class="hud-dot" id="hud-dot-health" title="/health">health</span>
+            <span class="hud-dot" id="hud-dot-metrics" title="/metrics">metrics</span>
+            <span class="hud-dot" id="hud-dot-slots" title="/slots">slots</span>
+            <span class="hud-dot" id="hud-dot-models" title="/v1/models">models</span>
+            <span class="hud-dot" id="hud-dot-status" title="/status">status</span>
+          </div>
+        </footer>
+      </div>
     </div>
   </main>
 

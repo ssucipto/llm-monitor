@@ -209,119 +209,6 @@ def gather_live():
         }
     return None
 
-
-def gather_context():
-    """Context window usage + slots."""
-    metrics = _get_json("/metrics")
-    slots = _get_json("/slots")
-    props = _get_json("/props")
-
-    max_ctx = None
-    if isinstance(props, dict):
-        gen = props.get("default_generation_settings") or {}
-        max_ctx = gen.get("n_ctx")
-    if max_ctx is None and isinstance(metrics, dict):
-        max_ctx = (metrics.get("engine") or {}).get("max_context")
-    if max_ctx is None and isinstance(slots, list) and slots:
-        max_ctx = slots[0].get("n_ctx")
-
-    return {
-        "max_context": max_ctx,
-        "total_slots": (props or {}).get("total_slots") if isinstance(props, dict) else (len(slots) if isinstance(slots, list) else None),
-        "slots": [s for s in slots if isinstance(s, dict)] if isinstance(slots, list) else [],
-    }
-
-
-def gather_cache():
-    """KV cache, expert cache, conversation cache, hit rate."""
-    metrics = _get_json("/metrics")
-    if not metrics or not isinstance(metrics, dict):
-        return None
-    eng = metrics.get("engine") or {}
-    conv = metrics.get("conversation_cache") or {}
-    totals = metrics.get("totals") or {}
-    hit = None
-    if totals.get("prompt_tokens"):
-        hit = totals["reused"] / totals["prompt_tokens"]
-    return {
-        "kv_type": eng.get("kv"),
-        "kv_resident": eng.get("kv_resident"),
-        "expert_slots": eng.get("expert_slots"),
-        "expert_cache_mib": eng.get("expert_cache_mib"),
-        "conversation_cache": conv,
-        "hit_rate": hit,
-        "reused_tokens": totals.get("reused"),
-        "prompt_tokens": totals.get("prompt_tokens"),
-    }
-
-
-def gather_spec():
-    """Speculative decoding (MTP) accept rate."""
-    metrics = _get_json("/metrics")
-    if not metrics or not isinstance(metrics, dict):
-        return None
-    eng = metrics.get("engine") or {}
-    totals = metrics.get("totals") or {}
-    offered = totals.get("drafts_offered")
-    accepted = totals.get("drafts_accepted")
-    rate = (accepted / offered) if offered else None
-    return {
-        "spec": eng.get("spec"),
-        "mtp_max": eng.get("mtp_max"),
-        "lookup": eng.get("lookup"),
-        "drafts_offered": offered,
-        "drafts_accepted": accepted,
-        "accept_rate": rate,
-    }
-
-
-def gather_hardware():
-    """CPU, RAM, VRAM, disk, GPU identity."""
-    metrics = _get_json("/metrics")
-    if not metrics or not isinstance(metrics, dict):
-        return None
-    hw = metrics.get("hardware") or {}
-    static = metrics.get("hardware_static") or {}
-    eng = metrics.get("engine") or {}
-    ram_total = hw.get("ram_total")
-    ram_used = hw.get("ram_used")
-    return {
-        "cpu_pct": hw.get("cpu"),
-        "ram_used": ram_used,
-        "ram_total": ram_total,
-        "ram_pct": (ram_used / ram_total * 100) if ram_total else None,
-        "vram_free_mib": eng.get("vram_free_mib"),
-        "disk_read_mb": hw.get("disk_read_mb"),
-        "disk_write_mb": hw.get("disk_write_mb"),
-        "tok_s": hw.get("tok_s"),
-        "tok_s_mean": hw.get("tok_s_mean"),
-        "prefill_tok_s_mean": hw.get("prefill_tok_s_mean"),
-        "gpu_util": hw.get("gpu_util"),
-        "gpu_mem_used": hw.get("gpu_mem_used"),
-        "gpu_mem_total": hw.get("gpu_mem_total"),
-        "gpu_temp": hw.get("gpu_temp"),
-        "gpu_power": hw.get("gpu_power"),
-        "gpu_power_limit": hw.get("gpu_power_limit"),
-        "gpu_pcie_rx_mb": hw.get("gpu_pcie_rx_mb"),
-        "gpu_pcie_gen": hw.get("gpu_pcie_gen"),
-        "gpu_pcie_gen_max": hw.get("gpu_pcie_gen_max"),
-        "gpu_pcie_width": hw.get("gpu_pcie_width"),
-        "gpu_name": static.get("gpu_name"),
-        "gpu_count": static.get("gpu_count"),
-        "cpu_name": static.get("cpu_name"),
-        "cores": static.get("cores"),
-        "threads": static.get("threads"),
-    }
-
-
-def gather_totals():
-    """Cumulative totals since engine start."""
-    metrics = _get_json("/metrics")
-    if not metrics or not isinstance(metrics, dict):
-        return None
-    return metrics.get("totals")
-
-
 def gather_config():
     """Engine configuration knobs the engine reports but never explains.
 
@@ -440,10 +327,14 @@ def gather_requests(limit=12):
     for r in reqs[:limit]:
         if not isinstance(r, dict):
             continue
+        prompt = r.get("prompt_tokens")
+        out_tok = r.get("output_tokens")
+        total_tok = (prompt or 0) + (out_tok or 0) if (prompt is not None or out_tok is not None) else None
         out.append({
             "duration_s": r.get("duration_s"),
             "finish": r.get("finish"),
-            "prompt_tokens": r.get("prompt_tokens"),
+            "total_tokens": total_tok,
+            "prompt_tokens": prompt,
             "prompt_read": r.get("prompt_read"),
             "reused": r.get("reused"),
             "output_tokens": r.get("output_tokens"),
@@ -611,6 +502,14 @@ def db_init():
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
+    try:
+        con.execute("CREATE INDEX IF NOT EXISTS idx_poll_t ON poll(t)")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_day_d ON day(d)")
+    except sqlite3.OperationalError:
+        pass
     return con
 
 
@@ -654,9 +553,9 @@ def db_record(con, stats):
 
 def db_prune(con):
     """Drop the oldest rows past the cap in one DELETE."""
-    cut = con.execute("SELECT t FROM poll LIMIT 1 OFFSET ?", (DB_MAX_ROWS,)).fetchone()
+    cut = con.execute("SELECT t FROM poll ORDER BY t DESC LIMIT 1 OFFSET ?", (DB_MAX_ROWS,)).fetchone()
     if cut:
-        con.execute("DELETE FROM poll WHERE t <= ?", (cut[0],))
+        con.execute("DELETE FROM poll WHERE t < ?", (cut[0],))
         con.commit()
 
 
@@ -722,16 +621,31 @@ def day_aggregates(con, lo, hi):
     power_vals = [r[9] for r in rows if r[9] is not None]
     span = max(1e-9, rows[-1][0] - rows[0][0])
     hours = []
+    prev_seg_last = None
     for h in range(24):
-        seg = [r for r in rows if int((r[0] - lo) // 3600) == h]
-        hours.append(cumulative_delta(seg, 5) if len(seg) >= 2 else 0)
+        h_lo = lo + h * 3600
+        h_hi = h_lo + 3600
+        seg = [r for r in rows if h_lo <= r[0] < h_hi]
+        if not seg:
+            hours.append(0)
+            continue
+        if prev_seg_last:
+            seg_with_base = [prev_seg_last] + seg
+            hours.append(cumulative_delta(seg_with_base, 5))
+        else:
+            hours.append(cumulative_delta(seg, 5) if len(seg) >= 2 else 0)
+        prev_seg_last = seg[-1]
+    prompt_tok = cumulative_delta(rows, 6)
+    reused_tok = cumulative_delta(rows, 7)
+    output_tok = cumulative_delta(rows, 8)
     return {
         "polls": len(rows),
         "span_s": round(span, 1),
         "requests": cumulative_delta(rows, 5),
-        "prompt_tokens": cumulative_delta(rows, 6),
-        "reused": cumulative_delta(rows, 7),
-        "output_tokens": cumulative_delta(rows, 8),
+        "total_tokens": (prompt_tok or 0) + (output_tok or 0),
+        "prompt_tokens": prompt_tok,
+        "reused": reused_tok,
+        "output_tokens": output_tok,
         "tok_s_mean": avg(1),
         "tok_s_max": max((r[1] for r in rows if r[1] is not None), default=None),
         "prefill_mean": avg(2),
@@ -779,6 +693,64 @@ def _iso_day(d):
     return datetime.fromtimestamp(d * 86400, timezone.utc).strftime("%Y-%m-%d")
 
 
+def db_hour_aggregates(con, lo, hi):
+    """Summarise poll rows in [lo, hi) anchored to the preceding boundary row."""
+    base = con.execute(
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy "
+        "FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1", (lo,)).fetchone()
+    rows = con.execute(
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy "
+        "FROM poll WHERE t >= ? AND t < ? ORDER BY t", (lo, hi)).fetchall()
+    if not rows:
+        return None
+    all_rows = ([base] + rows) if base else rows
+    first, last = (all_rows[0], all_rows[-1]) if all_rows else (rows[0], rows[-1])
+    span = max(1e-9, last[0] - first[0])
+    req_delta = cumulative_delta(all_rows, 5) if all_rows else 0
+    prompt_delta = cumulative_delta(all_rows, 6) if all_rows else 0
+    reused_delta = cumulative_delta(all_rows, 7) if all_rows else 0
+    output_delta = cumulative_delta(all_rows, 8) if all_rows else 0
+    tot_tokens = (prompt_delta or 0) + (output_delta or 0)
+
+    # Suppress ghost throughput: if 0 requests and 0 tokens occurred, tok_s_mean MUST be None!
+    if req_delta > 0 or tot_tokens > 0:
+        tok_vals = [r[1] for r in rows if r[1] is not None]
+        tok_mean = sum(tok_vals) / len(tok_vals) if tok_vals else None
+        tok_max = max(tok_vals, default=None)
+        prefill_vals = [r[2] for r in rows if r[2] is not None]
+        prefill_mean = sum(prefill_vals) / len(prefill_vals) if prefill_vals else None
+        prefill_max = max(prefill_vals, default=None)
+    else:
+        tok_mean = None
+        tok_max = None
+        prefill_mean = None
+        prefill_max = None
+
+    power_vals = [r[9] for r in rows if r[9] is not None]
+    hit_vals = [r[3] for r in rows if r[3] is not None]
+    accept_vals = [r[4] for r in rows if r[4] is not None]
+
+    return {
+        "polls": len(rows),
+        "span_s": round(span, 1),
+        "requests": req_delta,
+        "total_tokens": tot_tokens,
+        "prompt_tokens": prompt_delta,
+        "reused": reused_delta,
+        "output_tokens": output_delta,
+        "req_per_min": round(req_delta / span * 60, 2) if span > 0 else 0.0,
+        "tok_s_mean": tok_mean,
+        "tok_s_max": tok_max,
+        "prefill_mean": prefill_mean,
+        "prefill_max": prefill_max,
+        "hit_pct_mean": (sum(hit_vals) / len(hit_vals)) if hit_vals else None,
+        "accept_pct_mean": (sum(accept_vals) / len(accept_vals)) if accept_vals else None,
+        "power_w_mean": (sum(power_vals) / len(power_vals)) if power_vals else None,
+        "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
+        "idle_pct": round(100 * sum(1 for r in rows if not r[10]) / len(rows), 1),
+    }
+
+
 def db_daily(con, limit=DB_DAILY_MAX):
     """Finalized days oldest-first plus today's live partial, as day dicts."""
     out = []
@@ -789,6 +761,7 @@ def db_daily(con, limit=DB_DAILY_MAX):
     ):
         out.append({
             "d": r[0], "date": _iso_day(r[0]), "polls": r[1], "requests": r[3],
+            "total_tokens": (r[4] or 0) + (r[6] or 0),
             "prompt_tokens": r[4], "reused": r[5], "output_tokens": r[6],
             "tok_s_mean": r[7], "tok_s_max": r[8], "prefill_mean": r[9],
             "hit_mean": r[10], "accept_mean": r[11], "power_mean": r[12],
@@ -800,8 +773,199 @@ def db_daily(con, limit=DB_DAILY_MAX):
     if agg:
         agg["d"] = d
         agg["date"] = _iso_day(d)
+        agg["total_tokens"] = (agg.get("prompt_tokens") or 0) + (agg.get("output_tokens") or 0)
         out.append(agg)
     return out[-limit:]
+
+
+def db_timeseries(con, range_str="1h"):
+    """Aggregate telemetry history into bucketed timeseries for charting.
+
+    Supports minute, hourly, and daily ranges with counter-reset safety.
+    """
+    now = datetime.now(timezone.utc).timestamp()
+    ranges = {
+        "15m": (900, 30),
+        "1h": (3600, 60),
+        "3h": (10800, 60),
+        "6h": (21600, 60),
+        "12h": (43200, 60),
+        "24h": (86400, 48),
+    }
+    days_map = {"7d": 7, "30d": 30, "90d": 90}
+
+    if range_str in ranges:
+        span_s, num_buckets = ranges[range_str]
+        bucket_s = span_s / num_buckets
+        start_t = now - span_s
+        rows = con.execute(
+            "SELECT t, tok_s, prefill, reqs, prompt_tokens, reused, output_tokens "
+            "FROM poll WHERE t >= ? ORDER BY t ASC",
+            (start_t - bucket_s,),
+        ).fetchall()
+
+        buckets = []
+        last_reqs = None
+        last_prompt = None
+        last_reused = None
+        last_output = None
+
+        init_rows = [r for r in rows if r[0] < start_t]
+        if init_rows:
+            last_reqs = init_rows[-1][3]
+            last_prompt = init_rows[-1][4]
+            last_reused = init_rows[-1][5]
+            last_output = init_rows[-1][6]
+
+        for b in range(num_buckets):
+            b_lo = start_t + b * bucket_s
+            b_hi = b_lo + bucket_s
+            b_mid = b_lo + bucket_s / 2
+            b_rows = [r for r in rows if b_lo <= r[0] < b_hi]
+
+            tok_vals = [r[1] for r in b_rows if r[1] is not None]
+            prefill_vals = [r[2] for r in b_rows if r[2] is not None]
+
+            cur_reqs = b_rows[-1][3] if b_rows else None
+            cur_prompt = b_rows[-1][4] if b_rows else None
+            cur_reused = b_rows[-1][5] if b_rows else None
+            cur_output = b_rows[-1][6] if b_rows else None
+
+            def calc_delta(cur, prev, col_idx):
+                if cur is None:
+                    return 0
+                if prev is None:
+                    return cumulative_delta(b_rows, col_idx) or 0
+                return max(0, cur - prev) if cur >= prev else cur
+
+            req_delta = calc_delta(cur_reqs, last_reqs, 3)
+            prompt_delta = calc_delta(cur_prompt, last_prompt, 4)
+            reused_delta = calc_delta(cur_reused, last_reused, 5)
+            output_delta = calc_delta(cur_output, last_output, 6)
+
+            if cur_reqs is not None:
+                last_reqs = cur_reqs
+            if cur_prompt is not None:
+                last_prompt = cur_prompt
+            if cur_reused is not None:
+                last_reused = cur_reused
+            if cur_output is not None:
+                last_output = cur_output
+
+            dt = datetime.fromtimestamp(b_mid, timezone.utc)
+            label = dt.strftime("%H:%M" if span_s >= 3600 else "%H:%M:%S")
+
+            buckets.append({
+                "t": round(b_mid, 1),
+                "time": dt.isoformat(),
+                "label": label,
+                "requests": req_delta,
+                "prompt_tokens": prompt_delta,
+                "reused": reused_delta,
+                "output_tokens": output_delta,
+                "total_tokens": prompt_delta + output_delta,
+                "tok_s_mean": round(sum(tok_vals) / len(tok_vals), 1) if tok_vals else None,
+                "tok_s_max": round(max(tok_vals), 1) if tok_vals else None,
+                "prefill_mean": round(sum(prefill_vals) / len(prefill_vals), 1) if prefill_vals else None,
+                "prefill_max": round(max(prefill_vals), 1) if prefill_vals else None,
+            })
+
+    elif range_str in days_map:
+        num_days = days_map[range_str]
+        span_s = num_days * 86400
+        bucket_s = 86400
+        today_idx = int(now // 86400)
+        start_day = today_idx - (num_days - 1)
+
+        day_rows = con.execute(
+            "SELECT d, reqs, prompt, reused, output, tok_mean, tok_max, prefill_mean "
+            "FROM day WHERE d >= ? ORDER BY d ASC",
+            (start_day,),
+        ).fetchall()
+        by_d = {r[0]: r for r in day_rows}
+
+        today_start = today_idx * 86400
+        today_agg = day_aggregates(con, today_start, now)
+
+        buckets = []
+        for d in range(start_day, today_idx + 1):
+            dt = datetime.fromtimestamp(d * 86400 + 43200, timezone.utc)
+            label = dt.strftime("%b %d")
+            if d == today_idx and today_agg:
+                buckets.append({
+                    "t": d * 86400 + 43200,
+                    "time": dt.isoformat(),
+                    "label": label,
+                    "requests": today_agg.get("requests") or 0,
+                    "prompt_tokens": today_agg.get("prompt_tokens") or 0,
+                    "reused": today_agg.get("reused") or 0,
+                    "output_tokens": today_agg.get("output_tokens") or 0,
+                    "total_tokens": today_agg.get("total_tokens") or 0,
+                    "tok_s_mean": today_agg.get("tok_s_mean"),
+                    "tok_s_max": today_agg.get("tok_s_max"),
+                    "prefill_mean": today_agg.get("prefill_mean"),
+                    "prefill_max": None,
+                })
+            elif d in by_d:
+                r = by_d[d]
+                p = r[2] or 0
+                o = r[4] or 0
+                buckets.append({
+                    "t": d * 86400 + 43200,
+                    "time": dt.isoformat(),
+                    "label": label,
+                    "requests": r[1] or 0,
+                    "prompt_tokens": p,
+                    "reused": r[3] or 0,
+                    "output_tokens": o,
+                    "total_tokens": p + o,
+                    "tok_s_mean": r[5],
+                    "tok_s_max": r[6],
+                    "prefill_mean": r[7],
+                    "prefill_max": None,
+                })
+            else:
+                buckets.append({
+                    "t": d * 86400 + 43200,
+                    "time": dt.isoformat(),
+                    "label": label,
+                    "requests": 0,
+                    "prompt_tokens": 0,
+                    "reused": 0,
+                    "output_tokens": 0,
+                    "total_tokens": 0,
+                    "tok_s_mean": None,
+                    "tok_s_max": None,
+                    "prefill_mean": None,
+                    "prefill_max": None,
+                })
+    else:
+        return None
+
+    tok_means = [b["tok_s_mean"] for b in buckets if b["tok_s_mean"] is not None]
+    tok_maxes = [b["tok_s_max"] for b in buckets if b["tok_s_max"] is not None]
+    pre_means = [b["prefill_mean"] for b in buckets if b["prefill_mean"] is not None]
+    pre_maxes = [b["prefill_max"] for b in buckets if b["prefill_max"] is not None]
+
+    summary = {
+        "total_requests": sum(b["requests"] for b in buckets),
+        "total_tokens": sum(b["total_tokens"] for b in buckets),
+        "prompt_tokens": sum(b["prompt_tokens"] for b in buckets),
+        "output_tokens": sum(b["output_tokens"] for b in buckets),
+        "reused_tokens": sum(b["reused"] for b in buckets),
+        "tok_s_mean": round(sum(tok_means) / len(tok_means), 1) if tok_means else None,
+        "tok_s_max": max(tok_maxes) if tok_maxes else None,
+        "prefill_mean": round(sum(pre_means) / len(pre_means), 1) if pre_means else None,
+        "prefill_max": max(pre_maxes) if pre_maxes else None,
+    }
+
+    return {
+        "range": range_str,
+        "span_s": span_s,
+        "bucket_s": bucket_s,
+        "buckets": buckets,
+        "summary": summary,
+    }
 
 
 def db_export(con, fmt="json"):
@@ -818,7 +982,7 @@ def db_export(con, fmt="json"):
                  "accept_pct", "reqs", "prompt_tokens", "reused", "output_tokens",
                  "power_w", "power_src", "gpu_util", "gpu_power", "busy", "vram_used", "vram_total",
                  "drafts_offered", "drafts_accepted", "pcie_share")
-    rows = con.execute("SELECT * FROM poll ORDER BY t").fetchall()
+    rows = con.execute(f"SELECT {', '.join(poll_cols)} FROM poll ORDER BY t").fetchall()
     days = db_daily(con)
     if fmt == "csv":
         import csv
@@ -838,16 +1002,80 @@ def db_export(con, fmt="json"):
     })
 
 
-def db_periods(dlist):
-    """Today vs yesterday, this week vs previous, this month vs previous.
+def db_periods(dlist, analysis=None, requests=None, hourly=None):
+    """Today vs yesterday, this week vs previous, this month vs previous, this hour vs last hour, last request vs previous request.
 
     Weeks start Monday (UTC); months are calendar months. Means are poll-weighted
     across the days in a period, so a quiet day cannot skew an average.
     """
+    req_cur = None
+    req_prev = None
+    if requests and len(requests) >= 1:
+        r0 = requests[0]
+        t0 = r0.get("total_tokens")
+        if t0 is None and (r0.get("prompt_tokens") is not None or r0.get("output_tokens") is not None):
+            t0 = (r0.get("prompt_tokens") or 0) + (r0.get("output_tokens") or 0)
+        req_cur = {
+            "requests": 1,
+            "total_tokens": t0,
+            "prompt_tokens": r0.get("prompt_tokens"),
+            "output_tokens": r0.get("output_tokens"),
+            "tok_s_mean": r0.get("decode_tok_s"),
+            "duration_s": r0.get("duration_s"),
+        }
+    if requests and len(requests) >= 2:
+        r1 = requests[1]
+        t1 = r1.get("total_tokens")
+        if t1 is None and (r1.get("prompt_tokens") is not None or r1.get("output_tokens") is not None):
+            t1 = (r1.get("prompt_tokens") or 0) + (r1.get("output_tokens") or 0)
+        req_prev = {
+            "requests": 1,
+            "total_tokens": t1,
+            "prompt_tokens": r1.get("prompt_tokens"),
+            "output_tokens": r1.get("output_tokens"),
+            "tok_s_mean": r1.get("decode_tok_s"),
+            "duration_s": r1.get("duration_s"),
+        }
+
+    if hourly:
+        hour_cur = hourly.get("current")
+        hour_prev = hourly.get("previous")
+    else:
+        hour_cur = (analysis or {}).get("recent")
+        hour_prev = (analysis or {}).get("previous")
+
+    req_block = {
+        "current": req_cur,
+        "previous": req_prev,
+        "current_label": "Last request",
+        "previous_label": "Previous request",
+    }
+
+    now_ts = datetime.now(timezone.utc).timestamp()
+    today = int(now_ts // 86400)
+
     if not dlist:
-        return None
+        day_span_cur = {
+            "requests": 0, "total_tokens": 0, "prompt_tokens": 0, "output_tokens": 0,
+            "energy_wh": 0.0, "tok_s_mean": None, "tok_s_max": None, "hit_mean": None,
+            "accept_mean": None, "idle_pct": 100.0, "days": 0,
+        }
+        return {
+            "request": req_block,
+            "hour": {"current": hour_cur, "previous": hour_prev,
+                     "current_label": "This hour", "previous_label": "Last hour"},
+            "day": {"current": day_span_cur, "previous": None,
+                    "current_label": "Today", "previous_label": "Yesterday"},
+            "week": None, "month": None,
+            "token_history": {
+                "last_request": req_cur.get("total_tokens") if req_cur else None,
+                "prev_request": req_prev.get("total_tokens") if req_prev else None,
+                "this_hour": (hour_cur.get("total_tokens") if hour_cur else 0) or 0,
+                "last_hour": hour_prev.get("total_tokens") if hour_prev else None,
+                "today": 0, "yesterday": None, "this_week": 0, "this_month": 0,
+            },
+        }
     by_d = {x["d"]: x for x in dlist}
-    today = dlist[-1]["d"]
 
     def span(day_indices):
         ds = [by_d[d] for d in day_indices if d in by_d]
@@ -862,6 +1090,7 @@ def db_periods(dlist):
 
         return {
             "requests": sum(x["requests"] or 0 for x in ds),
+            "total_tokens": sum((x.get("total_tokens") or ((x.get("prompt_tokens") or 0) + (x.get("output_tokens") or 0))) for x in ds),
             "prompt_tokens": sum(x["prompt_tokens"] or 0 for x in ds),
             "output_tokens": sum(x["output_tokens"] or 0 for x in ds),
             "energy_wh": round(sum(x["energy_wh"] or 0 for x in ds), 2),
@@ -883,14 +1112,37 @@ def db_periods(dlist):
     cur_month = (now_dt.year, now_dt.month)
     prev_month = (prev_dt.year, prev_dt.month)
     wk = today - (today + 3) % 7  # Monday of the current week (epoch day 0 is a Thursday)
+    day_span_cur = span([today]) or {
+        "requests": 0, "total_tokens": 0, "prompt_tokens": 0, "output_tokens": 0,
+        "energy_wh": 0.0, "tok_s_mean": None, "tok_s_max": None, "hit_mean": None,
+        "accept_mean": None, "idle_pct": 100.0, "days": 0,
+    }
+    day_span_prev = span([today - 1])
+    week_span_cur = span(range(wk, today + 1))
+    week_span_prev = span(range(wk - 7, wk))
+    month_span_cur = span([x["d"] for x in dlist if month_key(x["d"]) == cur_month])
+    month_span_prev = span([x["d"] for x in dlist if month_key(x["d"]) == prev_month])
+
     return {
-        "day": {"current": span([today]), "previous": span([today - 1]),
+        "request": req_block,
+        "hour": {"current": hour_cur, "previous": hour_prev,
+                 "current_label": "This hour", "previous_label": "Last hour"},
+        "day": {"current": day_span_cur, "previous": day_span_prev,
                 "current_label": "Today", "previous_label": "Yesterday"},
-        "week": {"current": span(range(wk, today + 1)), "previous": span(range(wk - 7, wk)),
-                 "current_label": "This week", "previous_label": "Prev week"},
-        "month": {"current": span([x["d"] for x in dlist if month_key(x["d"]) == cur_month]),
-                  "previous": span([x["d"] for x in dlist if month_key(x["d"]) == prev_month]),
-                  "current_label": "This month", "previous_label": "Prev month"},
+        "week": {"current": week_span_cur, "previous": week_span_prev,
+                 "current_label": "This week", "previous_label": "Last week"},
+        "month": {"current": month_span_cur, "previous": month_span_prev,
+                  "current_label": "This month", "previous_label": "Last month"},
+        "token_history": {
+            "last_request": req_cur.get("total_tokens") if req_cur else None,
+            "prev_request": req_prev.get("total_tokens") if req_prev else None,
+            "this_hour": (hour_cur.get("total_tokens") if hour_cur else 0) or 0,
+            "last_hour": hour_prev.get("total_tokens") if hour_prev else None,
+            "today": (day_span_cur.get("total_tokens") if day_span_cur else 0) or 0,
+            "yesterday": day_span_prev.get("total_tokens") if day_span_prev else None,
+            "this_week": (week_span_cur.get("total_tokens") if week_span_cur else 0) or 0,
+            "this_month": (month_span_cur.get("total_tokens") if month_span_cur else 0) or 0,
+        },
     }
 
 
@@ -920,17 +1172,27 @@ def db_analysis(con, window_s=DB_WINDOW_S):
             return sum(vals) / len(vals) if vals else None
 
         power_vals = [r[10] for r in window if r[10] is not None]
+        prompt_delta = cumulative_delta(window, 7) or 0
+        output_delta = cumulative_delta(window, 9) or 0
+        req_count = cumulative_delta(window, 6) or 0
+        tot_tok = prompt_delta + output_delta
+        tok_s_mean = avg(2) if (req_count > 0 or tot_tok > 0) else None
+        tok_s_max = max((r[2] for r in window if r[2] is not None), default=None) if (req_count > 0 or tot_tok > 0) else None
+        prefill_mean = avg(3) if (req_count > 0 or tot_tok > 0) else None
+        prefill_max = max((r[3] for r in window if r[3] is not None), default=None) if (req_count > 0 or tot_tok > 0) else None
         out[label] = {
             "polls": len(window),
             "span_s": round(span, 1),
-            "requests": cumulative_delta(window, 6),
-            "prompt_tokens": cumulative_delta(window, 7),
+            "requests": req_count,
+            "total_tokens": tot_tok,
+            "prompt_tokens": prompt_delta,
             "reused": cumulative_delta(window, 8),
-            "output_tokens": cumulative_delta(window, 9),
-            "req_per_min": round((cumulative_delta(window, 6) or 0) / span * 60, 2),
-            "tok_s_mean": avg(2),
-            "tok_s_max": max((r[2] for r in window if r[2] is not None), default=None),
-            "prefill_mean": avg(3),
+            "output_tokens": output_delta,
+            "req_per_min": round(req_count / span * 60, 2),
+            "tok_s_mean": tok_s_mean,
+            "tok_s_max": tok_s_max,
+            "prefill_mean": prefill_mean,
+            "prefill_max": prefill_max,
             "hit_pct_mean": avg(4),
             "accept_pct_mean": avg(5),
             "power_w_mean": avg(10),
@@ -1010,10 +1272,16 @@ def telemetry(stats):
         if _DB_WRITES % DB_PRUNE_EVERY == 0:
             db_prune(con)
         rows = db_rows(con)
-        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}, db_daily(con)
+        now_ts = datetime.now(timezone.utc).timestamp()
+        cur_h_start = (int(now_ts) // 3600) * 3600
+        prev_h_start = cur_h_start - 3600
+        hour_cur = db_hour_aggregates(con, cur_h_start, now_ts + 1)
+        hour_prev = db_hour_aggregates(con, prev_h_start, cur_h_start)
+        hourly = {"current": hour_cur, "previous": hour_prev}
+        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}, db_daily(con), hourly
     except Exception as err:
         print(f"[telemetry] disabled: {err}")
-        return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}, None
+        return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}, None, None
     finally:
         if con is not None:
             con.close()
@@ -1090,6 +1358,16 @@ def build_stats():
     if not prefill_now:
         prefill_now = hw.get("prefill_tok_s_mean")
         prefill_source = "engine" if prefill_now else None
+
+    prefill_mean = hw.get("prefill_tok_s_mean")
+    if not prefill_mean and totals.get("prompt_tokens") and totals.get("prompt_ms"):
+        prompt_read = (totals.get("prompt_tokens") or 0) - (totals.get("reused") or 0)
+        if totals["prompt_ms"] > 0:
+            prefill_mean = max(0.0, prompt_read) / (totals["prompt_ms"] / 1000)
+
+    req_count = totals.get("requests") or 0
+    prompt_latency_ms = (totals["prompt_ms"] / req_count) if (req_count > 0 and totals.get("prompt_ms")) else None
+    decode_latency_ms = (totals["decode_ms"] / req_count) if (req_count > 0 and totals.get("decode_ms")) else None
 
     hit = (totals["reused"] / totals["prompt_tokens"]) if totals.get("prompt_tokens") else None
     offered = totals.get("drafts_offered")
@@ -1187,7 +1465,7 @@ def build_stats():
             "cpu_pct": hw.get("cpu"),
             "ram_used": hw.get("ram_used"),
             "ram_total": hw.get("ram_total"),
-            "ram_pct": (hw["ram_used"] / hw["ram_total"] * 100) if hw.get("ram_total") else None,
+            "ram_pct": (hw.get("ram_used") / hw["ram_total"] * 100) if (hw.get("ram_total") and hw.get("ram_used") is not None) else None,
             "vram_free_mib": eng.get("vram_free_mib"),
             "disk_read_mb": hw.get("disk_read_mb"),
             "disk_write_mb": hw.get("disk_write_mb"),
@@ -1212,9 +1490,15 @@ def build_stats():
         "throughput": {
             "now": tok_now,
             "mean": tok_mean,
+            "peak": None,
             "prefill": prefill_now,
+            "prefill_mean": prefill_mean,
+            "prefill_peak": None,
             "prefill_source": prefill_source,
             "source": tok_source,
+            "prompt_latency_ms": prompt_latency_ms,
+            "decode_latency_ms": decode_latency_ms,
+            "req_per_min": None,
         },
         "power": power,
         "gpu": gpu,
@@ -1237,10 +1521,17 @@ def build_stats():
 
     # Telemetry is the last step: it records this poll, then reads the history back so
     # the series and the analysis include the current sample.
-    rows, analysis, telemetry_status, daily = telemetry(stats)
+    rows, analysis, telemetry_status, daily, hourly = telemetry(stats)
     stats["telemetry"] = telemetry_status
     stats["daily"] = daily or []
-    stats["periods"] = db_periods(stats["daily"]) if daily else None
+    stats["periods"] = db_periods(stats["daily"], analysis=analysis, requests=stats.get("requests"), hourly=hourly)
+    if analysis and analysis.get("recent"):
+        rec = analysis["recent"]
+        stats["throughput"]["peak"] = rec.get("tok_s_max")
+        stats["throughput"]["prefill_peak"] = rec.get("prefill_max")
+        stats["throughput"]["recent_mean"] = rec.get("tok_s_mean")
+        stats["throughput"]["recent_prefill_mean"] = rec.get("prefill_mean")
+        stats["throughput"]["req_per_min"] = rec.get("req_per_min")
     if rows:
         stats["history"] = {
             "tok_s": [r[1] for r in rows],
@@ -1296,13 +1587,31 @@ def build_export(fmt="json"):
         con.close()
 
 
+def build_timeseries(range_str="1h"):
+    """Open DB connection, query timeseries aggregation, and return JSON string."""
+    try:
+        con = db_init()
+    except Exception:
+        return None
+    try:
+        data = db_timeseries(con, range_str)
+        return json.dumps(data) if data is not None else None
+    except Exception as err:
+        print(f"[timeseries] query error: {err}")
+        return None
+    finally:
+        con.close()
+
+
 def serve(port):
     import http.server
+    import urllib.parse
     from functools import partial
 
     class _Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
-            path = self.path.rstrip("/")
+            parsed = urllib.parse.urlsplit(self.path)
+            path = parsed.path.rstrip("/")
             if path == "/api/stats":
                 body = json.dumps(build_stats()).encode()
                 ctype = "application/json"
@@ -1313,6 +1622,15 @@ def serve(port):
                     return
                 body = payload.encode()
                 ctype = "text/csv" if path.endswith(".csv") else "application/json"
+            elif path == "/api/timeseries":
+                qs = urllib.parse.parse_qs(parsed.query)
+                range_str = qs.get("range", ["1h"])[0]
+                payload = build_timeseries(range_str)
+                if payload is None:
+                    self.send_error(404, "Timeseries unavailable")
+                    return
+                body = payload.encode()
+                ctype = "application/json"
             else:
                 super().do_GET()
                 return

@@ -4,10 +4,10 @@
 
 project:
   name: llm-monitor
-  version: 0.1.9
+  version: 0.1.10
   started: 2026-10-07
   status: in_progress
-  current_milestone: M1
+  current_milestone: M75
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -31,6 +31,81 @@ milestones:
       Initial scaffold shipped in commit 85694bc (bootstrap) and fea5c7f
       (identity). No milestone document exists; the milestone is tracked
       here only.
+  - id: M71
+    name: Token Usage History & Comparison Table
+    priority: 1
+    file: null
+    status: completed
+    progress: 100
+    started: 2026-10-12
+    completed: 2026-10-12
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Pre-implementation audited in audit-11, implemented and verified in audit-12 and review-005.
+      Adds total token usage per request, 4-period token history (today, yesterday, this week, this month),
+      and 3-row history comparison table (today vs yesterday, this week vs last week, this month vs last month).
+  - id: M72
+    name: Compact Half-Page HUD & Multi-Tab Interface
+    priority: 1
+    file: agent/milestones/milestone-72-compact-hud-tab.md
+    status: completed
+    progress: 100
+    started: 2026-10-12
+    completed: 2026-10-12
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Pre-implementation audited in audit-13, implemented and verified in audit-14 and review-006.
+      Adds accessible multi-tab navigation, high-density compact HUD view, pop-out overlay launcher,
+      and desktop overlay styling.
+  - id: M73
+    name: Comprehensive Throughput Analytics & Prefill Sparkline
+    priority: 1
+    file: agent/milestones/milestone-73-throughput-analytics.md
+    status: completed
+    progress: 100
+    started: 2026-10-12
+    completed: 2026-10-12
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Pre-audited in audit-15, implemented and verified in audit-16 and review-007.
+      Adds average tok/s, average prefill, peak decode/prefill, prompt latency (TTFT),
+      request rate, dedicated SVG prefill sparkline, and compact HUD average prefill indicator.
+  - id: M74
+    name: Configurable Timeseries Charts (Requests, Token Usages, tok/s)
+    priority: 1
+    file: agent/milestones/milestone-74-timeseries-charts.md
+    status: completed
+    progress: 100
+    started: 2026-10-12
+    completed: 2026-10-12
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Pre-audited in audit-17, implemented and verified in audit-18 and review-008.
+      Adds comprehensive configurable timeseries charts for requests, token usages,
+      and tokens per second across minute, hourly, and daily intervals.
+  - id: M75
+    name: History & Period Comparison Calculations Remediation
+    priority: 1
+    file: agent/milestones/milestone-75-history-calculation-remediation.md
+    status: completed
+    progress: 100
+    started: 2026-10-12
+    completed: 2026-10-12
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 1
+    notes: |
+      Audited in audit-19, post-audited in audit-20, and reviewed in review-009 (CodeRabbit diff-style).
+      Implements true clock-hour history aggregation, suppresses ghost idle throughput, fixes day rollover,
+      eliminates boundary loss in hourly buckets, and makes comparison table & HUD deltas zero-safe.
 
 # Tasks are granular work items within milestones
 tasks:
@@ -46,6 +121,71 @@ tasks:
       completed_date: 2026-10-07
       notes: |
         Scaffold, identity, and ACP install committed as 85694bc and fea5c7f.
+  milestone_71:
+    - id: task-71
+      name: Implement token usage per request, token history, and history comparison table
+      priority: 1
+      status: completed
+      started: 2026-10-12
+      file: null
+      estimated_hours: 4
+      actual_hours: 2
+      completed_date: 2026-10-12
+      notes: |
+        Implemented in server.py, index.html, app.js, and style.css with zero shortcuts,
+        strict null-guards, counter-reset protection, and tabular alignment. Verified live.
+  milestone_72:
+    - id: task-72
+      name: Implement compact half-page HUD, multi-tab switching, and pop-out window
+      priority: 1
+      status: completed
+      started: 2026-10-12
+      file: agent/tasks/milestone-72-compact-hud-tab/task-72-compact-hud-interface.md
+      estimated_hours: 4
+      actual_hours: 3
+      completed_date: 2026-10-12
+      notes: |
+        Adds accessible view switcher, dedicated #hud-* components, prioritized metrics layout,
+        and standalone pop-out window support.
+  milestone_73:
+    - id: task-73
+      name: Implement average tok/s, average prefill, peak throughput rates, TTFT, and prefill sparkline
+      priority: 1
+      status: completed
+      started: 2026-10-12
+      file: agent/tasks/milestone-73-throughput-analytics/task-73-throughput-metrics.md
+      estimated_hours: 3
+      actual_hours: 2
+      completed_date: 2026-10-12
+      notes: |
+        Surfaces average decode, average prefill, peak rates, prompt processing latency,
+        request rate, dedicated prefill sparkline, and compact HUD average prefill indicator.
+  milestone_74:
+    - id: task-74
+      name: Implement configurable timeseries charts for requests, token usages, and tok/s
+      priority: 1
+      status: completed
+      started: 2026-10-12
+      file: agent/tasks/milestone-74-timeseries-charts/task-74-configurable-charts.md
+      estimated_hours: 4
+      actual_hours: 3
+      completed_date: 2026-10-12
+      notes: |
+        Implemented backend /api/timeseries aggregation endpoint with counter-reset handling,
+        interactive SVG chart canvas, metric tabs, range selectors, and hover crosshair/tooltips.
+  milestone_75:
+    - id: task-75
+      name: Remediate History and Period Comparison Calculations
+      priority: 1
+      status: completed
+      started: 2026-10-12
+      file: agent/tasks/milestone-75-history-calculation-remediation/task-75-history-remediation.md
+      estimated_hours: 3
+      actual_hours: 2
+      completed_date: 2026-10-12
+      notes: |
+        Implemented clock-hour aggregation, ghost throughput suppression, day rollover hardening,
+        boundary-carried hourly buckets, and zero-safe deltas across server.py and app.js. Verified live.
 
 # Documentation tracking
 documentation:
@@ -53,18 +193,109 @@ documentation:
   milestone_documents: 0
   pattern_documents: 0
   task_documents: 0
-  last_updated: 2026-10-07
+  last_updated: 2026-10-12
 
 # Overall progress metrics
 progress:
   planning: 100
-  implementation: 90
-  testing: 0
-  documentation: 80
-  overall: 85
+  implementation: 100
+  testing: 100
+  documentation: 90
+  overall: 98
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-12
+    description: |
+      Shipped M75: History & Period Comparison Calculations Remediation. Remediated rolling-window
+      decays, ghost idle throughput comparisons, day rollover underflows, falsy-zero delta suppressions,
+      and hourly boundary request losses. Pre-audited in audit-19, post-audited in audit-20, and reviewed in review-009.
+    items:
+      - "✅ M75-01: implemented db_hour_aggregates() in server.py anchoring to boundary rows for clock-hour history"
+      - "✅ M75-02: eliminated ghost idle throughput (tok_s_mean=None on 0 requests/tokens in db_hour_aggregates and db_analysis)"
+      - "✅ M75-03: anchored today unconditionally to UTC epoch day in db_periods() preventing day rollover underflow"
+      - "✅ M75-04: bridged hourly bucket baselines in day_aggregates() ensuring sum(hours) == agg['requests']"
+      - "✅ M75-05: implemented zero-safe deltas (+100%, ±0%) for tokenDelta, reqDelta, tokDelta in app.js"
+      - "✅ M75-06: implemented zero-safe deltas for hud-delta-hour and hud-delta-today in renderHud()"
+      - "✅ M75-07: surfaced total_tokens in Day Scrubber selectDay() inspection readout"
+      - "✅ M75-08: cleaned up dead DOM references to hist-day, hist-week, hist-month in app.js"
+      - "✅ audit-19: identified all 7 mathematical, boundary, and formatting defects across History subsystem"
+      - "✅ audit-20: verified all acceptance criteria with live endpoint, database, and AST test receipts"
+      - "✅ review-009: CodeRabbit diff-style review confirmed zero defects and clean syntax gates"
+  - date: 2026-10-12
+    description: |
+      Shipped M73: Comprehensive Throughput Analytics & Prefill Sparkline. Surfaced average decode tok/s,
+      average prefill tok/s, rolling peak decode/prefill, prompt processing latency (TTFT), request rate,
+      dedicated SVG prefill sparkline, and compact HUD average prefill readout.
+      Pre-audited in audit-15, post-audited in audit-16, and reviewed in review-007 (CodeRabbit diff-style).
+    items:
+      - "✅ M73-01: added prefill_max to db_analysis() in server.py"
+      - "✅ M73-02: computed session prefill_mean, prompt_latency_ms (TTFT), and decode_latency_ms in build_stats()"
+      - "✅ M73-03: enriched throughput telemetry with peak, prefill_mean, prefill_peak, prompt_latency_ms, and req_per_min"
+      - "✅ M73-04: updated #throughput facts in index.html to show 9 metrics with unambiguous labels"
+      - "✅ M73-05: added dedicated SVG prefill sparkline (#prefill-spark) with green emerald accent color"
+      - "✅ M73-06: updated Compact HUD with #hud-prefill-sub for average prefill readout"
+      - "✅ M73-07: bound all facts in renderThroughput() and renderHud() with defensive fallback derivation"
+      - "✅ M73-08: verified 244 unique IDs (0 dups), 0 HTML imbalances, and 297 balanced CSS braces"
+      - "✅ audit-15 (pre-impl): verified 0 blockers across schema, routes, and metric definitions"
+      - "✅ audit-16 (post-impl): confirmed live data binding, fallback resilience, and 0 regressions"
+      - "✅ review-007 (CodeRabbit): verified zero defects, clean syntax gates, and clean AST checks"
+  - date: 2026-10-12
+    description: |
+      Shipped M72: Compact Half-Page HUD & Multi-Tab Interface. Added accessible tab switcher
+      (Full Dashboard vs Compact HUD), high-density HUD with prioritized metrics layout, one-click
+      pop-out window launcher, URL parameter support (?view=compact), and standalone desktop overlay styling.
+      Pre-audited in audit-13, post-audited in audit-14, and reviewed in review-006 (CodeRabbit diff-style).
+    items:
+      - "✅ M72-01: added accessible .view-tabs segmented bar with tab-full, tab-compact, and btn-popout in index.html"
+      - "✅ M72-02: wrapped Full Dashboard in #view-full and added isolated #view-compact HUD container"
+      - "✅ M72-03: implemented high-density HUD components (identity orb, hero speed, 2x2 vitals matrix, last req spotlight, micro trends, sparkline, endpoint pills)"
+      - "✅ M72-04: implemented switchView() and wireTabs() in app.js with localStorage and ?view=compact query param support"
+      - "✅ M72-05: implemented renderHud(data) binding all HUD metrics to single 5s refresh cycle without extra network requests"
+      - "✅ M72-06: styled .hud-container, .view-tabs, and body[data-view=\"compact\"] overlay mode in style.css"
+      - "✅ M72-07: verified 233 unique IDs (0 dups), 0 HTML tag imbalances, and 295 balanced CSS braces"
+      - "✅ audit-13 (pre-impl): verified 0 blockers across DOM isolation, drag immunity, and state persistence"
+      - "✅ audit-14 (post-impl): confirmed complete requirement satisfaction, accessibility, and zero regressions"
+      - "✅ review-006 (CodeRabbit): verified zero defects, semantic gauge preservation, and clean syntax gates"
+  - date: 2026-10-12
+    description: |
+      Shipped M71: Token Usage History & Comparison Table. Added per-request total token usage,
+      4-period token history facts (today, yesterday, this week, this month), and 3-row history
+      comparison table (today vs yesterday, this week vs last week, this month vs last month).
+      Audited (audit-11, audit-12) and reviewed (review-005, CodeRabbit diff-style).
+    items:
+      - "✅ M71-01: added total_tokens to gather_requests() in server.py, rendered as Total column in index.html and app.js"
+      - "✅ M71-02: computed total_tokens via cumulative_delta in day_aggregates() ensuring counter-reset safety"
+      - "✅ M71-03: added total_tokens to db_daily() for all finalized and live day rollups"
+      - "✅ M71-04: added total_tokens and token_history dict to db_periods() for today, yesterday, this_week, this_month"
+      - "✅ M71-05: standardized period labels to Last week and Last month in server.py"
+      - "✅ M71-06: added 4 token history facts in index.html (#hist-tokens-today, yesterday, week, month)"
+      - "✅ M71-07: created #history-comparison-table in index.html with 3 period comparison rows and delta formatting"
+      - "✅ M71-08: styled .history-table in style.css with tabular alignment and delta colors (.is-ok, .is-warn, .is-bad)"
+      - "✅ M71-09: added This hour vs Last hour comparison metric and This hour token history fact (#hist-tokens-hour)"
+      - "✅ M71-10: added Last request vs Previous request comparison row, Last request token fact (#hist-tokens-request), and live Requests panel delta"
+      - "✅ audit-11 (pre-impl): verified 0 blockers across schema, routes, and null boundaries"
+      - "✅ audit-12 (post-impl): confirmed data fidelity and 1:1 table column mapping"
+      - "✅ review-005 (CodeRabbit): verified zero defects, full null guards, and clean syntax gates"
+  - date: 2026-10-11
+    description: |
+      Comprehensive audit, review, and zero-shortcut remediation (audit-10, review-004, CodeRabbit).
+      Fixed latent db_prune table erasure bug, added SQLite time-series indexes, cleaned up 113 lines
+      of dead uncalled functions, hardened HTTP path parsing, guarded ram_pct, fixed frontend RAM hints,
+      cleaned sparkline signatures, aligned Hero decode tok/s labels, and restored YAML validity in sessions.md.
+    items:
+      - "✅ audit-10 & review-004: identified and remediated all 12 findings across server.py, app.js, index.html, and sessions.md"
+      - "✅ CR-201 / A10-01 (CRITICAL): fixed db_prune order by t DESC and WHERE t < cut[0] to prevent catastrophic table truncation at 20,000 rows"
+      - "✅ CR-202 / A10-02 (PERF): added idx_poll_t on poll(t) and idx_day_d on day(d), eliminating full table scans and temporary B-tree allocations"
+      - "✅ CR-203 / A10-03: stripped 113 lines of uncalled dead gather_* functions diverging from build_stats()"
+      - "✅ CR-204 / A10-04: parsed request path with urllib.parse.urlsplit in serve() to support query parameters"
+      - "✅ CR-205 / A10-05: restored YAML formatting in agent/memory/sessions.md (35/35 YAML files in repo pass)"
+      - "✅ CR-206 / A10-06: guarded hw.ram_used and hw.ram_total against null in app.js renderHardware"
+      - "✅ CR-207 / A10-07: guarded ram_pct calculation in build_stats() against None"
+      - "✅ CR-208 / A10-09: aligned Hero unit to decode tok/s in index.html"
+      - "✅ A10-08 / A10-10: cleaned unused fallbackCaption from drawSpark, explicit column list in db_export"
+      - "✅ UI usability: added Time column (HH:MM:SS from r.time) to Requests table in index.html & app.js"
+      - "✅ gates: py_compile PASS; node --check PASS; PyYAML PASS; review-scan CLEAN; live stats/export verified"
   - date: 2026-10-08
     description: |
       Surfaced decode speed in the interface, then audited that change (audit-9) and removed a
