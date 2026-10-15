@@ -129,7 +129,14 @@ for case in cases:
         text=True,
         check=False,
     )
-    if proc.returncode != 0:
+    # The scanner's documented contract: it exits 1 when it reports CRITICAL/HIGH
+    # findings (see ig_finalize_scan). A labelled corpus case is *expected* to
+    # contain such findings, so a non-zero exit here is not a harness failure —
+    # the finding data is still on stdout and must be scored. Only treat the run
+    # as failed when the scanner itself errored: usage/parse errors exit 2, an
+    # ERR-trap crash exits 3, and a python/shell signal-crash is >128. A clean
+    # scan of a finding-free file exits 0. So: accept {0,1}, fail >=2.
+    if proc.returncode not in (0, 1):
         print(proc.stderr.strip(), file=sys.stderr)
         raise SystemExit(proc.returncode)
 

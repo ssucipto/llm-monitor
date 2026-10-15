@@ -205,6 +205,21 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-15
+    description: |
+      Installed the ACP CI/review/integrity harness so /acp-ci, /acp-review and /acp-integrity
+      actually gate this consumer repo. Closed the r1-01 blocker and fixed the real defects the
+      gates surfaced (no shortcuts).
+    items:
+      - "✅ harness files created: scripts/{package.json,acp-validate.ts,acp-validate.test.mjs,ci-validate.sh}, e2e/acp.integrity*.test.sh, run-e2e-tests.sh, agent/configurables/ci.yml (10 steps, tiers static/fast/full)"
+      - "✅ fixed progress.yaml duplicate-key parse bug: orphaned recent_work block lost its '- date:'/'description:' header (line 321 items: collided with the entry above) — restored it as its own dated entry; progress.yaml now parses as strict YAML"
+      - "✅ authored missing acp.review-scan-ts.py (character-walker for EH-01/EH-02/SC-01/TS-01/TS-02/AP-01/NC-01) — was silently swallowed by '|| true', so those Phase-1 TS/JS rules never ran"
+      - "✅ authored missing acp.taint-scan.py (IG-45–IG-50 prep extractor) — required by the integrity-v2 gate; without it taint-scan.sh exited 3"
+      - "✅ fixed review-scan emit contract: python analyzers emit CRLF on Windows, so a trailing CR + embedded TAB shifted every positional arg to ig_emit_finding (arithmetic error on line-1). Normalize tab/CR in emit_review_finding + read all 5 fields in the loop"
+      - "✅ fixed review-measure harness: scanner exits 1 on HIGH/CRITICAL findings by contract, so aborting on any non-zero exit made the gate structurally unable to score a finding-bearing corpus — accept {0,1}, fail >=2"
+      - "✅ fixed e2e FP-baseline gate: grep -qiE 'finding|...' matched the scanner's own 'not found'/'No findings' summary text; now matches only real finding markers ([SEVERITY] tag or IG-NN id)"
+      - "✅ perf regression fix (audit-110 budget 2000ms): ig_json_escape spawned python3 per field (5x/finding), ig_hash_text fell back to python when shasum absent, ig_read_source_line spawned awk 2x/finding — made all three spawn-free/pure-bash; scan median 3719ms -> 1704ms"
+      - "✅ gates: acp.ci.sh --full = all 10 steps PASS (validate-ts, npm-test, review-measure, ci-validate, shellcheck, integrity-e2e, integrity-v2-e2e, e2e-smoke, npm-audit, e2e-matrix); --doctor matrix green; corpus recall/precision 100%/100%"
   - date: 2026-10-12
     description: |
       Shipped M75: History & Period Comparison Calculations Remediation. Remediated rolling-window
@@ -318,6 +333,9 @@ recent_work:
       - "✅ /acp-commit: promoted sqlite-additive-column-migration pattern to patterns.md; audit-carryovers a7-05/r3-01 already fixed; 7 sessions entries (<15, no compaction)"
       - "✅ /git-commit: version bump 0.1.8 -> 0.1.9 (progress.yaml + CHANGELOG.md); staged tracked files only (no gitignored reports/sessions/telemetry)"
       - "✅ gates: py_compile PASS; node --check PASS; INSERT arity 23/23/23 verified; manifest.yaml + progress.yaml parse OK"
+  - date: 2026-10-08
+    description: |
+      Shipped the r3-01 sparkline window labels and the header tok/s chip.
     items:
       - "✅ r3-01 fixed: drawSpark takes a per-series windowMs and states the real x-axis (per-sample interval + span) in the caption — no blanket label"
       - "✅ per-series windows: tok_s/power_w/cpu/vram pass REFRESH_MS (5s); requests passes historyBucketMs (from data.history_bucket_s*1000, default 75s); hist passes 86400000 (per-day)"
@@ -485,7 +503,8 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - Decide on the ACP CI harness: install it or treat /acp-ci as N/A for this consumer repo
+  - Wire the harness into CI (.github/workflows) if/when this repo gains a GitHub remote workflow run
+  - Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature
 
 # General notes and observations
 notes:
@@ -494,8 +513,7 @@ notes:
   - "GPU on the AMD HIP driver: VRAM is derived from engine.vram_free_mib, util/power are modelled from engine activity, name is rated. Only temp/PCIe stay empty (no counter, no honest proxy). Draws real gpu_* counters automatically on NVML builds."
 
 # Current blockers (remove when resolved)
-current_blockers:
-  - "r1-01: ACP CI harness (agent/configurables/ci.yml, scripts/, e2e/, .github/workflows/) absent, so /acp-ci --fast cannot run"
+current_blockers: []
 
 # ── Recurring Tasks (v6.12.1+ M57) ──────────────────────────────
 # Scheduled periodic reviews surfaced at session start (AGENTS.md Step 4.5).

@@ -1,0 +1,116 @@
+# agent/configurables/ci.yml — ACP CI runtime matrix for llm-monitor
+# P-CI-1: this is a runtime matrix, not a preference registry.
+# Read by agent/scripts/acp.ci.sh (tiers + steps) and agent/scripts/acp.ci-steps.sh (bodies).
+#
+# False-green contracts (agent/core/constraints.yml FG-1..FG-7):
+#   - allow_skip:true => a missing tool SKIPs (banner says "PASS with SKIPs"), never fake PASS.
+#   - allow_skip:false => a missing tool is a PREFLIGHT FAIL (exit 1).
+#   - zero executed steps => NO-OP (exit 2), never PASS.
+#
+# Steps are the AE CI job ids. Bodies live only in agent/scripts/acp.ci-steps.sh.
+
+tiers:
+  static:
+    - validate-ts
+    - npm-test
+    - ci-validate
+  fast:
+    - validate-ts
+    - review-measure
+    - npm-test
+    - ci-validate
+    - integrity-e2e
+    - integrity-v2-e2e
+  full:
+    - validate-ts
+    - review-measure
+    - npm-test
+    - ci-validate
+    - shellcheck
+    - integrity-e2e
+    - integrity-v2-e2e
+    - e2e-smoke
+    - npm-audit
+    - e2e-matrix
+
+steps:
+  validate-ts:
+    description: "TypeScript ACP validator (scripts/acp-validate.ts via tsx)"
+    command: validate-ts
+    ci_job: validate
+    cost_rank: 10
+    ci_rank: 10
+    tools: [node, npm]
+    allow_skip: false
+  review-measure:
+    description: "Review-scan corpus recall/precision + wall-clock perf gate"
+    command: review-measure
+    ci_job: validate
+    cost_rank: 20
+    ci_rank: 20
+    tools: [python3]
+    allow_skip: true
+  npm-test:
+    description: "Tooling harness smoke test (scripts/ npm test)"
+    command: npm-test
+    ci_job: validate
+    cost_rank: 15
+    ci_rank: 15
+    tools: [node, npm]
+    allow_skip: false
+  ci-validate:
+    description: "Validate the CI runtime matrix itself (ci.yml shape)"
+    command: ci-validate
+    ci_job: validate
+    cost_rank: 5
+    ci_rank: 30
+    tools: [python3]
+    allow_skip: false
+  shellcheck:
+    description: "Shell lint of agent/scripts, scripts, e2e (error severity)"
+    command: shellcheck
+    ci_job: shellcheck
+    cost_rank: 40
+    ci_rank: 40
+    tools: [shellcheck]
+    allow_skip: true
+  integrity-e2e:
+    description: "Integrity Phase-1 self-scan FP baseline e2e"
+    command: integrity-e2e
+    ci_job: e2e-smoke
+    cost_rank: 30
+    ci_rank: 50
+    tools: [bash]
+    allow_skip: false
+  integrity-v2-e2e:
+    description: "Integrity Phase-2 prep scripts e2e"
+    command: integrity-v2-e2e
+    ci_job: e2e-smoke
+    cost_rank: 31
+    ci_rank: 51
+    tools: [bash]
+    allow_skip: false
+  e2e-smoke:
+    description: "Full run-e2e-tests.sh runner (--skip-network)"
+    command: e2e-smoke
+    ci_job: e2e-smoke
+    cost_rank: 60
+    ci_rank: 60
+    tools: [bash]
+    allow_skip: false
+  npm-audit:
+    description: "Supply-chain npm audit (high level)"
+    command: npm-audit
+    ci_job: supply-chain
+    cost_rank: 70
+    ci_rank: 70
+    tools: [node, npm]
+    allow_skip: true
+  e2e-matrix:
+    description: "Local single-OS proxy for the GH e2e-tests matrix"
+    command: e2e-matrix
+    ci_job: e2e
+    cost_rank: 80
+    ci_rank: 80
+    tools: [bash]
+    allow_skip: true

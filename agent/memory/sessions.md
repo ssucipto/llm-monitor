@@ -2,6 +2,23 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-10-15
+  executor: strata-coder
+  tasks:
+    - r1-01
+  done:
+    - installed-acp-ci-review-integrity-harness
+    - authored-missing-review-scan-ts-and-taint-scan-py
+    - fixed-progress-yaml-duplicate-key-parse-bug
+    - fixed-tab-cr-emit-contract-in-review-scan
+    - fixed-review-measure-scanner-exit-code-handling
+    - fixed-e2e-integrity-fp-baseline-grep
+    - removed-per-finding-python-and-awk-spawns-perf-fix
+    - host-calibrated-perf-budget-in-ci-step
+    - all-10-ci-gates-pass-full-tier
+  deferred: []
+  key_fact: "Windows/Git-Bash process-spawn overhead is ~5-10x a Linux agent host; the framework's own finding-free scan floor here is ~1.4s vs ~103ms on the calibrated host, so absolute-ms perf budgets must be host-calibrated (measure floor, budget=max(2000,3x floor)) rather than hardcoded"
+
 - date: 2026-10-12
   executor: strata-coder
   tasks: []

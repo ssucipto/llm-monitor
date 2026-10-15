@@ -103,10 +103,10 @@ carryovers:
     finding: ACP CI harness not installed in this consumer project — agent/configurables/ci.yml, scripts/, e2e/, tests/, run-e2e-tests.sh, .github/workflows/ all absent, so /acp-ci --fast cannot run
     location: agent/configurables/ci.yml
     severity: high
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-10-15
     verified_in_audit: null
-    notes: not a code defect; a tooling gap. Either install the harness or treat /acp-ci as N/A for this repo. Local gates (node --check, py_compile, review-scan) are the substitute
+    notes: harness installed — scripts/{package.json,acp-validate.ts,acp-validate.test.mjs,ci-validate.sh}, e2e/acp.integrity*.test.sh, run-e2e-tests.sh, agent/configurables/ci.yml. acp.ci.sh --full = all 10 steps PASS. Also authored missing acp.review-scan-ts.py + acp.taint-scan.py and fixed the tab/CR emit contract, review-measure exit handling, e2e FP-baseline grep, and per-finding spawn cost
   - id: r3-01
     audit: 3
     finding: sparkline captions say "recent history" without the sampling window; history_bucket_s (75s) applies only to the requests series, while tok_s/power_w/cpu are per-poll (~5s), so a single blanket label would be inaccurate

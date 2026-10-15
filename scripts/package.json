@@ -1,0 +1,20 @@
+{
+  "name": "llm-monitor-acp-tooling",
+  "version": "0.1.10",
+  "private": true,
+  "description": "ACP Enhanced tooling harness for llm-monitor (validators + review-scan YAML rules).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "gray-matter": "^4.0.3",
+    "typescript": "^5.6.0",
+    "tsx": "^4.23.0"
+  },
+  "scripts": {
+    "validate-ts": "tsx acp-validate.ts",
+    "test": "node --test acp-validate.test.mjs"
+  }
+}

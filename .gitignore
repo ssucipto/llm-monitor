@@ -19,6 +19,12 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# ---------- Node tooling caches (ACP harness) ----------
+# Installed deps for scripts/ (validate-ts, review-scan YM rules). Generated,
+# machine-local; the package.json + lockfile are tracked, the tree is not.
+node_modules/
+scripts/node_modules/
+
 # ---------- OS / editor junk ----------
 .DS_Store
 Thumbs.db

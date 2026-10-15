@@ -1,0 +1,15 @@
+{
+  "cases": [
+    {
+      "file": "clean.ts",
+      "findings": [
+        { "file": "clean.ts", "rule": "EH-01", "line": 5 },
+        { "file": "clean.ts", "rule": "EH-02", "line": 13 },
+        { "file": "clean.ts", "rule": "SC-01", "line": 3 },
+        { "file": "clean.ts", "rule": "TS-01", "line": 20 },
+        { "file": "clean.ts", "rule": "TS-02", "line": 16 },
+        { "file": "clean.ts", "rule": "NC-01", "line": 10 }
+      ]
+    }
+  ]
+}

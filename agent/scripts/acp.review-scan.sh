@@ -36,6 +36,17 @@ emit_review_finding() {
   local rule="$3"
   local message="$4"
   local severity="${5:-}"
+  # Findings arrive as tab-delimited records from python analyzers. On Windows
+  # those writers emit CRLF, so a trailing CR sticks to the last field and makes
+  # `$((line - 1))` fail ("arithmetic syntax error"); a stray TAB inside a free-
+  # text field splits into an extra token in the `IFS=$'\t' read` loop and shifts
+  # every positional arg downstream. Normalize the fields so the 5-arg contract
+  # to ig_emit_finding always holds, regardless of platform.
+  line="${line//$'\r'/}"
+  message="${message//$'\t'/ }"
+  message="${message//$'\r'/}"
+  severity="${severity//$'\t'/ }"
+  severity="${severity//$'\r'/}"
   local key="${file}:${line}:${rule}"
   case "${REVIEW_FINDING_KEYS}" in
     *$'\n'"${key}"$'\n'*)
@@ -203,9 +214,9 @@ scan_ts_js() {
     return 0
   fi
 
-  while IFS=$'\t' read -r line_num rule message severity || [[ -n "${line_num:-}" ]]; do
-    [[ -z "${line_num:-}" ]] && continue
-    emit_review_finding "$file" "$line_num" "$rule" "$message" "$severity"
+  while IFS=$'\t' read -r out_file line_num rule message severity || [[ -n "${out_file:-}" ]]; do
+    [[ -z "${out_file:-}" ]] && continue
+    emit_review_finding "$out_file" "$line_num" "$rule" "$message" "$severity"
   done < <(ACP_REVIEW_FILE="$file" python3 "${SCRIPT_DIR}/acp.review-scan-ts.py" 2>/dev/null || true)
 
   while IFS=$'\t' read -r out_file line_num rule message severity || [[ -n "${out_file:-}" ]]; do

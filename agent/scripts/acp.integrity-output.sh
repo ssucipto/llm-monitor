@@ -56,7 +56,19 @@ ig_parse_common_args() {
 }
 
 ig_json_escape() {
-  python3 -c 'import json,sys; print(json.dumps(sys.argv[1])[1:-1], end="")' "${1:-}"
+  # JSON-escape a string for embedding in the finding payload. The old form spawned
+  # python3 per call, and it is invoked up to 5x per finding — that python-per-field
+  # startup dominated scan wall-time on Windows. Pure-bash escaping of the characters
+  # these scanner messages actually contain (backslash, double-quote, tab, CR, LF,
+  # and other control chars) is correct for this data and spawn-free. Writes the
+  # result into IG_JSON_ESCAPE_RESULT so callers avoid a $(...) subshell too.
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\t'/\\t}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\n'/\\n}"
+  IG_JSON_ESCAPE_RESULT="$s"
 }
 
 # Split a buffer of concatenated JSON objects onto one line each, indented two
@@ -84,8 +96,17 @@ print(",\n".join("  " + json.dumps(i, separators=(",", ":")) for i in items))
 
 ig_hash_text() {
   local text="${1:-}"
-  if command -v shasum >/dev/null 2>&1; then
-    printf '%s' "$text" | shasum -a 256 | awk '{print $1}'
+  # Prefer coreutils sha256sum (Linux/CI), then Perl's Digest::SHA (always present
+  # with perl on Windows/Git-Bash), and only fall back to a python3 spawn. The old
+  # code probed only for `shasum` (Perl's CLI), which is absent on Git-Bash, so every
+  # finding paid a ~150ms python startup for hashing — the dominant cost in the emit
+  # loop. Perl runs in-process and avoids both the shasum miss and the python spawn.
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$text" | sha256sum | cut -d' ' -f1
+    return 0
+  fi
+  if command -v perl >/dev/null 2>&1; then
+    perl -e 'use Digest::SHA qw(sha256_hex); binmode STDIN; my $d=""; $d+=<STDIN> while 1; print sha256_hex($d)' <<< "$text"
     return 0
   fi
   python3 - "$text" <<'PY'
@@ -96,13 +117,33 @@ print(hashlib.sha256(sys.argv[1].encode("utf-8")).hexdigest())
 PY
 }
 
+_ig_cache_file() {
+  # Load a file's lines into IG_SRC_CACHE_LINES once per file, and record whether
+  # it contains any acp-review-ignore marker (IG_SRC_HAS_IGNORE). Both the inline-
+  # suppression scan and ig_read_source_line share this cache so a file is read at
+  # most once per scan, not once per finding.
+  local file="${1:-}"
+  if [[ "$file" == "${IG_SRC_CACHE_FILE:-}" ]]; then
+    return 0
+  fi
+  IG_SRC_CACHE_FILE="$file"
+  mapfile -t IG_SRC_CACHE_LINES < "$file" 2>/dev/null || IG_SRC_CACHE_LINES=()
+  IG_SRC_HAS_IGNORE=0
+  local _ln
+  for _ln in "${IG_SRC_CACHE_LINES[@]:-}"; do
+    [[ "$_ln" == *acp-review-ignore:* ]] && { IG_SRC_HAS_IGNORE=1; break; }
+  done
+  return 0
+}
+
 ig_read_source_line() {
   local file="${1:-}"
   local line="${2:-0}"
   if [[ -z "$file" || "$line" == "0" || ! -f "$file" ]]; then
     return 0
   fi
-  awk -v target="$line" 'NR == target { print; exit }' "$file" 2>/dev/null || true
+  _ig_cache_file "$file"
+  printf '%s\n' "${IG_SRC_CACHE_LINES[line - 1]:-}"
 }
 
 ig_normalize_snippet() {
@@ -134,7 +175,12 @@ ig_baseline_add_entry() {
   [[ -n "$snippet" ]] || snippet="$message"
   normalized="$(ig_normalize_snippet "$snippet")"
   hash="$(ig_hash_text "$normalized")"
-  IG_BASELINE_BUFFER+="{\"rule\":\"$(ig_json_escape "$rule")\",\"file\":\"$(ig_json_escape "$file")\",\"line\":${line},\"severity\":\"$(ig_json_escape "$severity")\",\"snippet_hash\":\"${hash}\",\"message\":\"$(ig_json_escape "$message")\"},"
+  local _r _f _sev _m
+  ig_json_escape "$rule";     _r="$IG_JSON_ESCAPE_RESULT"
+  ig_json_escape "$file";     _f="$IG_JSON_ESCAPE_RESULT"
+  ig_json_escape "$severity"; _sev="$IG_JSON_ESCAPE_RESULT"
+  ig_json_escape "$message";  _m="$IG_JSON_ESCAPE_RESULT"
+  IG_BASELINE_BUFFER+="{\"rule\":\"${_r}\",\"file\":\"${_f}\",\"line\":${line},\"severity\":\"${_sev}\",\"snippet_hash\":\"${hash}\",\"message\":\"${_m}\"},"
 }
 
 ig_load_baseline() {
@@ -185,9 +231,18 @@ ig_inline_suppression_state() {
   local line="${2:-0}"
   local rule="${3:-}"
   local candidate candidate_text reason
+  # Ensure the file is cached (single mapfile per file) and note whether it has any
+  # inline-ignore markers at all. When it does not, every finding in this file skips
+  # the per-line scan — no subshell, no per-finding awk/read. This is the common
+  # case for ordinary source files and removes the dominant emit-path cost.
+  _ig_cache_file "$file" || true
+  if [[ "${IG_SRC_HAS_IGNORE:-0}" != "1" ]]; then
+    echo "none||"
+    return 0
+  fi
   for candidate in "$line" "$((line - 1))"; do
     [[ "$candidate" -ge 1 ]] || continue
-    candidate_text="$(ig_read_source_line "$file" "$candidate")"
+    candidate_text="${IG_SRC_CACHE_LINES[candidate - 1]:-}"
     [[ -n "$candidate_text" ]] || continue
     if [[ "$candidate_text" =~ acp-review-ignore:[[:space:]]*([A-Z0-9-]+)([[:space:]]*[-—][[:space:]]*(.+))?$ ]]; then
       if [[ "${BASH_REMATCH[1]}" != "$rule" ]]; then
@@ -242,16 +297,22 @@ ig_rule_is_disabled() {
 }
 
 ig_rule_severity_override() {
+  # Writes the override severity into IG_RULE_SEVERITY_OVERRIDE_RESULT (empty when
+  # none) and returns 0/1. Callers must NOT wrap this in $(...) — doing so spawns a
+  # subshell per finding, which dominated scan wall-time on Windows.
   local rule="${1:-}" entry rule_id severity
+  IG_RULE_SEVERITY_OVERRIDE_RESULT=""
+  [[ -z "${IG_RULE_SEVERITY_KEYS//$'\n'/}" ]] && return 1
+  local _entries="$IG_RULE_SEVERITY_KEYS"
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
     rule_id="${entry%%|*}"
     severity="${entry#*|}"
     if [[ "$rule_id" == "$rule" && -n "$severity" ]]; then
-      echo "$severity"
+      IG_RULE_SEVERITY_OVERRIDE_RESULT="$severity"
       return 0
     fi
-  done < <(printf '%s' "$IG_RULE_SEVERITY_KEYS" | sed '/^$/d')
+  done <<< "$_entries"
   return 1
 }
 
@@ -289,7 +350,12 @@ ig_record_finding() {
   esac
 
   if [[ "$IG_JSON_MODE" == "true" ]]; then
-    IG_JSON_BUFFER+="{\"severity\":\"$(ig_json_escape "$severity")\",\"file\":\"$(ig_json_escape "$file")\",\"line\":${line},\"rule\":\"$(ig_json_escape "$rule")\",\"message\":\"$(ig_json_escape "$message")\"},"
+    local _sev _f _r _m
+    ig_json_escape "$severity"; _sev="$IG_JSON_ESCAPE_RESULT"
+    ig_json_escape "$file";      _f="$IG_JSON_ESCAPE_RESULT"
+    ig_json_escape "$rule";      _r="$IG_JSON_ESCAPE_RESULT"
+    ig_json_escape "$message";   _m="$IG_JSON_ESCAPE_RESULT"
+    IG_JSON_BUFFER+="{\"severity\":\"${_sev}\",\"file\":\"${_f}\",\"line\":${line},\"rule\":\"${_r}\",\"message\":\"${_m}\"},"
   else
     if [[ -n "$file" && "$line" != "0" ]]; then
       printf '[%s] %s:%s %s — %s\n' "$severity" "$file" "$line" "$rule" "$message"
@@ -323,8 +389,9 @@ ig_emit_finding() {
     return 0
   fi
 
-  local override_severity
-  override_severity="$(ig_rule_severity_override "$rule" || true)"
+  local override_severity=""
+  ig_rule_severity_override "$rule" || true
+  override_severity="$IG_RULE_SEVERITY_OVERRIDE_RESULT"
   if [[ -n "$override_severity" ]]; then
     severity="$override_severity"
   fi
@@ -334,7 +401,8 @@ ig_emit_finding() {
   if [[ -n "$file" && "$line" != "0" ]]; then
     inline_state="$(ig_inline_suppression_state "$file" "$line" "$rule")"
     inline_kind="${inline_state%%|*}"
-    inline_line="$(printf '%s' "$inline_state" | cut -d'|' -f2)"
+    inline_line="${inline_state#*|}"
+    inline_line="${inline_line%%|*}"
     case "$inline_kind" in
       suppress)
         IG_SUPPRESSED_TOTAL=$((IG_SUPPRESSED_TOTAL + 1))
