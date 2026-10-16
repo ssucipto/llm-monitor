@@ -263,3 +263,9 @@ Append to `agent/memory/decisions.md`:
 - Never re-debate a decision marked "DO NOT re-open" in decisions.md
 - Never use `set -e` without trapping errors in bash scripts
 - Never write bash that breaks on macOS (BSD sed, date +%N differences)
+
+## Local rules (llm-monitor project)
+
+- **Never kill processes by name.** Do not use `Stop-Process`, `taskkill`, `kill` or `pkill` on `python` or `pythonw`. The LLM gateway (:8080) and Strata (:8081) also run as Python, and killing them takes down every local client.
+- **To restart the dashboard**, run `powershell -File C:\Project\llm-monitor\restart-llm-monitor.ps1` (port 8090) or `-Port <n>`. It stops only the process that owns the port, and only if that process runs this dashboard's `server.py`.
+- If the script refuses ("not C:\Project\llm-monitor\llm-monitor\server.py"), something else holds the port. Report it instead of killing it.
