@@ -1,0 +1,4 @@
+llm-monitor/usage_ledger.py	~if want is not None and not (norm_repo(r[6]) == want or norm_repo(r[6]).startswith(want + "/")):  # a path boundary (M78-H5)	if want is not None and not norm_repo(r[6]).startswith(want):
+llm-monitor/usage_ledger.py	~ms = tuple(EXECUTOR_MODELS)	ms = ("strata-iq3_s", "qwen3.8-flash-next-iq3_s")
+llm-monitor/usage_ledger.py	~or "strata-iq3_s,qwen3.8-flash-next-iq3_s").split(",") if m.strip())	or "strata-iq3_s,qwen3.8-flash-next-iq3_s").split(",") if False)
+llm-monitor/usage_ledger.py	~"executor_models": list(EXECUTOR_MODELS)}   # additive (M78-H5): what counts as executor usage	"executor_models": []}
