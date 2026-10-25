@@ -4,6 +4,14 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.15] - 2026-10-25
+
+### Fixed
+- Usage ledger (M78-H5): the executor models are set by `LLM_MONITOR_EXECUTOR_MODELS` and named in `/api/usage` (`executor_models`), so a new quant no longer reads as executor 0; the repo filter stops at a path boundary (`llm-monitor-old` no longer matches `llm-monitor`). 4 new cases, 33 in all. The API test takes a free port (a fixed one failed a second run within a minute on Linux: TIME_WAIT) and checks the server came up.
+
+### Added
+- CI: `usage-tests.yml` runs the usage suites and the e2e gates on every push.
+
 ## [0.1.14] - 2026-10-25
 
 ### Fixed

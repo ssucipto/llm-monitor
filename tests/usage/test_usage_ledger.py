@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 
@@ -183,6 +184,36 @@ try:
     con4.close()
 finally:
     shutil.rmtree(tmp4, ignore_errors=True)
+
+# M78-H5: the executor model list can be set (a new quant must not read as 0), and the repo filter stops at a path boundary
+tmp5 = tempfile.mkdtemp(prefix="m78-h5-")
+try:
+    con5 = ul.connect(os.path.join(tmp5, "u.sqlite3"))
+    row = ("INSERT INTO usage_event (source, msg_key, session, t, t_end, model, repo, sidechain, task, input, output, cache_write,"
+           " cache_write_5m, cache_write_1h, cache_read, reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, 0, 0, 0, 0, 0, 0)")
+    con5.execute(row, ("hermes", "h5a", "e1", T0 + 10, T0 + 20, "strata-q4", "C:\\Project\\llm-monitor", 7))
+    con5.execute(row, ("claude_code", "c5a", "o1", T0 + 10, None, "claude-opus-5-5", "C:\\Project\\llm-monitor-old", 11))
+    con5.execute(row, ("claude_code", "c5b", "o2", T0 + 11, None, "claude-opus-5-5", "C:\\Project\\llm-monitor\\sub", 13))
+    con5.commit()
+    ok5 = {"claude_code": "ok", "hermes": "ok"}
+    s5 = ul.summary(con5, iso(T0), iso(T0 + 60), repo="C:\\Project\\llm-monitor", status=ok5)
+    expect("a model outside the executor list is not executor usage; the answer names the list (executor_models)",
+           s5["executor"]["input"] == 0 and s5.get("executor_models") == list(ul.EXECUTOR_MODELS), s5)
+    saved5 = ul.EXECUTOR_MODELS
+    ul.EXECUTOR_MODELS = ("strata-q4",)
+    try:
+        s5 = ul.summary(con5, iso(T0), iso(T0 + 60), repo="C:\\Project\\llm-monitor", status=ok5)
+    finally:
+        ul.EXECUTOR_MODELS = saved5
+    expect("a configured executor model counts (a new quant is not a silent 0)", s5["executor"]["input"] == 7 and s5.get("executor_models") == ["strata-q4"], s5)
+    expect("the repo filter stops at a path boundary: a sibling '-old' folder is out, a subfolder is in", s5["orchestrator"]["input"] == 13, s5["orchestrator"])
+    con5.close()
+    env5 = dict(os.environ, LLM_MONITOR_EXECUTOR_MODELS=" a-model , b-model ")
+    r5 = subprocess.run([sys.executable, "-c", "import usage_ledger as u; print(u.EXECUTOR_MODELS)"],
+                        cwd=os.path.join(HERE, "..", "..", "llm-monitor"), env=env5, capture_output=True, text=True)
+    expect("LLM_MONITOR_EXECUTOR_MODELS sets the list (comma-separated, trimmed)", r5.stdout.strip() == "('a-model', 'b-model')", r5.stdout + r5.stderr)
+finally:
+    shutil.rmtree(tmp5, ignore_errors=True)
 
 print("ALL PASSED (simulated)" if not fails else f"{len(fails)} FAILED")
 sys.exit(1 if fails else 0)

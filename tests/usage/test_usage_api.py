@@ -1,9 +1,10 @@
-"""usage API tests (llm-monitor M78-H3, Homelab B-89 T14) — SIMULATED: the real server.py on a spare port (18099) with synthetic
+"""usage API tests (llm-monitor M78-H3/H5, Homelab B-89 T14) — SIMULATED: the real server.py on a free port the OS gives with synthetic
 sources (LLM_MONITOR_* overrides); never the live :8090 dashboard, never a real transcript or state.db. One PASS line per case.
 The server is stopped through its own process handle (never by name)."""
 import json
 import os
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -14,7 +15,16 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVER = os.path.join(HERE, "..", "..", "llm-monitor", "server.py")
-PORT = 18099
+
+
+def free_port():
+    """A port nothing holds now (a fixed one can sit in TIME_WAIT after a run a minute ago: M78-H5)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+PORT = free_port()
 fails = []
 
 
@@ -49,14 +59,19 @@ c.execute("INSERT INTO sessions VALUES ('h1', 'D:\\Project\\Homelab', 'D:\\Proje
 c.execute("INSERT INTO session_model_usage VALUES ('h1', 'strata-iq3_s', '', 100, 50, 1000, 0, 0, 1792890000, 1792890600)")
 c.commit(); c.close()
 env = dict(os.environ, LLM_MONITOR_USAGE_DB=os.path.join(tmp, "usage.sqlite3"), LLM_MONITOR_CLAUDE_ROOT=os.path.join(tmp, "projects"), LLM_MONITOR_HERMES_DB=hdb)
-proc = subprocess.Popen([sys.executable, SERVER, str(PORT)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+errf = os.path.join(tmp, "server.err")
+proc = subprocess.Popen([sys.executable, SERVER, str(PORT)], env=env, stdout=subprocess.DEVNULL, stderr=open(errf, "w"))
 try:
+    up = False
     for _ in range(60):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/index.html", timeout=2)
+            up = True
             break
         except OSError:
             time.sleep(0.5)
+    expect("the server under test answers within 30 s (else its stderr is shown)", up,
+           open(errf, encoding="utf8", errors="replace").read()[-600:])
     W = "from=2026-10-25T00:00:00Z&to=2026-10-25T02:00:00Z&repo=D:/Project/Homelab"
     code, u = get(f"/api/usage?{W}")
     keys = ("window", "orchestrator", "executor", "weighted", "sources", "partial", "generated_at")

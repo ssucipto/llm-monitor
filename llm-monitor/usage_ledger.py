@@ -1,15 +1,19 @@
 """usage_ledger.py v1.0 — the usage ledger: numbers-only token usage of Claude Code and Hermes (M78; Homelab B-89 T14, ADR-022).
 Reads numbers only: token counts, timestamps, models, session ids, repo paths.
 Never reads message text, titles or prompts: those columns are never selected and nothing is ever stored from them.
-Storage: its own SQLite file (usage_event rows + usage_cursor byte cursors), WAL so the dashboard can read while we write."""
+Storage: its own SQLite file (usage_event rows + usage_cursor byte cursors), WAL so the dashboard can read while we write.
+v1.1 (M78-H5, Homelab review-043 CR-009/CR-011): LLM_MONITOR_EXECUTOR_MODELS sets the executor models and /api/usage names
+them (executor_models); the repo filter stops at a path boundary."""
 import json
 import os
 import sqlite3
 import time
 from datetime import datetime, timezone
 
-# the models that run executors: their Hermes rows are executor usage, not orchestrator usage
-EXECUTOR_MODELS = ("strata-iq3_s", "qwen3.8-flash-next-iq3_s")
+# the models that run executors: their Hermes rows are executor usage, not orchestrator usage. A new quant or model name
+# goes in LLM_MONITOR_EXECUTOR_MODELS (comma-separated); otherwise it would read as executor 0 with Hermes "ok" (M78-H5)
+EXECUTOR_MODELS = tuple(m.strip() for m in (os.environ.get("LLM_MONITOR_EXECUTOR_MODELS")
+                                            or "strata-iq3_s,qwen3.8-flash-next-iq3_s").split(",") if m.strip())
 WEIGHTS = {"input": 1.0, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "cache_read": 0.1, "output": 5.0}
 
 
@@ -170,7 +174,8 @@ def _rows(con, f, t, repo, session):
     def keep(rows):
         out = []
         for r in rows:
-            if repo is not None and not norm_repo(r[6]).startswith(norm_repo(repo)):  # repo column
+            want = norm_repo(repo) if repo is not None else None
+            if want is not None and not (norm_repo(r[6]) == want or norm_repo(r[6]).startswith(want + "/")):  # a path boundary (M78-H5)
                 continue
             if session is not None and r[2] != session:  # session column
                 continue
@@ -178,8 +183,9 @@ def _rows(con, f, t, repo, session):
         return out
 
     orch = keep(con.execute("SELECT * FROM usage_event WHERE source='claude_code' AND t >= ? AND t <= ?", (f, t)).fetchall())
-    ex = keep(con.execute("SELECT * FROM usage_event WHERE source='hermes' AND model IN (?,?) AND t <= ? AND t_end >= ?",
-                          (EXECUTOR_MODELS[0], EXECUTOR_MODELS[1], t, f)).fetchall())
+    ms = tuple(EXECUTOR_MODELS)
+    ex = keep(con.execute("SELECT * FROM usage_event WHERE source='hermes' AND model IN (%s) AND t <= ? AND t_end >= ?"
+                          % ",".join("?" * len(ms)), (*ms, t, f)).fetchall()) if ms else []
     return orch, ex
 
 
@@ -219,7 +225,8 @@ def summary(con, frm, to, repo=None, session=None, status=None, partial=False):
         w_ex = ex["input"] + 1.25 * ex["cache_write"] + 0.1 * ex["cache_read"] + 5 * ex["output"]
     return {"window": {"from": frm, "to": to}, "orchestrator": orch, "executor": ex,
             "weighted": {"orchestrator": w_orch, "executor": w_ex, "weights": WEIGHTS},
-            "sources": status, "partial": partial, "generated_at": iso(time.time())}
+            "sources": status, "partial": partial, "generated_at": iso(time.time()),
+            "executor_models": list(EXECUTOR_MODELS)}   # additive (M78-H5): what counts as executor usage
 
 
 def sessions(con, frm, to, repo=None, session=None):

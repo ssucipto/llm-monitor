@@ -231,7 +231,9 @@ session, for the Homelab delegation protocol (milestone M78; Homelab ADR-022).
   every `/api/usage` call catches up first (at most 10 s; `partial: true` if it ran out).
 - **API:** `GET /api/usage?from=ISO&to=ISO[&repo=PATH][&session=ID]` (totals, a cost-weighted unit, source status) and
   `GET /api/usage/sessions?...` (one row per session and role). A bad window is HTTP 400; a missing source is `null`, never 0.
-- **Tests:** `py -3.12 tests/usage/run-tests.py` (synthetic data only; `run-e2e-tests.sh` runs it).
+- **Executor models:** Hermes rows count as executor usage only for the models in `LLM_MONITOR_EXECUTOR_MODELS`
+  (comma-separated; default `strata-iq3_s,qwen3.8-flash-next-iq3_s`); `/api/usage` names them in `executor_models`.
+- **Tests:** `py -3.12 tests/usage/run-tests.py` (synthetic data only; `run-e2e-tests.sh` runs it; CI: `usage-tests.yml`).
 
 ## Configuration
 

@@ -1,0 +1,27 @@
+# usage-tests — llm-monitor's own regression net (M78-H5; Homelab audit #95 F-02: the meter every B-89 number comes from had
+# no CI). Runs the usage suites (counts enforced by tests/usage/run-tests.py) and the e2e gates on every push. SIMULATED only:
+# synthetic transcripts and a synthetic Hermes DB; nothing real is read, nothing leaves the runner.
+name: usage-tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Usage suites, counts enforced
+        run: python3 tests/usage/run-tests.py
+      - name: Shell scripts with LF line ends (this runner's checkout only)
+        # the repo stores its .sh files with CRLF (Git Bash on Windows accepts that, bash on Linux does not); the files in
+        # the repo are not changed
+        run: git ls-files -z '*.sh' | xargs -0 sed -i 's/\r$//'
+      - name: The e2e gates (integrity v1 and v2, usage)
+        run: bash run-e2e-tests.sh
