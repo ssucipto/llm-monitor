@@ -144,6 +144,20 @@ milestones:
       probe scripts, L9/L12 gaps. Gate OVERALL PASS with -SmokeTest; lint suite 11/11.
       Open: T7 waits on the reboot test (a25-02, user). Independent read-only verification handed to Zed.
 
+  - id: M78
+    name: Usage ledger (orchestrator and executor tokens)
+    priority: 1
+    file: agent/milestones/milestone-78-usage-ledger.md
+    status: in_progress
+    progress: 33
+    started: 2026-10-25
+    estimated_weeks: 1
+    tasks_completed: 1
+    tasks_total: 3
+    notes: |
+      Homelab B-89 T14 (ADR-022 D-89-1 A'): numbers-only token usage of Claude Code and Hermes, served as /api/usage on :8090.
+      Executed through the Homelab delegation pipeline (Strata IQ3_S): H1 records + contract, H2 the module (T1), H3 server + panel.
+
 active_handoff:
   path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
   date: "2026-10-17"
@@ -323,6 +337,25 @@ tasks:
       estimated_hours: 1
       actual_hours: null
       completed_date: 2026-10-17
+
+  milestone_78:
+    - id: task-78-h1
+      name: Records and the usage contract (24 cases)
+      priority: 1
+      status: completed
+      started: 2026-10-25
+      completed_date: 2026-10-25
+      file: agent/milestones/milestone-78-usage-ledger.md
+    - id: task-78-h2
+      name: usage_ledger.py (ingest, storage, contract queries)
+      priority: 1
+      status: pending
+      file: agent/milestones/milestone-78-usage-ledger.md
+    - id: task-78-h3
+      name: server routes, ingest thread, Usage panel, docs, live checks
+      priority: 1
+      status: pending
+      file: agent/milestones/milestone-78-usage-ledger.md
 
 # Documentation tracking
 documentation:

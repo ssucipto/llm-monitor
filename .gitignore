@@ -8,6 +8,11 @@ llm-monitor/telemetry.sqlite3
 llm-monitor/telemetry.sqlite3-journal
 llm-monitor/telemetry.sqlite3-wal
 llm-monitor/telemetry.sqlite3-shm
+# M78 usage ledger (numbers only, machine-local data)
+llm-monitor/usage.sqlite3
+llm-monitor/usage.sqlite3-journal
+llm-monitor/usage.sqlite3-wal
+llm-monitor/usage.sqlite3-shm
 
 # Ad-hoc payload dumps taken while auditing the engine (investigation scratch)
 llm-monitor/*.dump.json
