@@ -4,6 +4,11 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.14] - 2026-10-25
+
+### Fixed
+- Usage ledger (M78-H4): Claude Code timestamps with milliseconds were not parsed, so every orchestrator row was stored with no time and every window read 0 for Claude Code. They now parse; a record with no usable time is skipped and counted; the rows stored without a time are removed once and re-read (5 new cases, 29 in all).
+
 ## [0.1.13] - 2026-10-25
 
 ### Added

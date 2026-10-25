@@ -45,6 +45,9 @@ def connect(path):
     con.execute("CREATE TABLE IF NOT EXISTS usage_cursor (file TEXT PRIMARY KEY, offset INTEGER, mtime REAL)")
     # the unique key is what makes every ingest idempotent: re-reading a source never double counts
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_event ON usage_event(source, msg_key)")
+    # M78-H4 repair, once: rows stored with no time (before H4) are dropped and every cursor reset, so the next pass reads them again
+    if con.execute("DELETE FROM usage_event WHERE source = 'claude_code' AND t IS NULL").rowcount:
+        con.execute("DELETE FROM usage_cursor")
     con.commit()
     return con
 
@@ -90,11 +93,13 @@ def ingest_hermes(con, db_path):
 
 
 def iso_epoch(s):
-    """ISO 8601 Z timestamp -> epoch seconds (parse_window's rule); None when it does not parse."""
+    """ISO 8601 timestamp with a zone (Z or +hh:mm) -> epoch seconds; None when it does not parse or has no zone.
+    Claude Code writes milliseconds (2026-10-25T09:42:25.123Z): 1.0 parsed only whole seconds (M78-H4)."""
     try:
-        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
-    except (TypeError, ValueError):
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
         return None
+    return dt.timestamp() if dt.tzinfo else None
 
 
 def ingest_claude(con, root, budget_s=5.0):
@@ -134,12 +139,16 @@ def ingest_claude(con, root, budget_s=5.0):
             u = m.get("usage") if isinstance(m, dict) else None
             if j.get("type") != "assistant" or not isinstance(u, dict):
                 continue  # every other line type is ignored, not skipped
+            ts = iso_epoch(j.get("timestamp"))
+            if ts is None:  # no usable time: a row with no time falls in no window, so it is skipped, never stored (M78-H4)
+                stats["skipped"] += 1
+                continue
             cc = u.get("cache_creation") or {}
             cur = con.execute(
                 "INSERT OR IGNORE INTO usage_event (source, msg_key, session, t, t_end, model, repo, sidechain, task,"
                 " input, output, cache_write, cache_write_5m, cache_write_1h, cache_read, reasoning)"
                 " VALUES ('claude_code', ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0)",
-                (f"{m.get('id')}:{j.get('requestId')}", j.get("sessionId"), iso_epoch(j.get("timestamp")),
+                (f"{m.get('id')}:{j.get('requestId')}", j.get("sessionId"), ts,
                  m.get("model"), j.get("cwd"), 1 if j.get("isSidechain") else 0,
                  u.get("input_tokens", 0), u.get("output_tokens", 0), u.get("cache_creation_input_tokens", 0),
                  cc.get("ephemeral_5m_input_tokens", 0), cc.get("ephemeral_1h_input_tokens", 0),
