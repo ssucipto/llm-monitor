@@ -1,0 +1,5 @@
+llm-monitor/usage_ledger.py	~dt = datetime.fromisoformat(s.replace("Z", "+00:00"))	dt = datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+llm-monitor/usage_ledger.py	~return dt.timestamp() if dt.tzinfo else None	return dt.timestamp()
+llm-monitor/usage_ledger.py	~if ts is None:  # no usable time: a row with no time falls in no window, so it is skipped, never stored (M78-H4)	if False:
+llm-monitor/usage_ledger.py	~con.execute("DELETE FROM usage_cursor")	pass
+llm-monitor/usage_ledger.py	~if con.execute("DELETE FROM usage_event WHERE source = 'claude_code' AND t IS NULL").rowcount:	if True:
