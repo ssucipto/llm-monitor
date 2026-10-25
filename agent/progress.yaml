@@ -4,10 +4,10 @@
 
 project:
   name: llm-monitor
-  version: 0.1.11
+  version: 0.1.12
   started: 2026-10-07
   status: in_progress
-  current_milestone: M75
+  current_milestone: M76
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -106,6 +106,51 @@ milestones:
       Audited in audit-19, post-audited in audit-20, and reviewed in review-009 (CodeRabbit diff-style).
       Implements true clock-hour history aggregation, suppresses ghost idle throughput, fixes day rollover,
       eliminates boundary loss in hourly buckets, and makes comparison table & HUD deltas zero-safe.
+  - id: M76
+    name: Windows Service Robustness
+    priority: 1
+    file: agent/milestones/milestone-76-service-robustness.md
+    status: completed
+    progress: 100
+    started: 2026-10-16
+    completed: 2026-10-17
+    estimated_weeks: 1
+    tasks_completed: 7
+    tasks_total: 8
+    notes: |
+      Implemented by Zed (T1-T5, T7-T8, Fixes 1-5), install by the user 2026-10-17 06:06, round 2 by
+      Claude Haiku (supervision restored, end log, simplification), remediated in audit-27 (Claude Opus).
+      Supervisor: backoff, per-port logs service-<port>.*, rotation to .1, kill-on-close job (no orphans),
+      orphan takeover, state file service-<port>.state.json, stop request stop-<port>.request.
+      Restart script: refuses a foreign owner, stops via stop request (works for the session-0 boot chain),
+      both tasks, PID-only leftovers. All T7 steps PASS except the reboot test.
+      Open: T6 reboot test (DECISION B), user-gated, carryover a25-02. The S4U task itself was run
+      without a reboot in audit-27 and works. Nothing committed (user decision).
+
+  - id: M77
+    name: Handover Rules, Lint and Gate
+    priority: 1
+    file: agent/milestones/milestone-77-handover-rules.md
+    status: completed
+    progress: 100
+    started: 2026-10-17
+    completed: 2026-10-17
+    estimated_weeks: 1
+    tasks_completed: 7
+    tasks_total: 8
+    notes: |
+      Implemented by Claude Haiku 2026-10-17 (T0-T7). audit-27 + review-013 (Claude Opus) found and fixed:
+      G10 stopped an unchecked PID, L8/G8 missed piped name kills, fixtures pinned to HEAD, G7 missed
+      probe scripts, L9/L12 gaps. Gate OVERALL PASS with -SmokeTest; lint suite 11/11.
+      Open: T7 waits on the reboot test (a25-02, user). Independent read-only verification handed to Zed.
+
+active_handoff:
+  path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
+  date: "2026-10-17"
+  to_executor: zed
+  from_executor: claude
+  git_commit: 86ad22bc8d62b9f89e91daf90728b0baefae10d1
+  status: active
 
 # Tasks are granular work items within milestones
 tasks:
@@ -186,6 +231,98 @@ tasks:
       notes: |
         Implemented clock-hour aggregation, ghost throughput suppression, day rollover hardening,
         boundary-carried hourly buckets, and zero-safe deltas across server.py and app.js. Verified live.
+  milestone_76:
+    - id: task-76-t1
+      name: Server bind guard
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t1-server-bind-guard.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t2
+      name: Access-log filter (4xx/5xx only)
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t2-access-log-filter.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t3
+      name: service-supervisor.ps1
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t3-supervisor.md
+      estimated_hours: 3
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t4
+      name: Installer (install-service.ps1/.bat)
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t4-installer.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t5
+      name: restart-llm-monitor.ps1
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t5-restart-script.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t6
+      name: Boot decision (DECISION B)
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t6-boot-decision.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t7
+      name: Verification sequence and receipts
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t7-verification.md
+      estimated_hours: 2
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-76-t8
+      name: Docs, version, carryovers
+      priority: 1
+      status: completed
+      started: 2026-10-16
+      file: agent/tasks/milestone-76-service-robustness/task-76-t8-docs-version-carryovers.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+  milestone_77:
+    - id: task-77-t0
+      name: Handover rules and skill
+      priority: 1
+      status: completed
+      started: 2026-10-17
+      file: agent/skills/local.handover-executor.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
+    - id: task-77-t7
+      name: Carryovers, progress, leftovers (reboot test user-gated)
+      priority: 1
+      status: completed
+      started: 2026-10-17
+      file: agent/milestones/milestone-77-handover-rules.md
+      estimated_hours: 1
+      actual_hours: null
+      completed_date: 2026-10-17
 
 # Documentation tracking
 documentation:
@@ -205,6 +342,44 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-17
+    description: |
+      M76/M77 closed out: user ran install-service.ps1 -WithBoot from a native shell (T4 done),
+      post-install verification passed (task action is the new supervisor; :8090 HTTP 200),
+      validator findings fixed (M76/M77 status drift), session memory + handoff written.
+    items:
+      - "✅ /acp-validate.ts: fixed 2 findings — M76 and M77 status drift (doc 'implemented' vs progress 'in_progress'); both now completed/100 with completed date 2026-10-17"
+      - "✅ Install verified live: LLMMonitor task ran service-supervisor.ps1 at 06:06:45, exited 0 'already served'; boot task registered (S4U)"
+      - "✅ restart-llm-monitor.ps1 empty-array bug fixed ($owners = Get-OurOwners before the loop); exercised end-to-end on :8090"
+      - "✅ T7 step 7 PASS (duplicate supervisor exits 0 against live :8090); receipts appended with exact outputs"
+      - "📋 Open: reboot test (a25-02, user-gated); active_handoff handoff-claude-m76-install-verification-2026-10-17.md for Claude's audit"
+  - date: 2026-10-17
+    description: |
+      audit-27 + review-013 of M76/M77 (Zed scored 59/100, Haiku 67/100) and full remediation. Found by
+      live tests: task stop left the server running; the S4U boot chain (session 0) could not be read or
+      stopped from the desktop, so restarts after a reboot were impossible; restart -Port restarted 8090.
+    items:
+      - "Supervisor: kill-on-close job, orphan takeover, state file, stop request, safe logging, run file written only before a start"
+      - "Restart script: early refusal, stop request, both tasks, PID-only leftovers, actions logged, -Port fixed"
+      - "Gate: G10 checked stops + cleanup, G8 shared kill pattern, G7 wider, G1b syntax tree, G3/G6 state attestation"
+      - "Lint: -Head, shared kill pattern, absolute/%VAR% paths, 8080+8081; 11 fixture cases with exact failing sets"
+      - "Live: T7 steps 8 (x3), 9, 10 (live rotation), 13 PASS; S4U boot task run without a reboot"
+      - "Records: milestones, CHANGELOG 0.1.12, README, AGENTS.md, skill notes, carryovers (provenance, CRLF)"
+    status: "Only the reboot test (a25-02) is open; independent verification handed to Zed; nothing committed"
+  - date: 2026-10-16
+    description: |
+      Shipped M76 (in progress): supervised Windows service for the dashboard. Bind guard, access-log
+      filter, supervisor with backoff + lifecycle log + busy-file guard, new installer and task-aware
+      restart script. Task replacement blocked from agent shell (legacy tasks in admin store) — user
+      runs install-service.ps1 -WithBoot to finish T4; reboot test pending.
+    items:
+      - "✅ T1 bind guard: allow_reuse_address=False on _Server; second bind fails WinError 10048"
+      - "✅ T2 log_request override: only 4xx/5xx access lines logged"
+      - "✅ T3 service-supervisor.ps1: backoff 5->60s, lifecycle log, rotation, Test-BusyFile via fsutil queryProcessesUsing"
+      - "✅ T4 install-service.ps1 + bat wrapper written; registration blocked in agent shell (Access is denied on legacy LLMMonitor/LLMMonitorBoot)"
+      - "✅ T5 restart-llm-monitor.ps1 task-aware, PID-verified stop only"
+      - "⏸ T6 DECISION: B recorded; reboot test NOT RUN (user absent)"
+      - "📋 T7 receipts: agent/tasks/milestone-76-service-robustness/T7-receipts.md"
   - date: 2026-10-15
     description: |
       Installed the ACP CI/review/integrity harness so /acp-ci, /acp-review and /acp-integrity
@@ -503,6 +678,8 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
+  - Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in
+  - Claude audit of this session's M76 remediation via active_handoff (handoff-claude-m76-install-verification-2026-10-17.md)
   - Wire the harness into CI (.github/workflows) if/when this repo gains a GitHub remote workflow run
   - Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature
 

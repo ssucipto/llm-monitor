@@ -44,3 +44,38 @@
     - keep CREATE, INSERT, and export column lists in one place to avoid drift
     - validate arity with a live DB test, not just a syntax compile
 
+- date: 2026-10-17
+  name: fixture-tested-lint-and-state-gate
+  kind: verification-pattern
+  problem: |
+    Parse checks and analyser passes do not prove that a service script works.
+    A bare boolean ($x = false) parses and passes PSScriptAnalyzer, yet ends the
+    script at runtime under ErrorActionPreference=Stop. A gate of parse-only checks
+    passed the defect it was meant to stop.
+  solution: |
+    Pair every rule-check script with fixtures: one good file that must pass and
+    one bad file per rule that must fail for the expected reason, run by a test
+    runner. For running services, add a state gate that checks owner chain, task
+    settings, file-time versus process-time, and a runtime smoke test on a spare
+    port. Record the gate output as evidence.
+  example: |
+    lint-handover.ps1 with tests/lint-handover/run-tests.ps1 (7 expectations);
+    gate-service.ps1 with check G1b (regex for bare booleans) and G10 (spare-port start).
+  applies_to: any script or handover claim that says "verified", "supervised" or "fixed"
+
+- date: 2026-10-17
+  name: supervisor-owned-cross-session-control
+  kind: windows-service-pattern
+  problem: |
+    A supervisor started by a scheduled task may run in another session (S4U at boot). Its children
+    leave the task's job, so a task stop leaves them running, and the desktop can neither read their
+    command lines nor stop them.
+  solution: |
+    The supervisor owns its children: put them in a kill-on-close job (Add-Type, CreateJobObject,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, AssignProcessToJobObject for the wrapper and the server).
+    It writes a state file (PIDs, start times, heartbeat) that other tools use to attest the chain
+    when they cannot read it, and it honours a stop-request file newer than its own start.
+  example: |
+    llm-monitor/service-supervisor.ps1 (LlmMonitorJob, Write-State, Test-StopRequested);
+    restart-llm-monitor.ps1 (stop request first); gate-service.ps1 G3/G6 (state attestation).
+  applies_to: any Windows supervisor run from Task Scheduler, especially S4U or SYSTEM tasks

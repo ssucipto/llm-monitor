@@ -82,3 +82,11 @@ task_types:
     context_required: [memory/sessions.md]
     tokens_est: 3000
     skill: backend
+
+  # -- EXECUTOR HANDOVERS (M77 T3) ----------------------------------------
+  handover-executor:
+    executor: smart-model
+    complexity: low
+    context_required: [memory/lessons.md]
+    tokens_est: 6000
+    skill: local.handover-executor

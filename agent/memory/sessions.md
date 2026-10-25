@@ -2,219 +2,111 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
-- date: 2026-10-15
-  executor: strata-coder
+- date: 2026-10-17
+  executor: zed
+  branch: main
+  tasks: [task-76-t4, task-76-t7]
+  done:
+    - fixes-1-5-supervisor-verified (parse + run :8090/8095-8099, HTTP 200)
+    - restart-script-empty-array-fix ($owners = Get-OurOwners before foreach)
+    - t7-step7-dup-supervisor-exit-0
+    - install-verification (user ran install-service.ps1 -WithBoot natively; supervisor-log proof 06:06:45)
+    - cleanup-probe-scripts-deleted (~230 files, scratch emptied, spare-port artifacts removed)
+    - validate-findings-fixed (M76/M77 status drift -> completed/100)
+    - handoff-claude-m76-install-verification written + HANDOFF-LATEST + progress.yaml active_handoff
+  deferred:
+    - a25-02-reboot-test -> task-76-t6 (user-gated)
+  key_fact: "foreach ($x in FuncCall) without parentheses runs the call as a statement and iterates an EMPTY stream — Stop-Process -Id got an empty array; assign first ($owners = Get-OurOwners)"
+
+- date: 2026-10-17
+  executor: claude-opus-5-5
+  branch: main
   tasks:
-    - r1-01
+    - audit-27-m76-m77-zed-haiku-scoring
+    - review-013-m76-m77-code-qualities
+    - audit-27-remediation
   done:
-    - installed-acp-ci-review-integrity-harness
-    - authored-missing-review-scan-ts-and-taint-scan-py
-    - fixed-progress-yaml-duplicate-key-parse-bug
-    - fixed-tab-cr-emit-contract-in-review-scan
-    - fixed-review-measure-scanner-exit-code-handling
-    - fixed-e2e-integrity-fp-baseline-grep
-    - removed-per-finding-python-and-awk-spawns-perf-fix
-    - host-calibrated-perf-budget-in-ci-step
-    - all-10-ci-gates-pass-full-tier
-  deferred: []
-  key_fact: "Windows/Git-Bash process-spawn overhead is ~5-10x a Linux agent host; the framework's own finding-free scan floor here is ~1.4s vs ~103ms on the calibrated host, so absolute-ms perf budgets must be host-calibrated (measure floor, budget=max(2000,3x floor)) rather than hardcoded"
-
-- date: 2026-10-12
-  executor: strata-coder
-  tasks: []
-  done:
-    - acp-validate-version-and-pointer-checks
-    - fixed-stale-current-milestone-M1-to-M75
-    - added-missing-status-field-to-milestone-75-doc
-    - confirmed-code-gates-py-compile-node-check-pass
+    - scored-zed-59-haiku-67
+    - gate-g10-checked-stops-and-cleanup
+    - shared-kill-pattern-lint-l8-gate-g8
+    - lint-head-parameter-and-exact-fixture-sets
+    - gate-g7-wider-g1b-syntax-tree
+    - restart-stop-request-both-tasks-port-fix
+    - supervisor-kill-on-close-job-state-file-stop-request-orphan-takeover
+    - s4u-boot-task-run-without-reboot
+    - t7-steps-8-9-10-13-pass
+    - records-milestones-changelog-readme-agents-skill-carryovers
+    - adr-lm-001
+    - handoff-zed-audit27-verification
   deferred:
-    - r1-01-ci-harness-na
-  key_fact: "progress.yaml had a stale current_milestone (M1) while M71-M75 were completed; and milestone-75 doc was missing the **Status** field that the other three milestone docs carry. Both corrected so /acp-validate cross-layer status + file-pointer checks pass. YAML parses clean after edits."
-  done:
-    - m74-backend-timeseries-aggregation-endpoint
-    - m74-sub-day-minute-and-hourly-bucketing-with-counter-reset-safety
-    - m74-multi-day-rollups-with-live-today-merge
-    - m74-interactive-svg-timeseries-charts
-    - m74-metric-tabs-all-throughput-tokens-requests
-    - m74-range-selectors-15m-1h-3h-6h-24h-7d-30d-90d
-    - m74-hover-crosshair-and-interactive-tooltips
-    - m74-client-side-fallback-downsampling
-    - audit-17-pre-impl-readiness
-    - audit-18-post-impl-verification
-    - review-008-coderabbit-diff-review
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "M74 landed: Interactive SVG timeseries chart panel (#charts) across 8 configurable timeframes (15m, 1h, 3h, 6h, 24h, 7d, 30d, 90d) and 4 metric modes (All Combined, Tokens/s, Token Usage, Requests). Endpoint GET /api/timeseries aggregates SQLite poll and day tables with counter-reset protection. High-density SVG canvas renders vector geometry, hover crosshair, and floating tooltip. Client-side fallback provides seamless downsampling resilience."
+    - reboot-test-decision-b → a25-02 (user)
+    - independent-verification-of-audit-27-fixes → handoff-zed-audit27-verification-2026-10-17.md
+    - commit-of-m76-m77-audit-27-work → user decision
+  key_fact: "Children started with Start-Process leave the scheduled task's job, and an S4U (session 0) chain is invisible and unstoppable from the desktop. The supervisor must own its children (kill-on-close job) and expose a state file and a stop request."
 
-- date: 2026-10-12
-  executor: antigravity-coordinator
+- date: 2026-10-17
+  executor: claude-haiku-5-5
+  branch: main
   tasks:
-    - task-73
+    - m76-t0-supervision-restore
+    - m76-t3-supervisor-end-log
+    - m76-t3-supervisor-simplify
+    - m76-t5-restart-rename
+    - m77-t0-restore-supervision
+    - m77-t1-lessons-labels
+    - m77-t2-local-skill
+    - m77-t3-taxonomy-route
+    - m77-t4-lint-handover
+    - m77-t5-gate-service
+    - m77-t6-agents-pointer
+    - m77-t7-leftovers-carryovers
   done:
-    - m73-average-tok-s-and-average-prefill
-    - m73-peak-throughput-rates-and-ttft-latency
-    - m73-dedicated-prefill-sparkline
-    - m73-compact-hud-average-prefill
-    - audit-15-pre-impl-readiness
-    - audit-16-post-impl-verification
-    - review-007-coderabbit-diff-review
+    - restored-8090-supervision-owner-chain-verified
+    - supervisor-logs-own-end-and-busy-workaround-removed
+    - supervision-test-kill-by-pid-restart-11s
+    - rotation-to-dot-1-proven-on-spare-port
+    - lessons-labels-mapped-to-taxonomy-keys
+    - local-handover-executor-skill-written
+    - taxonomy-handover-executor-entry-added
+    - lint-handover-with-fixtures-and-tests
+    - gate-service-with-bare-boolean-check-and-smoke-test
+    - agents-md-pointer-and-readme-update-caveat
+    - carryover-closures-a25-01-a26-01-03-c22-01-02-04-cr-006
+    - progress-active-handoff-cleared
+    - analyser-review-of-m77-scripts
   deferred:
-    - r1-01-ci-harness-na
-  key_fact: "M73 landed: Throughput panel expanded to 9 metrics: Average decode tok/s, Peak decode, Current prefill, Average prefill, Peak prefill, Prompt latency (TTFT), and Request rate. Added dedicated SVG prefill sparkline (#prefill-spark) in emerald green. Compact HUD gained average prefill readout (#hud-prefill-sub). Client-side fallback derivation provides zero-restart resilience."
+    - reboot-test-decision-b-user-gated → a25-02
+    - orphan-server-when-supervisor-force-killed → a26-04
+    - trap-path-terminating-error-untested → a26-05
+    - commit-of-m76-m77-work-not-requested → user decision
+  key_fact: "Analyser and parser both pass a bare boolean ($x = false); gate needs a regex check plus a runtime smoke test. Protocol loads lessons by trigger or priority high, not by task_type."
 
-- date: 2026-10-12
-  executor: antigravity-coordinator
-  tasks:
-    - task-72
+- period: 2026-10-07 to 2026-10-15
+  executors: [strata-coder, antigravity-coordinator]
+  note: "weekly summary — compacted 10 oldest entries per /acp-commit"
   done:
-    - m72-compact-hud-half-page-interface
-    - m72-accessible-multi-tab-system
-    - m72-desktop-overlay-popout-window
-    - audit-13-pre-impl-readiness
-    - audit-14-post-impl-verification
-    - review-006-coderabbit-diff-review
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "M72 landed: Multi-tab navigation with Full Dashboard and Compact HUD views. Compact HUD provides high-density layout (identity orb, hero speed, 2x2 vitals matrix, last generation spotlight, micro trends, sparkline, endpoint pills) bound to live /api/stats. Pop-out launcher opens standalone 480x820 overlay window with TOC and chrome suppressed. 100% non-regressed with zero DOM collisions."
+    - installed-acp-ci-review-integrity-harness (2026-10-15)
+    - acp-validate-version-and-pointer-checks, fixed stale current_milestone M1->M75 (2026-10-12)
+    - m74-interactive-svg-timeseries-8-timeframes-4-metric-modes (2026-10-12)
+    - m73-average-and-peak-throughput-prefill-sparkline (2026-10-12)
+    - m72-compact-hud-multi-tab-popout-overlay (2026-10-12)
+    - m71-total-tokens-per-request-history-comparison-table (2026-10-12)
+    - audit-10-remediations-db-prune-truncation-fix-sqlite-indexes (2026-10-11)
+    - decode-speed-surfaced-header-chip-redundant-row-removed (2026-10-08)
+    - r3-01-sparkline-per-series-window-label-header-tok (2026-10-08)
+    - a7-05-drafts-and-pcie-share-poll-schema-23-col-insert-arity-fix (2026-10-08)
+    - audit-7-db-prune-days-rollup-90d-cap-api-export-json-csv (2026-10-08)
+    - gpu-2nd-pass-vram-card-relative-gpu-mem-hint-zero-guard-fix (2026-10-08)
+    - gpu-vram-derived-from-vram-free-mib-audit-5 (2026-10-07)
+    - prefill-gauge-sticky-header-a2-01-telemetry-verified-live (2026-10-07)
+    - db-path-resolve-fix-telemetry-status-surfaced (2026-10-07)
+  key_facts:
+    - "On the AMD HIP driver the engine has NO gpu_* counters; engine.vram_free_mib is live and card-relative, so VRAM is the one recoverable GPU reading (used = fixed card total - free)."
+    - "DB_PATH must be .resolve()d — sqlite resolves relative paths against the process cwd."
+    - "Static assets are served from disk per request; front-end edits need no server restart, only build_stats changes do."
+    - "Engine keeps only 60 samples/series + 12-30 request records and has NO /log endpoint — our SQLite DB is the only durable record."
+    - "poll-schema ALTER migrations: INSERT arity bugs are caught by migration tests, not py_compile."
+    - "db_prune must prune day rollups too; cap 90d (three months) via db_prune_days."
+    - "Windows/Git-Bash process-spawn overhead is ~5-10x a Linux CI host; perf budgets must be host-calibrated (budget=max(2000, 3x measured floor))."
 
-- date: 2026-10-12
-  executor: antigravity-coordinator
-  tasks:
-    - task-71
-  done:
-    - m71-total-tokens-per-request
-    - m71-token-history-hour-today-yesterday-week-month
-    - m71-history-comparison-table-hour-today-week-month
-    - m71-last-request-vs-previous-comparison
-    - audit-11-pre-impl-readiness
-    - audit-12-post-impl-verification
-    - review-005-coderabbit-diff-review
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "M71 landed: Requests table renders Total tokens (prompt + out) and live request delta. History panel displays token totals (last request, this hour, today, yesterday, this week, this month) and a 5-row comparison table (Last request vs Previous, This hour vs Last hour, Today vs Yesterday, This week vs Last week, This month vs Last month) with deltas, request counts, and speeds. Resilient to backend restarts with client fallback."
-
-- date: 2026-10-11
-  executor: antigravity-coordinator
-  tasks: []
-  done:
-    - audit-10-remediations-landed
-    - review-004-coderabbit-fixes
-    - db-prune-catastrophic-truncation-fixed
-    - sqlite-indexes-idx-poll-t-idx-day-d
-    - strip-dead-gather-functions
-    - urlsplit-query-string-support
-    - sessions-yaml-syntax-repaired
-    - requests-table-time-column-added
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "Engine exposes unix epoch timestamp in /metrics.requests ('time'), but Requests table omitted Time column; added HH:MM:SS Time column to Requests table in index.html & app.js. Engine has no caller IP/client source telemetry."
-
-- date: 2026-10-08
-  executor: strata-coder
-  tasks: []
-  done:
-    - decode-speed-surfaced-header-chip
-    - throughput-panel-big-number-labeled-decode
-    - audit-9-removed-redundant-decode-fact-row
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "Decode speed surfaced once per surface: header chip 'decode tok/s' + panel big number suffixed 'decode'. audit-9 caught that the first pass added a redundant Decode fact row (thr-decode duplicated thr-now, both from throughput.now) + a label inconsistency; removed it. No orphan thr-decode ref. Scanner clean."
-
-- date: 2026-10-08
-  executor: strata-coder
-  tasks: []
-  done:
-    - drawspark-windowms-caption
-    - header-tok-reading-added
-  deferred:
-    - r1-01-ci-harness-na
-  key_fact: "r3-01 closed: drawSpark takes per-series windowMs; tok_s/power/cpu/vram=REFRESH_MS(5s), requests=historyBucketMs(from data.history_bucket_s*1000, default 75s), hist=86400000. Caption states per-sample interval + span, no blanket label. Header tok/s added (top-tok, mirrors top-prefill)."
-
-- date: 2026-10-08
-  executor: strata-coder
-  tasks: []
-  done:
-    - audit-8-telemetry-lifecycle-2nd-pass
-    - a7-05-drafts-and-pcie-share-captured
-    - poll-schema-alter-migration-23-col
-    - insert-arity-bug-fixed-23-placeholders
-  deferred:
-    - r3-01-sparkline-window-label
-    - r1-01-ci-harness-na
-  key_fact: "a7-05 closed: drafts_offered/drafts_accepted (totals) + pcie_share (requests[0]) now in poll row + export. Zero extra engine cost (same /metrics dict). ALTER loop extended to (col,ctype); old 20-col DBs migrate to 23. INSERT arity bug (22 vs 23 ?) caught by migration test, not py_compile."
-
-- date: 2026-10-08
-  executor: strata-coder
-  tasks: []
-  done:
-    - audit-7-telemetry-lifecycle-report
-    - db-prune-days-rollup-pruning
-    - db-daily-max-400-to-90-three-months
-    - api-export-json-and-csv
-    - engine-log-capability-confirmed-short-window
-  deferred:
-    - a7-05-engine-per-request-fields
-    - r3-01-sparkline-window-label
-    - r1-01-ci-harness-na
-  key_fact: "telemetry.sqlite3 is a persistent gitignored file beside server.py (survives sessions). Engine keeps only 60 samples/series + 12-30 request records and has NO /log endpoint, so our DB is the only durable record. day rollup was never pruned (unbounded disk) and cap was 400d; fixed to 90d + db_prune_days. Added /api/export (JSON named fields + provenance) and /api/export.csv. Data verified real (6239 poll rows, plausible values)."
-
-- date: 2026-10-08
-  executor: strata-coder
-  tasks: []
-  done:
-    - gpu-2nd-pass-audit-6
-    - gpu-2nd-pass-review-003
-    - vram-free-mib-reference-frame-confirmed-card-relative
-    - gpu-mem-hint-zero-guard-fix
-    - acp-ci-fast-skip-honest
-  deferred:
-    - r3-01-sparkline-window-label
-    - r1-01-ci-harness-na
-  key_fact: "vram_free_mib is card-relative (live: 367->250 busy, 1722 idle — rises when idle, falls when busy; arena+expert_cache sum constant 27458 > 24576 so they overlap inside the card). Derived VRAM fix is sound, NOT a shortcut. Only real defect found in 2nd pass: app.js gpu-mem-hint used truthiness (mem_used && mem_total) which hides a legitimate 0; fixed to != null."
-
-- date: 2026-10-07
-  executor: strata-coder
-  tasks: []
-  done:
-    - gpu-vram-derived-from-vram-free-mib
-    - gpu-util-modelled-from-activity-table
-    - gpu-power-card-fallback-to-model
-    - gpu-name-rated-fallback
-    - gpu-sparkline-vram-series-from-poll-rows
-    - audit-5-gpu-readings-report
-    - audit-carryovers-a5-01..06
-    - readme-changelog-progress-doc-parity
-  deferred:
-    - r3-01-sparkline-window-label
-    - r1-01-ci-harness-na
-  key_fact: "On the AMD HIP driver the engine has NO gpu_* counters (psutil, no GPU API on Windows), but engine.vram_free_mib is live — so VRAM is the one recoverable GPU reading (used = fixed card total - free). amdgfxinfo64.dll won't load standalone (WinError 1114), no GFXINFO_* exports. temp/PCIe are NOT ACTIONABLE"
-
-- date: 2026-10-07
-  executor: strata-coder
-  tasks: []
-  done:
-    - prefill-gauge-band-in-sticky-header
-    - setMeter-to-setPrefillGauge
-    - a2-01-telemetry-verified-live
-    - readme-changelog-doc-parity
-    - stray-NUL-artifact-removed
-  deferred:
-    - r3-01-sparkline-window-label
-    - r1-01-ci-harness-na
-  key_fact: "Static assets (index.html/style.css/app.js) are served from disk per request by SimpleHTTPRequestHandler, so front-end edits need no server restart — only build_stats changes do"
-
-- date: 2026-10-07
-  executor: strata-coder
-  tasks: []
-  done:
-    - db-path-resolve-fix
-    - telemetry-status-surfaced
-    - falsy-zero-trend-guard
-    - dead-code-cleanup-db-record
-    - gpu-panel-caption
-  deferred:
-    - a1-02-grid-redesign
-    - a2-01-restart-8090
-    - r1-01-ci-harness-na
-  key_fact: "DB_PATH must be .resolve()d — sqlite resolves relative paths against the process cwd, so a server started elsewhere silently gets unable to open database file (telemetry off, empty trends)"
 

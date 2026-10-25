@@ -4,6 +4,25 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.12] - 2026-10-17
+
+### Changed
+- Dashboard runs under a supervisor (`service-supervisor.ps1`) that restarts it with backoff (5 s doubling to 60 s) and logs every start and exit to `%LOCALAPPDATA%\LLMMonitor\service-<port>.log`.
+- The server runs in the supervisor's kill-on-close job: stopping or killing the supervisor (or its task) stops the server too.
+- The supervisor writes `service-<port>.state.json` (PIDs, start times, heartbeat), honours `stop-<port>.request`, and takes over an orphaned server of ours instead of leaving it unsupervised.
+- Installer `install-service.ps1` registers the logon task `LLMMonitor` with no execution time limit; with `-WithBoot` also the S4U boot task `LLMMonitorBoot` (elevated shell). It aborts when it cannot remove an old task. Applied by the user on 2026-10-17.
+- `restart-llm-monitor.ps1` refuses a foreign port owner before touching anything, stops the dashboard through a stop request (works for the boot task's session-0 chain), stops both tasks, stops leftovers only by PID after a full-path match, and logs each action. `-Port <n>` no longer restarts the 8090 task.
+- The access log records only 4xx and 5xx responses (numeric comparison, independent of the Python version).
+- Logs over 5 MB rotate to `.1` when the supervisor starts a server.
+
+### Fixed
+- A second dashboard on the same port now fails with a bind error instead of silently sharing the port.
+- Restart script: an empty pipeline passed an empty PID list to `Stop-Process`.
+- A task stop no longer leaves the server running without a supervisor.
+
+### Tooling (agent)
+- `agent/scripts/gate-service.ps1` (state gate) and `agent/scripts/lint-handover.ps1` with fixture tests in `tests/lint-handover/`.
+
 ## [0.1.11] - 2026-10-15
 
 ### Added
