@@ -1,0 +1,5 @@
+llm-monitor/usage_ledger.py	~con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_event ON usage_event(source, msg_key)")	pass
+llm-monitor/usage_ledger.py	~if size < offset:  # rotated or rewritten: read again from 0 (the unique key prevents double counting)	if False:
+llm-monitor/usage_ledger.py	~end = data.rfind(b"\\n") + 1  # only complete lines; a line still being written waits for the next pass	end = len(data)
+llm-monitor/usage_ledger.py	~return (p or "").replace("\\\\", "/").rstrip("/").lower()	return (p or "").replace("\\\\", "/").rstrip("/")
+llm-monitor/usage_ledger.py	~orch = None if status.get("claude_code") != "ok" else orch	orch = orch
