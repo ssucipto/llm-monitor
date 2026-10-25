@@ -1,2 +1,3 @@
 # tests/usage suites and their PASS counts (M78). A change in count changes this file in the same commit.
 test_usage_ledger.py 24
+test_usage_api.py 4

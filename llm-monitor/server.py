@@ -25,9 +25,13 @@ import os
 import re
 import sqlite3
 import sys
+import threading
+import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+import usage_ledger
 
 PORT_DEFAULT = 8090
 
@@ -62,6 +66,44 @@ HTTP_TIMEOUT = 3.0
 # silently resolves against the process cwd, which is how a server started elsewhere
 # ends up with sqlite unable to open the file (telemetry disabled, empty trends).
 DB_PATH = str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
+
+# M78 usage ledger (numbers only; README "Usage ledger"): its own SQLite file beside server.py and the two sources it reads.
+# The LLM_MONITOR_* overrides exist for the tests (tests/usage/test_usage_api.py builds synthetic sources).
+USAGE_DB = os.environ.get("LLM_MONITOR_USAGE_DB") or str(Path(__file__).resolve().with_name("usage.sqlite3"))
+CLAUDE_ROOT = os.environ.get("LLM_MONITOR_CLAUDE_ROOT") or str(Path.home() / ".claude" / "projects")
+HERMES_DB = os.environ.get("LLM_MONITOR_HERMES_DB") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "hermes", "state.db")
+USAGE_STATUS = {"claude_code": "missing", "hermes": "missing"}
+_USAGE_LOCK = threading.Lock()
+
+
+def usage_ingest(budget_s=5.0):
+    """One ingest pass (the thread every 60 s, and a catch-up before each /api/usage answer); one writer at a time.
+    Returns partial: True when the time budget ran out or the pass failed (the answer then says so)."""
+    with _USAGE_LOCK:
+        con = None
+        try:
+            con = usage_ledger.connect(USAGE_DB)
+            partial = False
+            if os.path.isdir(CLAUDE_ROOT):
+                partial = bool(usage_ledger.ingest_claude(con, CLAUDE_ROOT, budget_s).get("partial"))
+                USAGE_STATUS["claude_code"] = "ok"
+            else:
+                USAGE_STATUS["claude_code"] = "missing"
+            USAGE_STATUS["hermes"] = usage_ledger.ingest_hermes(con, HERMES_DB)["status"]
+            return partial
+        except Exception as err:
+            print(f"[usage] ingest failed: {err}")
+            return True
+        finally:
+            if con is not None:
+                con.close()
+
+
+def usage_thread():
+    """Daemon: ingest every 60 s, so the ledger fills with no dashboard tab open (audit #93 PA-01)."""
+    while True:
+        usage_ingest(5.0)
+        time.sleep(60)
 DB_MAX_ROWS = 20000
 DB_PRUNE_EVERY = 500
 DB_WINDOW_S = 3600  # the two analysis windows (recent vs previous)
@@ -1639,6 +1681,25 @@ def serve(port):
                     return
                 body = payload.encode()
                 ctype = "application/json"
+            elif path in ("/api/usage", "/api/usage/sessions"):
+                qs = urllib.parse.parse_qs(parsed.query)
+                q = lambda k: qs.get(k, [None])[0]
+                try:
+                    usage_ledger.parse_window(q("from") or "", q("to") or "")
+                except ValueError as err:
+                    self.send_error(400, f"bad window: {err}")
+                    return
+                partial = usage_ingest(10.0)
+                con = usage_ledger.connect(USAGE_DB)
+                try:
+                    if path == "/api/usage":
+                        data = usage_ledger.summary(con, q("from"), q("to"), q("repo"), q("session"), dict(USAGE_STATUS), partial)
+                    else:
+                        data = usage_ledger.sessions(con, q("from"), q("to"), q("repo"), q("session"))
+                finally:
+                    con.close()
+                body = json.dumps(data).encode()
+                ctype = "application/json"
             else:
                 super().do_GET()
                 return
@@ -1660,6 +1721,7 @@ def serve(port):
 
     root = str(Path(__file__).resolve().parent)
     handler = partial(_Handler, directory=root)
+    threading.Thread(target=usage_thread, name="usage-ingest", daemon=True).start()
     httpd = _Server(("127.0.0.1", port), handler)
     httpd.serve_forever()
 

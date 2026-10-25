@@ -219,6 +219,20 @@ The poll row now carries the richer dogfooding fields `drafts_offered`, `drafts_
 and `pcie_share` (read from the same `/metrics` dict the poll already reads — zero extra
 engine cost), so speculative-decode and PCIe-share signals are available for analysis.
 
+## Usage ledger
+
+Token usage of the orchestrator (Claude Code) and of the local executor (Hermes running Strata), per time window, repo and
+session, for the Homelab delegation protocol (milestone M78; Homelab ADR-022).
+
+- **What is read:** `%USERPROFILE%\.claude\projects\**\*.jsonl` (only the `assistant` lines' ids, timestamps, model, working
+  folder and the four token counts) and `%LOCALAPPDATA%\hermes\state.db` (read-only: per-session model usage and the repo folder).
+- **What is never read or stored:** message text, titles, prompts, tool output.
+- **Where:** `llm-monitor/usage.sqlite3` (gitignored, its own file beside the telemetry DB). A thread ingests every 60 s, and
+  every `/api/usage` call catches up first (at most 10 s; `partial: true` if it ran out).
+- **API:** `GET /api/usage?from=ISO&to=ISO[&repo=PATH][&session=ID]` (totals, a cost-weighted unit, source status) and
+  `GET /api/usage/sessions?...` (one row per session and role). A bad window is HTTP 400; a missing source is `null`, never 0.
+- **Tests:** `py -3.12 tests/usage/run-tests.py` (synthetic data only; `run-e2e-tests.sh` runs it).
+
 ## Configuration
 
 All sources are at the top of `server.py`:

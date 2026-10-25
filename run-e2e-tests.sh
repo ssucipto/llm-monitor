@@ -28,4 +28,10 @@ for t in "${PROJECT_ROOT}/e2e/acp.integrity.test.sh" "${PROJECT_ROOT}/e2e/acp.in
   fi
 done
 
+# M78: the usage ledger suites (stdlib; counts enforced by tests/usage/run-tests.py). py on this PC (a bare python is a shim).
+if command -v py >/dev/null 2>&1; then PY=(py -3.12); elif command -v python3 >/dev/null 2>&1; then PY=(python3); else
+  echo "run-e2e-tests.sh: neither py nor python3 found for tests/usage" >&2; exit 1; fi
+"${PY[@]}" "${PROJECT_ROOT}/tests/usage/run-tests.py"
+pass=$((pass + 1))
+
 echo "run-e2e-tests.sh: ${pass} e2e tests passed"

@@ -1782,6 +1782,28 @@ async function wireDragDrop() {
   for (const container of containers) wireContainer(container);
 }
 
+// M78 usage ledger: today and the last 7 days, every 60 s. A missing source says "unavailable", never 0 (honest labels).
+const fmtTok = (n) => (n == null ? "unavailable" : n >= 1e6 ? `${(n / 1e6).toFixed(2)} M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)} k` : String(Math.round(n)));
+async function fetchUsage() {
+  const now = new Date();
+  const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const week = new Date(now.getTime() - 7 * 86400000);
+  try {
+    for (const [key, from] of [["day", day], ["week", week]]) {
+      const r = await fetch(`/api/usage?from=${iso(from)}&to=${iso(now)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const u = await r.json();
+      $(`usage-${key}-orch`).textContent = u.weighted.orchestrator == null ? "unavailable" : `${fmtTok(u.weighted.orchestrator)} weighted`;
+      $(`usage-${key}-exec`).textContent = u.executor ? `${fmtTok(u.executor.input + u.executor.output)} tokens` : "unavailable";
+      $("usage-sources").textContent = `Claude Code ${u.sources.claude_code}, Hermes ${u.sources.hermes}${u.partial ? " (catching up)" : ""}`;
+    }
+  } catch (err) {
+    console.error(err);
+    $("usage-sources").textContent = `unavailable (${err.message})`;
+  }
+}
+
 async function init() {
   // The countdown ring on the badge sweeps once per poll, so it has to know the
   // interval that JS actually uses.
@@ -1796,8 +1818,10 @@ async function init() {
   wireLogReveal();
   await refresh();
   fetchTimeseries("1h");
+  fetchUsage();
   setInterval(tickClock, 1000);
   setInterval(refresh, REFRESH_MS);
+  setInterval(fetchUsage, 60000);
 }
 
 init().catch(console.error);

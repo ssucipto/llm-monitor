@@ -4,6 +4,11 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.1.13] - 2026-10-25
+
+### Added
+- Usage ledger (M78): `usage_ledger.py` ingests numbers-only token usage of Claude Code and Hermes into `usage.sqlite3`; `/api/usage` and `/api/usage/sessions` serve it; a background thread ingests every 60 s; a "Usage ledger" panel shows today and 7 days. Built through the Homelab delegation pipeline (Strata IQ3_S writing from specs; contract 24 + API 4 cases, mutation proof 5/5).
+
 ## [0.1.12] - 2026-10-17
 
 ### Changed
