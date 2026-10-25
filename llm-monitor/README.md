@@ -27,35 +27,60 @@ to **Stale** and the page keeps its last rendered state (unlike the homelab
 template, there is no simulation fallback — a monitor should show truth, not
 fabricated numbers).
 
-## Run it as a service (start on boot and login)
+## Run it as a supervised service
 
-Two batch files sit beside `server.py` so the dashboard can start itself when the
-machine starts — no administrator privileges are needed:
+The dashboard runs under a supervisor: if `server.py` dies, it is restarted with
+backoff (5 s doubling to 60 s), and every start and exit is logged. A duplicate
+launch fails with a bind error instead of silently sharing the port. The server runs
+inside the supervisor's kill-on-close job, so when the supervisor ends (stopped task,
+killed process, stop request) its server ends with it: no orphans.
 
-| File                    | Purpose                                                        |
-|-------------------------|---------------------------------------------------------------|
-| `llm-monitor-start.bat` | Starts `server.py` on port 8090 as a detached process.        |
-| `install-service.bat`   | Registers two per-user scheduled tasks: `LLMMonitorBoot` (runs at every system startup — boot/restart) and `LLMMonitor` (runs at every interactive sign-in). |
+| File                     | Purpose |
+|--------------------------|---------------------------------------------------------------|
+| `service-supervisor.ps1` | Runs `server.py` in the foreground, restarts it with backoff, logs lifecycle to `service-<port>.log`, rotates logs over 5 MB to `.1`, writes `service-<port>.state.json`, honours `stop-<port>.request`, takes over an orphaned server of ours. |
+| `install-service.ps1`    | Registers one logon task (`LLMMonitor`) that runs the supervisor, no execution time limit. With `-WithBoot` it also registers `LLMMonitorBoot` (system startup, S4U, no stored password). `-WithBoot` needs an elevated native shell. |
+| `install-service.bat`    | Thin wrapper: runs `install-service.ps1` with the same arguments. |
+| `restart-llm-monitor.ps1`| Restarts the dashboard on any port; never stops anything by name (details below). |
 
 Run the installer **once** from a normal Windows shell (double-click, `cmd /c`, or
-PowerShell — not from Git-Bash/MSYS, which cannot register tasks):
+PowerShell, not from Git-Bash/MSYS, which cannot register tasks):
 
 ```bat
 llm-monitor\install-service.bat
+REM or with the boot trigger (elevated native shell):
+powershell -NoProfile -ExecutionPolicy Bypass -File llm-monitor\install-service.ps1 -WithBoot
 ```
 
-It is idempotent: it removes any existing task of the same name before re-creating
-each one, so re-running does not stack up. The launcher spawns `server.py` detached
-via PowerShell `Start-Process` (so each task returns immediately) and resolves a real
-Win32 `python.exe`, since a shell alias is not a valid Win32 application. stdout/stderr
-go to `%LOCALAPPDATA%\LLMMonitor\service.out.log` / `service.err.log`.
+Start it now: `Start-ScheduledTask -TaskName LLMMonitor`
+Stop it: `Stop-ScheduledTask -TaskName LLMMonitor` (then `Disable-ScheduledTask` to keep it off).
+Restart: `restart-llm-monitor.ps1` (or `-Port <n>` for a test port; without a task for that port it starts a supervisor directly).
 
-To stop the service:
+Files in `%LOCALAPPDATA%\LLMMonitor` (per port):
 
-```bat
-schtasks /delete /tn "LLMMonitorBoot" /f
-schtasks /delete /tn "LLMMonitor" /f
-```
+| File | Content |
+|---|---|
+| `service-<port>.log` | Lifecycle: `supervisor:` lines (start, server start with PIDs, exit, restart, rotation, end) and `restart:` lines from the restart script |
+| `service-<port>.err.log` | Server errors and 4xx/5xx access lines only (2xx lines are not logged) |
+| `service-<port>.out.log` | Server stdout |
+| `service-<port>.state.json` | Supervisor, wrapper and server PIDs, start times, heartbeat (every 10 s) |
+| `run-server-<port>.cmd` | The wrapper the supervisor runs |
+
+`service.log`, `service.err.log` and `service.out.log` (no port) are from the old launcher and are no longer written.
+
+**How the restart script works.** It refuses at once if a process that is not this
+dashboard owns the port. Otherwise it writes `stop-<port>.request`; every supervisor of
+that port stops its own server and logs `supervisor end (stop requested, exit 0)`. Then it
+stops both tasks, stops any remaining supervisor or server of ours by PID (after a full-path
+command-line match), and starts `LLMMonitor` again.
+
+**Boot decision (T6): option B.** The dashboard also starts at system startup via the
+S4U boot task, with no stored password. That chain runs in session 0: from the desktop its
+processes show no command line and cannot be stopped, so the restart script and the gate
+identify it through the state file and stop it through the stop request. At sign-in, the
+logon task's supervisor sees the attested server and exits (`already served`). The S4U
+context was tested without a reboot (`Start-ScheduledTask LLMMonitorBoot`, 2026-10-17); the
+startup trigger itself still needs a real reboot test (carryover a25-02). To revert to
+logon-only, run the installer without `-WithBoot`.
 
 ## What it monitors
 
@@ -214,3 +239,7 @@ ring on the badge (`@property --sweep`, duration from `--poll-ms` set by `app.js
 from `REFRESH_MS`), staggered panel/row/log entrance via a `--i` index, and an
 ambient backdrop. All informational, so the `prefers-reduced-motion: reduce`
 block at the **bottom** of `style.css` switches it off without losing any reading.
+
+## Updating ACP
+
+`/acp-version-update` refreshes `AGENTS.md` and `CLAUDE.md`. Local rules added to those files are lost on update. After every update, check that the `Local rules` section of `AGENTS.md` still exists, and re-add it from the local rule skill if not. Files under `agent/skills/local.*` and `agent/routing/taxonomy.yml` are preserved.

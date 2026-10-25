@@ -5,7 +5,7 @@ Run:  python server.py [port]     (default port 8090)
 Then open http://localhost:8090
 
 This is NOT the homelab dashboard. It monitors the local LLM engine that owns
-port 8080 on this machine — either Strata Coder or Vulkan llama.cpp (Qwen3.8-27B)
+port 8080 on this machine — either Strata (IQ3_S) or Vulkan llama.cpp (Qwen3.8-27B)
 — by reading the engine's own HTTP endpoints and the Hermes workspace state files.
 
 Sources it reads (all on this machine):
@@ -19,6 +19,7 @@ to nulls/empty and the page still renders. Override ENGINE_URL / WORKSPACE /
 LOG_FILES at the top to point at a different machine.
 """
 
+import http.server
 import json
 import os
 import re
@@ -256,9 +257,10 @@ def gather_log(limit=14):
     """Merge the tails of the log files into one feed, newest first."""
     entries = []
 
-    # watchdog.log: [HH:MM:SS] msg
+    # watchdog.log: [yyyy-MM-dd HH:MM:SS] msg (new format) or the legacy [HH:MM:SS] msg: both are parsed (CR-12), because
+    # old lines stay in the file and an older watchdog keeps writing the short form until it is restarted
     for ln in _tail(LOG_FILES["watchdog"], 6):
-        m = re.match(r"\[(\d{2}:\d{2}:\d{2})\]\s+(.*)", ln)
+        m = re.match(r"\[(?:\d{4}-\d{2}-\d{2} )?(\d{2}:\d{2}:\d{2})\]\s+(.*)", ln)
         if m:
             entries.append({"level": _level(m.group(2)), "iso": None, "msg": m.group(2), "source": "watchdog"})
 
@@ -1603,8 +1605,14 @@ def build_timeseries(range_str="1h"):
         con.close()
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    # On Windows, the default SO_REUSEADDR lets a second process bind the same port silently.
+    # With reuse off, a duplicate launch fails with WinError 10048 instead. Side effect: a quick restart can
+    # fail while the old socket is in TIME_WAIT; the supervisor retries with backoff.
+    allow_reuse_address = False
+
+
 def serve(port):
-    import http.server
     import urllib.parse
     from functools import partial
 
@@ -1640,9 +1648,19 @@ def serve(port):
             self.end_headers()
             self.wfile.write(body)
 
+        def log_request(self, code="-", size="-"):
+            # Only 4xx/5xx access lines are logged: the 5 s dashboard poll writes ~3 MB/day of 2xx lines.
+            # Compare as a number; str(HTTPStatus) is only the number from Python 3.11 on.
+            try:
+                status = int(code)
+            except (TypeError, ValueError):
+                return
+            if status >= 400:
+                super().log_request(code, size)
+
     root = str(Path(__file__).resolve().parent)
     handler = partial(_Handler, directory=root)
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd = _Server(("127.0.0.1", port), handler)
     httpd.serve_forever()
 
 

@@ -267,5 +267,6 @@ Append to `agent/memory/decisions.md`:
 ## Local rules (llm-monitor project)
 
 - **Never kill processes by name.** Do not use `Stop-Process`, `taskkill`, `kill` or `pkill` on `python` or `pythonw`. The LLM gateway (:8080) and Strata (:8081) also run as Python, and killing them takes down every local client.
-- **To restart the dashboard**, run `powershell -File C:\Project\llm-monitor\restart-llm-monitor.ps1` (port 8090) or `-Port <n>`. It stops only the process that owns the port, and only if that process runs this dashboard's `server.py`.
+- **To restart the dashboard**, run `powershell -File C:\Project\llm-monitor\restart-llm-monitor.ps1` (port 8090) or `-Port <n>`. It refuses if anything that is not this dashboard owns the port. Otherwise it writes `stop-<port>.request` (each supervisor of the port stops its own server; this is the only stop that works for the boot task's session-0 chain), then stops the tasks and any remaining supervisor or server of ours by PID, after a full-path command-line match.
 - If the script refuses ("not C:\Project\llm-monitor\llm-monitor\server.py"), something else holds the port. Report it instead of killing it.
+- **Handovers to an executor (Zed, a local model).** Follow `agent/skills/local.handover-executor.md`. Every handover must carry the rules block from that skill and pass `agent/scripts/lint-handover.ps1` (exit 0) before the executor starts. The gate `agent/scripts/gate-service.ps1` is the state check for the M76 service.
