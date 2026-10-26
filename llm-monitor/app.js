@@ -1649,6 +1649,9 @@ function switchView(viewName) {
   try {
     localStorage.setItem("llm-monitor-view", currentView);
   } catch (_) {}
+  // audit-32 F-32-05: hiding #view-full zeroes every tile's height. The ResizeObserver does
+  // heal this, but the spans should not depend on observer timing, so re-run the pass here.
+  queueLayout();
 }
 
 function wireTabs() {

@@ -55,3 +55,15 @@
   mistake: "Work that took a whole session (the tests/ui suite, M79/M80 records) lived only in gitignored paths, so one bad delete destroyed it. There is no backup of agent/ anywhere on the machine."
   correction: "Code that gates CI must be tracked: agent/tests/** is test code, not a report body, and belongs in git (add an exception in agent/.gitignore or move it under tests/). Before finishing any session that writes new tooling, state whether it is tracked and show git status."
   priority: high
+
+- date: 2026-10-26
+  task_type: testing
+  mistake: "Restored progress.yaml from HEAD after the accidental delete and treated it as correct, which silently resurrected stale rows: task-78-h2/h3 were status: pending although M78 shipped in 0.1.13-0.1.15, and active_handoff pointed at a report file that no longer exists. acp-validate.ts cannot catch either (it checks milestone-doc Status vs the milestone entry, and never reads active_handoff)."
+  correction: "After restoring any records file from git, verify its SEMANTICS against shipped evidence, not just its structure: every task row's status must agree with CHANGELOG/commits, and every path pointer must resolve on disk. Grep for pointers (active_handoff.path, file:) and test each one with a real exists check. A validator passing does not mean the records are true."
+  priority: high
+
+- date: 2026-10-26
+  task_type: testing
+  mistake: "Shipped three new browser checks as if they were coverage. One (reload-restores-order) would have compared the PRE-reload DOM, because document.readyState can still report 'complete' on the old document right after Page.navigate. Another (view-toggle-spans) turned out to be unfailable: with both the explicit layout call and the ResizeObserver removed, nothing sets gridRowEnd:auto, so it can never go red."
+  correction: "Every new assertion gets a mutation attempt in the same session. If it cannot be made to fail, say so in the report and the task doc instead of implying coverage. When a test reloads a page, prove the document is fresh (set window.__sentinel before navigating, poll until it is gone) — never trust readyState alone."
+  priority: high

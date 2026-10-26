@@ -209,7 +209,9 @@ active_handoff:
   to_executor: zed
   from_executor: claude
   git_commit: 86ad22bc8d62b9f89e91daf90728b0baefae10d1
-  status: active
+  status: closed
+  closed: "2026-10-26"
+  closed_reason: "The handoff body lived in gitignored agent/reports/ and was destroyed in the accidental agent/** delete of 2026-10-26, so it cannot be opened. Its subject (independent verification of the audit-27 service fixes) was overtaken by events: M79/M80 shipped on top of it, and only a25-02 (the reboot test, user-gated) remains open in audit-carryovers.md. audit-32 F-32-06."
 
 # Tasks are granular work items within milestones
 tasks:
@@ -363,6 +365,9 @@ tasks:
       estimated_hours: 1
       actual_hours: null
       completed_date: 2026-10-17
+  # Reconstructed 2026-10-26: only these two task rows survive. M77 shipped 8 tasks
+  # (tasks_total below), but its task docs for t1-t6 were gitignored and are unrecoverable,
+  # so this block is deliberately partial rather than invented. audit-32 F-32-02.
   milestone_77:
     - id: task-77-t0
       name: Handover rules and skill
@@ -394,12 +399,16 @@ tasks:
     - id: task-78-h2
       name: usage_ledger.py (ingest, storage, contract queries)
       priority: 1
-      status: pending
+      status: completed
+      started: 2026-10-25
+      completed_date: 2026-10-25
       file: agent/milestones/milestone-78-usage-ledger.md
     - id: task-78-h3
       name: server routes, ingest thread, Usage panel, docs, live checks
       priority: 1
-      status: pending
+      status: completed
+      started: 2026-10-25
+      completed_date: 2026-10-25
       file: agent/milestones/milestone-78-usage-ledger.md
 
   # Reconstructed 2026-10-26 after an accidental delete of agent/** reverted this file to HEAD.
@@ -528,10 +537,10 @@ tasks:
 # Documentation tracking
 documentation:
   design_documents: 0
-  milestone_documents: 0
+  milestone_documents: 9
   pattern_documents: 0
-  task_documents: 0
-  last_updated: 2026-10-12
+  task_documents: 26
+  last_updated: 2026-10-26
 
 # Overall progress metrics
 progress:
@@ -543,6 +552,20 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-26
+    description: |
+      M80 shipped and then audited (audit-32, 12 findings; review-014 diff-style). Recovery first: an
+      accidental delete of the gitignored agent/** tree was undone from git (405 tracked files) and the
+      untracked docs rebuilt with reconstruction notices; the tests/ui suite was rewritten from scratch
+      and is now tracked so it cannot be lost again.
+    items:
+      - "✅ masonry engine: ROW_UNIT 4px + per-tile gridRowEnd, align-items:start, ResizeObserver; Detail region full width with its own packing grid"
+      - "✅ agent/tests/ui/test_ui_browser.py: 10 browser checks over a hand-rolled stdlib CDP client; 6 mutation-proven (save-button, masonry-spans, columns-adapt, wide-full-width, detail-packing x2 ways, reload-restores-order)"
+      - "✅ audit-32 fixed records drift copied from HEAD: task-78-h2/h3 pending -> completed, active_handoff closed with reason, documentation counters made real (9/26), milestone_77 annotated as partial-with-reason"
+      - "✅ review-014 caught a false-pass in my own new reload check (readyState can report complete on the pre-reload document) — fixed with a window sentinel; view-toggle-spans recorded honestly as a guard, not a proof"
+      - "✅ gates: acp-validate PASS at 0.2.1, [tests/ui] PASS (10/7), acp.ci.sh --fast 6/6 PASS, run-e2e-tests.sh 4 passed, lint-handover 11/11 expectations met"
+      - "📋 Open: a32-01 (browser suite execution in CI not yet observed; Chrome 155 is on the ubuntu-24.04 image), a32-02 (fixed sleeps), a25-02 (reboot test, user-gated)"
+      - "⚠️ Process lesson: gitignored ACP memory has no backup; delete only exact leaf paths — llm-monitor/agent is NOT <repo>/agent"
   - date: 2026-10-17
     description: |
       M76/M77 closed out: user ran install-service.ps1 -WithBoot from a native shell (T4 done),
@@ -880,14 +903,14 @@ recent_work:
 # Next steps (prioritized list)
 next_steps:
   - Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in
-  - Claude audit of this session's M76 remediation via active_handoff (handoff-claude-m76-install-verification-2026-10-17.md)
-  - Wire the harness into CI (.github/workflows) if/when this repo gains a GitHub remote workflow run
+  - "a32-01: read one GitHub Actions run log and confirm 'ok test_ui_browser.py: 10/10' rather than a NOTRUN skip, so the functional gates are known to execute in CI"
+  - "a32-02: replace the browser suite's fixed sleeps with a settle helper if a false failure is ever observed"
   - Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature
 
 # General notes and observations
 notes:
   - "The ACP framework version (6.40.0) lives in AGENTS.md, CLAUDE.md, AGENT.md and identity.yml; keep it synced via /acp-sync. It is NOT bumped for project bug fixes."
-  - "The project's own version (0.1.0) is tracked in this file and CHANGELOG.md; there is no package manifest version for a stdlib-served dashboard."
+  - "The project's own version (0.2.1) is tracked in this file and CHANGELOG.md; there is no package manifest version for a stdlib-served dashboard."
   - "GPU on the AMD HIP driver: VRAM is derived from engine.vram_free_mib, util/power are modelled from engine activity, name is rated. Only temp/PCIe stay empty (no counter, no honest proxy). Draws real gpu_* counters automatically on NVML builds."
 
 # Current blockers (remove when resolved)

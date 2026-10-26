@@ -605,3 +605,23 @@ carryovers:
     fix_applied_date: 2026-10-26
     verified_in_audit: null
     notes: "M80-T4: agent/tests/ui/test_ui_browser.py drives the real page over CDP with a stdlib websocket client - page-clean, masonry-spans, wide-full-width, columns-adapt, save-button, reset-button, drag-persists; four of them mutation-proven. Wired into run-e2e-tests.sh and usage-tests.yml. Entry reconstructed 2026-10-26 after the original was lost in an accidental directory delete"
+
+  - id: a32-01
+    audit: 32
+    finding: "the browser suite is wired into CI but its execution there has never been observed; if no browser were found it would print NOTRUN and the run would report PASS with a SKIP, so seven functional gates could sit unexecuted on every push"
+    location: .github/workflows/usage-tests.yml
+    severity: medium
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Evidence gathered 2026-10-26: the ubuntu-24.04 runner image (20261023.334.3) ships Google Chrome 155, Chromium 155 and Edge 155, so /usr/bin/google-chrome in the suite's BROWSERS list should resolve. Still unverified: no CI run since the wiring landed has been read. Close by reading one Actions run log and confirming 'ok test_ui_browser.py: 10/10' rather than a SKIP line"
+
+  - id: a32-02
+    audit: 32
+    finding: "the browser suite reads geometry after fixed time.sleep() waits (3.0 s after navigate, 0.5-0.8 s per viewport change) instead of an observable settle condition, so a slow runner can produce a flaky read"
+    location: agent/tests/ui/test_ui_browser.py
+    severity: low
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Left deliberately in audit-32 (F-32-09): the waits are generous and the checks assert on computed style, not animation. Worth a settle helper (poll until two consecutive identical geometry reads) if a false failure is ever seen in CI"

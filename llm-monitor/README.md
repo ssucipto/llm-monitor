@@ -161,7 +161,8 @@ each column with no blank gutters, the column count follows the window width
 (`minmax(300px, 1fr)`, collapsing to one column at or below 900 px), and the wide panels
 (requests, charts, history) plus the whole **Detail** region span the full width. The
 layout is recomputed on load, on every data render, when a `<details>` opens or closes,
-when a card is resized, and after each drag.
+when a card is resized, when you switch between the Full and Compact views, and after
+each drag.
 
 ## Drag-and-drop layout
 

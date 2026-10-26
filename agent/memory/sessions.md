@@ -10,15 +10,19 @@
     - masonry-row-span-engine (ROW_UNIT 4px, layoutTiles/layoutAll/queueLayout, ResizeObserver)
     - detail-region-full-width + nested .tiles--detail packing (audit-30 F-30-01)
     - tile hierarchy/elevation + opacity-only entrance + 1100px KPI strip order (F-30-05..08)
-    - agent/tests/ui/test_ui_browser.py rebuilt stdlib-CDP suite, 7/7 incl. save/reset/drag
-    - mutation-proven save-button, masonry-spans, columns-adapt, wide-full-width
+    - agent/tests/ui/test_ui_browser.py rebuilt stdlib-CDP suite, 10/10 incl. save/reset/drag
+    - mutation-proven save-button, masonry-spans, columns-adapt, wide-full-width, detail-packing, reload-restores-order
+    - audit-32 (12 findings) and review-014 written; fixed the stale M78 task statuses; closed the dangling active_handoff
+    - new browser checks detail-packing, view-toggle-spans, reload-restores-order; removed a false-pass in the reload check
     - records: CHANGELOG 0.2.1, README Layout section, progress.yaml M79+M80, a30-01/a30-02
     - recovery: agent/ restored from git + rebuilt 405 tracked and ~25 untracked docs
     - agent/.gitignore now tracks agent/tests/** so a UI suite can never be lost again
   deferred:
     - a25-02-reboot-test -> still user-gated (unchanged since M76)
+    - a32-01-browser-suite-execution-in-ci -> read one Actions run log for 'ok test_ui_browser.py: 10/10'
+    - a32-02-fixed-sleeps-in-browser-suite -> settle helper if a false failure is ever seen
     - push-to-remote -> user decision
-    - lint-handover L9 fixture paths -> receipts for lost milestones unrecoverable
+    - lint-handover L9 fixture paths -> fixed with a labelled T7-receipts placeholder (original unrecoverable)
   key_fact: "gitignored ACP memory (agent/reports, milestones, tasks, sessions, and even untracked test code) has NO backup: one delete_path aimed at a scratch folder destroyed a whole session's work. Never pass a directory to delete tools; the app dir is llm-monitor/llm-monitor so 'llm-monitor/agent' is NOT 'agent'."
 
 - date: 2026-10-17

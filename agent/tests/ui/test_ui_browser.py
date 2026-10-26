@@ -150,6 +150,17 @@ def js(ws, expression):
     return r.get("result", {}).get("value")
 
 
+# Each grid's own children, in DOM order. Note that '.tiles > .panel' matches BOTH grids
+# (.tiles--detail carries .tiles as well) and persistOrder() also records #detail inside the
+# tiles list, so any order comparison must read the containers directly (audit-32).
+ORDER_SIG = """(() => {
+  const t = document.querySelector('.tiles');
+  const d = document.querySelector('.tiles--detail');
+  if (!t || !d) return null;
+  return { tiles: [...t.children].map(e => e.id), detail: [...d.children].map(e => e.id) };
+})()"""
+
+
 def main():
     browser = find_browser()
     if not browser:
@@ -275,10 +286,13 @@ def main():
         widths = js(ws, """(() => {
           const t = document.querySelector('.tiles'); const w = t.clientWidth;
           const out = {};
+          // Only #detail is a <details>; setting .open on a <section> is a no-op property,
+          // so open the real one explicitly (audit-32 F-32-08).
+          const d = document.getElementById('detail');
+          if (d) d.open = true;
           for (const id of ['requests','charts','history','detail']) {
             const el = document.getElementById(id);
             if (!el) { out[id] = 'missing'; continue; }
-            el.open = true;
             const r = el.getBoundingClientRect();
             out[id] = Math.abs(r.width - w) <= 2 ? 'full' : r.width + '/' + w;
           }
@@ -350,10 +364,14 @@ def main():
         saved = js(ws, "localStorage.getItem('llm-monitor-order')")
         assert saved, "Save layout wrote nothing to localStorage"
         order = json.loads(saved)
-        ids = set(order.get("tiles", [])) | set(order.get("detail", []))
-        panels = js(ws, "[...document.querySelectorAll('.tiles > .panel')].map(e => e.id)")
-        missing = sorted(set(panels) - ids)
-        assert not missing, f"saved order dropped panels: {missing}"
+        dom = js(ws, ORDER_SIG)
+        assert dom, "containers unavailable"
+        # Note: #detail is itself a child of .tiles (it is a grid item), so the tiles list
+        # legitimately contains it; comparing container children keeps that honest.
+        for key in ("tiles", "detail"):
+            assert sorted(order.get(key, [])) == sorted(dom[key]), (
+                f"saved {key} != DOM {key}: saved={order.get(key)} dom={dom[key]}"
+            )
         print("PASS save-button")
 
         # 6. reset-button — Reset clears the save and restores DEFAULT_ORDER (live first).
@@ -390,8 +408,7 @@ def main():
         })()""")
         assert pts, "no two on-screen panels to drag"
         src = pts["src"]
-        pos = "[...document.querySelectorAll('.tiles > .panel')].map(e => e.id).indexOf(" + json.dumps(src) + ")"
-        before = js(ws, pos)
+        before = js(ws, ORDER_SIG)
         ws.call("Input.dispatchMouseEvent", {"type": "mousePressed", "x": pts["x0"], "y": pts["y0"], "button": "left", "clickCount": 1})
         for i in (1, 2, 3):
             mx = pts["x0"] + (pts["x1"] - pts["x0"]) * i / 3
@@ -400,13 +417,114 @@ def main():
             time.sleep(0.12)
         ws.call("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": pts["x1"], "y": pts["y1"], "button": "left", "clickCount": 1})
         time.sleep(0.6)
-        after = js(ws, pos)
-        assert after != before and after >= 0, f"drag did not move #{src} (before={before}, after={after})"
+        after = js(ws, ORDER_SIG)
+        assert before and after, "order signature unavailable"
+        assert after["tiles"] != before["tiles"], f"drag did not reorder the tiles: {before['tiles']}"
+        assert src in after["tiles"] and src in before["tiles"], f"#{src} vanished from the tile grid"
+        assert after["tiles"].index(src) != before["tiles"].index(src), (
+            f"drag did not move #{src}: {before['tiles'].index(src)} -> {after['tiles'].index(src)}"
+        )
         persisted = js(ws, "localStorage.getItem('llm-monitor-order')")
         assert persisted, "drag committed but nothing was persisted"
-        got = json.loads(persisted).get("tiles", [])
-        assert got.index(src) == after, f"persisted position {got.index(src)} != DOM position {after}"
+        got = json.loads(persisted)
+        assert got.get("tiles") == after["tiles"], (
+            f"persisted tiles != DOM tiles:\\n  saved={got.get('tiles')}\\n  dom  ={after['tiles']}"
+        )
+        assert got.get("detail") == after["detail"], (
+            f"persisted detail != DOM detail:\\n  saved={got.get('detail')}\\n  dom  ={after['detail']}"
+        )
         print("PASS drag-persists")
+
+        # 8. detail-packing — the Detail region packs in its own columns with tight spans.
+        #    audit-30 F-30-01 / carryover a30-01: it used to be crammed into one narrow stack,
+        #    which wide-full-width (a width check) could not detect.
+        dgeo = js(ws, """(() => {
+          const t = document.querySelector('.tiles--detail'); if (!t) return null;
+          const cs = getComputedStyle(t);
+          const unit = parseFloat(cs.gridAutoRows) || 4;
+          const gap = parseFloat(cs.columnGap) || 0;
+          const tmpl = (cs.gridTemplateColumns.split(/\\s+/).filter(x => x && x !== 'none')).length || 1;
+          let bad = [], loose = [], tiles = 0;
+          const xs = new Set();
+          for (const el of t.children) {
+            if (!el.classList.contains('panel')) continue;
+            const r = el.getBoundingClientRect();
+            const h = r.height;
+            if (!h) continue;            // collapsed (log is hidden="until-found")
+            tiles++;
+            const m = /span\\s+(\\d+)/.exec(getComputedStyle(el).gridRowEnd);
+            if (!m || parseInt(m[1], 10) * unit < h - 1) bad.push(el.id + ':' + (m ? m[1] : 'none'));
+            else if (parseInt(m[1], 10) * unit > h + gap + unit * 2) loose.push(el.id + ':' + Math.round(parseInt(m[1], 10) * unit - h));
+            xs.add(Math.round(r.left));
+          }
+          return {bad, loose, tiles, cols: xs.size || Math.min(tmpl, tiles)};
+        })()""")
+        assert dgeo, "no .tiles--detail container"
+        assert dgeo["tiles"] >= 4, f"expected the Detail region to show several panels, got {dgeo['tiles']}"
+        assert not dgeo["bad"], f"Detail tiles without a sufficient row span: {dgeo['bad'][:6]}"
+        assert not dgeo["loose"], f"Detail tiles with slack in their row span: {dgeo['loose'][:6]}"
+        assert dgeo["cols"] >= 2, (
+            f"Detail region packed into {dgeo['cols']} column(s) at 1240px "
+            f"(audit-30 F-30-01 / a30-01 regression)"
+        )
+        print("PASS detail-packing")
+
+        # 9. view-toggle-spans — Full -> Compact -> Full leaves every span correct.
+        #    Hiding #view-full zeroes tile heights (audit-32 F-32-05); the spans must be
+        #    recomputed when the view is shown again. Tabs are trusted clicks in the sticky header.
+        click_id("tab-compact")
+        time.sleep(0.6)
+        assert js(ws, "document.body.getAttribute('data-view')") == "compact", "Compact tab did not switch the view"
+        click_id("tab-full")
+        time.sleep(0.6)
+        assert js(ws, "document.body.getAttribute('data-view')") == "full", "Full tab did not switch the view"
+        vgeo = js(ws, """(() => {
+          const t = document.querySelector('.tiles');
+          const unit = parseFloat(getComputedStyle(t).gridAutoRows) || 4;
+          let bad = [], n = 0;
+          for (const el of t.children) {
+            if (!el.classList.contains('panel')) continue;
+            const h = el.getBoundingClientRect().height;
+            if (!h) continue;
+            n++;
+            const m = /span\\s+(\\d+)/.exec(getComputedStyle(el).gridRowEnd);
+            if (!m || parseInt(m[1], 10) * unit < h - 1) bad.push(el.id + ':' + (m ? m[1] : 'auto'));
+          }
+          return {bad, n};
+        })()""")
+        assert vgeo["n"] >= 8, f"expected tiles to be laid out after the view toggle, got {vgeo['n']}"
+        assert not vgeo["bad"], f"tiles without a sufficient row span after Full->Compact->Full: {vgeo['bad'][:6]}"
+        print("PASS view-toggle-spans")
+
+        # 10. reload-restores-order — the README promise ("remembered between reloads") proven:
+        #     the drag from check 7 is still saved, so a fresh load must reproduce that order
+        #     in both grids (audit-32 F-32-03).
+        saved_before = js(ws, "localStorage.getItem('llm-monitor-order')")
+        assert saved_before, "no saved order to reload against"
+        expected = json.loads(saved_before)
+        # A sentinel on the old window proves we are reading the NEW document: right after
+        # Page.navigate the previous document can still report readyState == "complete",
+        # which would otherwise let this check compare the pre-reload DOM and pass vacuously.
+        js(ws, "window.__m80_pre_reload = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m80_pre_reload, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh = True
+                break
+            time.sleep(0.25)
+        assert fresh, "never observed a fresh document after Page.navigate"
+        time.sleep(3.0)   # first poll + render + layout pass
+        got = js(ws, ORDER_SIG)
+        assert got, "containers missing after reload"
+        assert got["tiles"] == expected.get("tiles"), (
+            f"reload did not apply the saved tiles order:\\n  saved={expected.get('tiles')}\\n  dom  ={got['tiles']}"
+        )
+        assert got["detail"] == expected.get("detail"), (
+            f"reload did not apply the saved detail order:\\n  saved={expected.get('detail')}\\n  dom  ={got['detail']}"
+        )
+        print("PASS reload-restores-order")
         return 0
     finally:
         for p in (proc, server):
