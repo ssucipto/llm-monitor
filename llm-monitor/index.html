@@ -52,6 +52,13 @@
       <span class="topbar__gauge__fill" id="top-gauge-fill"></span>
       <span class="topbar__gauge__knob" id="top-gauge-knob"></span>
     </div>
+    <div class="kpi-strip" role="group" aria-label="At a glance">
+      <div class="kpi"><data class="kpi__value" id="hero-tok" value="0">--</data><span class="kpi__unit">decode tok/s</span></div>
+      <div class="kpi"><span class="kpi__state" id="hero-state">idle</span><span class="kpi__unit">model state</span></div>
+      <div class="kpi"><data class="kpi__value" id="hero-power" value="0">--</data><span class="kpi__unit">watts</span></div>
+      <div class="kpi"><data class="kpi__value" id="hero-ctx" value="0">--</data><span class="kpi__unit">% context</span></div>
+      <div class="kpi"><data class="kpi__value" id="hero-hit" value="0">--</data><span class="kpi__unit">% cache hit</span></div>
+    </div>
   </header>
 
   <nav class="toc" aria-label="Jump to a section">
@@ -76,38 +83,7 @@
 
   <main id="main" class="layout">
     <div class="view-panel is-active" id="view-full" role="tabpanel" aria-labelledby="tab-full">
-    <section class="hero" id="hero" aria-labelledby="hero-h">
-      <h2 id="hero-h">At a glance</h2>
-      <div class="hero__stats">
-        <div class="hero__stat"><data class="hero__value" id="hero-tok" value="0">--</data><span class="hero__unit">decode tok/s</span></div>
-        <div class="hero__stat"><span class="hero__state" id="hero-state">idle</span><span class="hero__unit">model state</span></div>
-        <div class="hero__stat"><data class="hero__value" id="hero-power" value="0">--</data><span class="hero__unit">watts</span></div>
-        <div class="hero__stat"><data class="hero__value" id="hero-ctx" value="0">--</data><span class="hero__unit">% context</span></div>
-        <div class="hero__stat"><data class="hero__value" id="hero-hit" value="0">--</data><span class="hero__unit">% cache hit</span></div>
-      </div>
-    </section>
-    <div class="masonry">
-    <section class="panel engine" id="engine" aria-labelledby="engine-h">
-      <h2 id="engine-h">Engine</h2>
-      <p class="engine__badge" id="engine-active">unknown</p>
-      <dl class="engine__facts">
-        <div class="fact"><dt>Service</dt><dd id="engine-service">--</dd></div>
-        <div class="fact"><dt>Model</dt><dd id="engine-model">--</dd></div>
-        <div class="fact"><dt>Build</dt><dd id="engine-build">--</dd></div>
-        <div class="fact"><dt>Loaded</dt><dd id="engine-loaded">--</dd></div>
-        <div class="fact"><dt>Model path</dt><dd id="engine-path">--</dd></div>
-      </dl>
-      <dl class="engine__config">
-        <div class="fact"><dt>Pool workers</dt><dd id="cfg-pool">--</dd></div>
-        <div class="fact"><dt>PCIe fraction</dt><dd id="cfg-pcie">--</dd></div>
-        <div class="fact"><dt>Draft depth</dt><dd id="cfg-spec">--</dd></div>
-        <div class="fact"><dt>Min accept p</dt><dd id="cfg-min-p">--</dd></div>
-        <div class="fact"><dt>Arena</dt><dd id="cfg-arena">--</dd></div>
-        <div class="fact"><dt>Elastic VRAM</dt><dd id="cfg-elastic">--</dd></div>
-        <div class="fact"><dt>Conv-cache slots</dt><dd id="cfg-conv-slots">--</dd></div>
-        <div class="fact"><dt>Min free</dt><dd id="cfg-min-free">--</dd></div>
-      </dl>
-    </section>
+    <div class="tiles">
 
     <section class="panel live" id="live" aria-labelledby="live-h">
       <h2 id="live-h">Live inference</h2>
@@ -258,75 +234,11 @@
       </figure>
     </section>
 
-    <section class="panel hardware" id="hardware" aria-labelledby="hardware-h">
-      <h2 id="hardware-h">Hardware</h2>
-      <dl class="hardware__metrics">
-        <div class="hw" data-hw="cpu">
-          <dt><abbr title="CPU utilisation">CPU</abbr></dt>
-          <dd>
-            <data class="hw__value" id="hw-cpu" value="0">--</data>
-            <meter class="hw__gauge" id="hw-cpu-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
-          </dd>
-        </div>
-        <div class="hw" data-hw="ram">
-          <dt><abbr title="Resident memory">RAM</abbr></dt>
-          <dd>
-            <data class="hw__value" id="hw-ram" value="0">--</data>
-            <meter class="hw__gauge" id="hw-ram-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
-            <p class="hw__hint" id="hw-ram-hint">used / total</p>
-          </dd>
-        </div>
-      </dl>
-      <dl class="hardware__facts">
-        <div class="fact"><dt>VRAM free</dt><dd id="hw-vram">--</dd></div>
-        <div class="fact"><dt>Disk R/W</dt><dd id="hw-disk">--</dd></div>
-        <div class="fact"><dt>GPU</dt><dd id="hw-gpu">--</dd></div>
-        <div class="fact"><dt>CPU</dt><dd id="hw-cpu-name">--</dd></div>
-      </dl>
-    </section>
 
-    <section class="panel cache" id="cache" aria-labelledby="cache-h">
-      <h2 id="cache-h">Cache</h2>
-      <data class="cache__hit" id="cache-hit" value="0">--</data>
-      <meter class="cache__gauge" id="cache-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
-      <p class="cache__hint" id="cache-hint">prompt-token reuse</p>
-      <dl class="cache__facts">
-        <div class="fact"><dt>KV type</dt><dd id="cache-kv">--</dd></div>
-        <div class="fact"><dt>Expert slots</dt><dd id="cache-expert">--</dd></div>
-        <div class="fact"><dt>Expert cache</dt><dd id="cache-expert-mib">--</dd></div>
-        <div class="fact"><dt>Reused</dt><dd id="cache-reused">--</dd></div>
-        <div class="fact"><dt>Conv cache</dt><dd id="cache-conv">--</dd></div>
-        <div class="fact"><dt>Park/restore</dt><dd id="cache-parks">--</dd></div>
-        <div class="fact"><dt>Evictions</dt><dd id="cache-evictions">--</dd></div>
-      </dl>
-    </section>
 
-    <section class="panel spec" id="spec" aria-labelledby="spec-h">
-      <h2 id="spec-h">Speculative decode</h2>
-      <data class="spec__accept" id="spec-accept" value="0">--</data>
-      <meter class="spec__gauge" id="spec-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
-      <p class="spec__hint" id="spec-hint">draft accept rate</p>
-      <dl class="spec__facts">
-        <div class="fact"><dt>Drafts</dt><dd id="spec-drafts">--</dd></div>
-        <div class="fact"><dt>MTP / lookup</dt><dd id="spec-mtp">--</dd></div>
-        <div class="fact"><dt>Min accept p</dt><dd id="spec-min-p">--</dd></div>
-      </dl>
-    </section>
 
-    <section class="panel switch" id="switch" aria-labelledby="switch-h">
-      <h2 id="switch-h">Engine switch</h2>
-      <p class="switch__active" id="switch-engine">--</p>
-      <dl class="switch__facts">
-        <div class="fact"><dt>llama profile</dt><dd id="switch-profile">--</dd></div>
-        <div class="fact"><dt>Owner</dt><dd id="switch-owner">--</dd></div>
-        <div class="fact"><dt>PID</dt><dd id="switch-pid">--</dd></div>
-      </dl>
-      <ul class="switch__profiles" id="switch-profiles"></ul>
-    </section>
-    </div>
 
-    <div class="band">
-    <section class="panel requests" id="requests" aria-labelledby="requests-h">
+    <section class="panel requests tile--wide" id="requests" aria-labelledby="requests-h">
       <h2 id="requests-h">Requests</h2>
       <p class="requests__count" id="requests-count">--</p>
       <table class="request-table">
@@ -366,7 +278,7 @@
       </dl>
     </section>
 
-    <section class="panel charts" id="charts" aria-labelledby="charts-h">
+    <section class="panel charts tile--wide" id="charts" aria-labelledby="charts-h">
       <div class="charts__head">
         <h2 id="charts-h">Performance & Token Charts</h2>
         <div class="chart-controls">
@@ -451,7 +363,7 @@
       </div>
     </section>
 
-    <section class="panel history" id="history" aria-labelledby="history-h">
+    <section class="panel history tile--wide" id="history" aria-labelledby="history-h">
       <h2 id="history-h">History</h2>
       <p class="hist__window" id="hist-window">awaiting history</p>
       <dl class="hist__periods" id="hist-periods">
@@ -490,10 +402,105 @@
       <p class="hist__selected" id="hist-selected">slide the marker (or click a day) to inspect that day</p>
     </section>
 
+    <details class="detail" id="detail">
+      <summary class="detail__summary">Detail — engine, hardware, cache, speculative, switch, log</summary>
+      <div class="tiles tiles--detail">
+
+    <section class="panel engine" id="engine" aria-labelledby="engine-h">
+      <h2 id="engine-h">Engine</h2>
+      <p class="engine__badge" id="engine-active">unknown</p>
+      <dl class="engine__facts">
+        <div class="fact"><dt>Service</dt><dd id="engine-service">--</dd></div>
+        <div class="fact"><dt>Model</dt><dd id="engine-model">--</dd></div>
+        <div class="fact"><dt>Build</dt><dd id="engine-build">--</dd></div>
+        <div class="fact"><dt>Loaded</dt><dd id="engine-loaded">--</dd></div>
+        <div class="fact"><dt>Model path</dt><dd id="engine-path">--</dd></div>
+      </dl>
+      <dl class="engine__config">
+        <div class="fact"><dt>Pool workers</dt><dd id="cfg-pool">--</dd></div>
+        <div class="fact"><dt>PCIe fraction</dt><dd id="cfg-pcie">--</dd></div>
+        <div class="fact"><dt>Draft depth</dt><dd id="cfg-spec">--</dd></div>
+        <div class="fact"><dt>Min accept p</dt><dd id="cfg-min-p">--</dd></div>
+        <div class="fact"><dt>Arena</dt><dd id="cfg-arena">--</dd></div>
+        <div class="fact"><dt>Elastic VRAM</dt><dd id="cfg-elastic">--</dd></div>
+        <div class="fact"><dt>Conv-cache slots</dt><dd id="cfg-conv-slots">--</dd></div>
+        <div class="fact"><dt>Min free</dt><dd id="cfg-min-free">--</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel hardware" id="hardware" aria-labelledby="hardware-h">
+      <h2 id="hardware-h">Hardware</h2>
+      <dl class="hardware__metrics">
+        <div class="hw" data-hw="cpu">
+          <dt><abbr title="CPU utilisation">CPU</abbr></dt>
+          <dd>
+            <data class="hw__value" id="hw-cpu" value="0">--</data>
+            <meter class="hw__gauge" id="hw-cpu-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
+          </dd>
+        </div>
+        <div class="hw" data-hw="ram">
+          <dt><abbr title="Resident memory">RAM</abbr></dt>
+          <dd>
+            <data class="hw__value" id="hw-ram" value="0">--</data>
+            <meter class="hw__gauge" id="hw-ram-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
+            <p class="hw__hint" id="hw-ram-hint">used / total</p>
+          </dd>
+        </div>
+      </dl>
+      <dl class="hardware__facts">
+        <div class="fact"><dt>VRAM free</dt><dd id="hw-vram">--</dd></div>
+        <div class="fact"><dt>Disk R/W</dt><dd id="hw-disk">--</dd></div>
+        <div class="fact"><dt>GPU</dt><dd id="hw-gpu">--</dd></div>
+        <div class="fact"><dt>CPU</dt><dd id="hw-cpu-name">--</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel cache" id="cache" aria-labelledby="cache-h">
+      <h2 id="cache-h">Cache</h2>
+      <data class="cache__hit" id="cache-hit" value="0">--</data>
+      <meter class="cache__gauge" id="cache-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
+      <p class="cache__hint" id="cache-hint">prompt-token reuse</p>
+      <dl class="cache__facts">
+        <div class="fact"><dt>KV type</dt><dd id="cache-kv">--</dd></div>
+        <div class="fact"><dt>Expert slots</dt><dd id="cache-expert">--</dd></div>
+        <div class="fact"><dt>Expert cache</dt><dd id="cache-expert-mib">--</dd></div>
+        <div class="fact"><dt>Reused</dt><dd id="cache-reused">--</dd></div>
+        <div class="fact"><dt>Conv cache</dt><dd id="cache-conv">--</dd></div>
+        <div class="fact"><dt>Park/restore</dt><dd id="cache-parks">--</dd></div>
+        <div class="fact"><dt>Evictions</dt><dd id="cache-evictions">--</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel spec" id="spec" aria-labelledby="spec-h">
+      <h2 id="spec-h">Speculative decode</h2>
+      <data class="spec__accept" id="spec-accept" value="0">--</data>
+      <meter class="spec__gauge" id="spec-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
+      <p class="spec__hint" id="spec-hint">draft accept rate</p>
+      <dl class="spec__facts">
+        <div class="fact"><dt>Drafts</dt><dd id="spec-drafts">--</dd></div>
+        <div class="fact"><dt>MTP / lookup</dt><dd id="spec-mtp">--</dd></div>
+        <div class="fact"><dt>Min accept p</dt><dd id="spec-min-p">--</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel switch" id="switch" aria-labelledby="switch-h">
+      <h2 id="switch-h">Engine switch</h2>
+      <p class="switch__active" id="switch-engine">--</p>
+      <dl class="switch__facts">
+        <div class="fact"><dt>llama profile</dt><dd id="switch-profile">--</dd></div>
+        <div class="fact"><dt>Owner</dt><dd id="switch-owner">--</dd></div>
+        <div class="fact"><dt>PID</dt><dd id="switch-pid">--</dd></div>
+      </dl>
+      <ul class="switch__profiles" id="switch-profiles"></ul>
+    </section>
+
     <section class="panel log" id="log" hidden="until-found" aria-labelledby="log-h">
       <h2 id="log-h">System log</h2>
       <ol class="log__list" id="log-list"></ol>
     </section>
+      </div>
+    </details>
+
     </div>
     </div>
 

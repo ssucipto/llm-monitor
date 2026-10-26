@@ -43,3 +43,15 @@
   mistake: "restart-llm-monitor.ps1 used foreach ($pid_ in Get-OurOwners) { Stop-Process -Id $pid_ } without parentheses; PowerShell ran the call as a bare statement and iterated an EMPTY stream, so no process was ever stopped."
   correction: "In foreach ($x in <expr>), a bare command invocation is parsed as a statement, not a piped value. Assign first ($owners = Get-OurOwners) or wrap in parentheses, then iterate the variable."
   priority: high
+
+- date: 2026-10-26
+  task_type: cross-cutting
+  mistake: "Deleted the whole agent/ tree. A scratch folder had been created at llm-monitor/agent/scratch-m80 (inside the app dir); to remove it I called the delete tool on the parent-looking path llm-monitor/agent, which resolved to the repo-root agent/ directory. Everything gitignored under it (reports, tasks, milestones, sessions, tests/ui) was unrecoverable — GitHub held only the 405 tracked files."
+  correction: "Delete only the exact leaf you created, never a parent or a path you typed from memory. Before any delete_path on a directory: (1) list_directory that exact path and confirm its contents are only your scratch files, (2) confirm it is not a tracked or gitignored-but-valued tree, (3) prefer deleting the single file by full path. Never assume a directory name is unique — llm-monitor/agent and <repo>/agent both exist here. Scratch folders go in agent/scratch-<task>/ at the repo root and are named in the same message that creates them."
+  priority: high
+
+- date: 2026-10-26
+  task_type: cross-cutting
+  mistake: "Work that took a whole session (the tests/ui suite, M79/M80 records) lived only in gitignored paths, so one bad delete destroyed it. There is no backup of agent/ anywhere on the machine."
+  correction: "Code that gates CI must be tracked: agent/tests/** is test code, not a report body, and belongs in git (add an exception in agent/.gitignore or move it under tests/). Before finishing any session that writes new tooling, state whether it is tracked and show git status."
+  priority: high

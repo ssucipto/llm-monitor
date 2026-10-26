@@ -27,3 +27,9 @@ tasks/**
 sessions/**
 !sessions/.gitkeep
 !sessions/README.md
+
+# Test code is NOT a report body: agent/tests/** gates CI (run-e2e-tests.sh,
+# usage-tests.yml) and must be tracked. A whole suite was lost on 2026-10-26
+# because it was untracked, so nothing here ignores agent/tests/ (and a `tests/`
+# rule could never be undone by `!tests/**` — git cannot re-include a file whose
+# parent directory is excluded).

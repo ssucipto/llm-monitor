@@ -585,3 +585,23 @@ carryovers:
     fix_applied_date: 2026-10-17
     verified_in_audit: null
     notes: "Kill-on-close job (task stop now stops the server: 18:16), state file attestation (gate G3, restart, logon supervisor) and stop request (restart from the session-0 state at 18:15:00). Awaiting independent verification (Zed handoff)."
+
+  - id: a30-01
+    audit: 30
+    finding: "the collapsible Detail region was crammed into one grid column, so its six secondary panels stacked in a single narrow stack instead of using the available width"
+    location: llm-monitor/style.css:.detail
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: null
+    notes: "M80-T2: .detail spans the grid (grid-column: 1 / -1) and .tiles--detail is its own auto-fill minmax(280px,1fr) masonry grid; wide-full-width asserts the region spans the full width. Entry reconstructed 2026-10-26 after the original was lost in an accidental directory delete"
+
+  - id: a30-02
+    audit: 30
+    finding: "no functional verification existed for the dashboard: nothing ever pressed Save/Reset or dragged a panel, so the M79 layout claims were unverified (closes the audit-29 recommendation)"
+    location: agent/tests/ui/
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: null
+    notes: "M80-T4: agent/tests/ui/test_ui_browser.py drives the real page over CDP with a stdlib websocket client - page-clean, masonry-spans, wide-full-width, columns-adapt, save-button, reset-button, drag-persists; four of them mutation-proven. Wired into run-e2e-tests.sh and usage-tests.yml. Entry reconstructed 2026-10-26 after the original was lost in an accidental directory delete"

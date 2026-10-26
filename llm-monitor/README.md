@@ -93,7 +93,7 @@ files and log tails. Sections:
   speed reading lives here too, with a full-width gradient speed gauge pinned to the
   bottom edge of the sticky header (scale ticks every 25% and a knob that slides to
   the current reading) so it stays visible while the page scrolls.
-- **At a glance** — the hero band under the header: decode tok/s, model state (Reading /
+- **At a glance** — the KPI strip in the sticky header: decode tok/s, model state (Reading /
   Generating / Queued / Idle), watts, % context (two decimals), and % cache hit.
 - **Engine** — which service owns the port (Strata / Vulkan), model, build, loaded
   state, model path. From `/health`, `/v1/models`, `/props`.
@@ -153,18 +153,29 @@ files and log tails. Sections:
   boundary before pruning can drop them, so weekly/monthly history survives uptime
   the raw polls cannot.
 
+## Layout
+
+The panels are laid out by a **masonry engine**: a CSS grid with 4 px track rows where
+`app.js` gives each card a row span computed from its own height. Cards pack flush in
+each column with no blank gutters, the column count follows the window width
+(`minmax(300px, 1fr)`, collapsing to one column at or below 900 px), and the wide panels
+(requests, charts, history) plus the whole **Detail** region span the full width. The
+layout is recomputed on load, on every data render, when a `<details>` opens or closes,
+when a card is resized, and after each drag.
+
 ## Drag-and-drop layout
 
-Any panel can be dragged by its heading and dropped anywhere in the card masonry
-or the history band — document order drives both, so a drop reorders the DOM and
-the latest positions are remembered automatically in `localStorage` between reloads.
+Any panel can be dragged by its heading and dropped anywhere in the tile grid or the
+collapsible **Detail** region at the bottom — document order drives both, so a drop
+reorders the DOM and the latest positions are remembered automatically in `localStorage`
+between reloads (layouts saved by the older two-container layout migrate on load).
 While dragging, a **dashed slot** shows exactly where the panel will land and the
 other panels part around it, so the drop point is unambiguous before you release;
 the dragged panel eases toward the pointer for a fluid follow, and a card can land
-in the band or vice versa. The footer **Save layout** button commits the arrangement
+in the Detail region or vice versa. The footer **Save layout** button commits the arrangement
 explicitly and **Reset layout** restores the default priority order (`?reset=1` in
 the URL clears the save too). Touch is excluded (so page scrolling is never hijacked),
-and the hero band is fixed.
+and the KPI strip is fixed.
 
 ## `/api/stats` shape
 

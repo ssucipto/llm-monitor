@@ -4,10 +4,10 @@
 
 project:
   name: llm-monitor
-  version: 0.1.12
+  version: 0.2.1
   started: 2026-10-07
   status: in_progress
-  current_milestone: M76
+  current_milestone: M80
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -160,6 +160,48 @@ milestones:
       Executed through the Homelab delegation pipeline (Strata IQ3_S): H1 records + contract (81e3dd5), H2 the module (T1,
       3e1a940), H3 server + panel (T0, 8fa153d). Live on :8090 since 2026-10-25: the B-88 reference window gives executor
       39961 / 9475 / 741458, Hermes ok; /api/stats 200 in about 0.1 s.
+
+  - id: M79
+    name: UI Modernization — Compact Dashboard
+    priority: 1
+    file: agent/milestones/milestone-79-ui-modernization.md
+    status: completed
+    progress: 100
+    started: "2026-10-26"
+    completed: "2026-10-26"
+    estimated_weeks: 2
+    tasks_completed: 8
+    tasks_total: 8
+    notes: |
+      Modern look + compact dashboard hierarchy for the full view: design tokens, KPI strip, tile grid with
+      in-task drag port, progressive disclosure, dense tables, responsive/HUD parity, tests + docs. Planned after
+      audit-28 (--pre-impl, 14 findings); all remediations R1-R8 folded into the task docs. Hard rules: the id
+      attributes are the contract (hide, never delete), #view-compact subtree untouched except token restyle,
+      zero /api contract changes, no new frameworks or build tooling.
+      Post-closeout user verdict (audit-30): layout did not meet the modern-dashboard goal across three
+      iterations; packing/scan-order/wide-tile requirements conflict in grid and multicol. Superseded by M80.
+      NOTE: this entry and its task block were reconstructed 2026-10-26 after an accidental delete of agent/**
+      reverted progress.yaml to HEAD; the notes text is a verbatim copy read from the file earlier that day,
+      the t1-t4 task names are inferred from the code comments (M79-T1..T4) and CHANGELOG 0.2.0.
+  - id: M80
+    name: Dashboard Layout Engine + Functional Verification
+    priority: 1
+    file: agent/milestones/milestone-80-layout-engine-and-verification.md
+    status: completed
+    progress: 100
+    started: "2026-10-26"
+    completed: "2026-10-26"
+    estimated_weeks: 1
+    tasks_completed: 5
+    tasks_total: 5
+    notes: |
+      Masonry layout engine (CSS grid + JS-computed row spans) replaces multicol packing: gap-free,
+      column count adapts to window, wide tiles and the Detail region span full width. Headless-browser
+      functional suite (CDP over stdlib websockets; Edge here, Chrome in CI) proves Save/Reset layout,
+      drag persistence, masonry spans and column adaptation — closes the audit-29 recommendation and
+      answers the user's "ensure the save button works". Planned after audit-30 (10 findings F-30-01..10).
+      Reconstructed 2026-10-26 after the accidental agent/** delete; notes text is a verbatim copy read
+      from this file earlier that day.
 
 active_handoff:
   path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
@@ -359,6 +401,129 @@ tasks:
       priority: 1
       status: pending
       file: agent/milestones/milestone-78-usage-ledger.md
+
+  # Reconstructed 2026-10-26 after an accidental delete of agent/** reverted this file to HEAD.
+  # t5-t8 names/dates are verbatim from the pre-delete file; t1-t4 names are inferred from the
+  # M79-Tn code comments and CHANGELOG 0.2.0 (marked with *).
+  milestone_79:
+    - id: task-79-t1
+      name: Design-token layer (spacing, density, elevation, type scale) *
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t1-design-tokens.md
+      estimated_hours: 2
+    - id: task-79-t2
+      name: KPI strip in the sticky header replacing the hero band *
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t2-kpi-strip.md
+      estimated_hours: 2
+    - id: task-79-t3
+      name: Single .tiles grid, drag port, collapsible Detail region *
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t3-tile-grid-drag.md
+      estimated_hours: 3
+    - id: task-79-t4
+      name: Progressive disclosure for the six secondary panels *
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t4-progressive-disclosure.md
+      estimated_hours: 2
+    - id: task-79-t5
+      name: Charts tile restyle only (controls unchanged)
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t5-charts-restyle.md
+      estimated_hours: 1
+    - id: task-79-t6
+      name: Dense tables (requests, history comparison)
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t6-dense-tables.md
+      estimated_hours: 2
+    - id: task-79-t7
+      name: Responsive breakpoints and HUD parity
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t7-responsive-hud-parity.md
+      estimated_hours: 2
+    - id: task-79-t8
+      name: Tests, docs and version
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-79-ui-modernization/task-79-t8-tests-docs-version.md
+      estimated_hours: 2
+  milestone_80:
+    - id: task-80-t1
+      name: Masonry layout engine (JS row spans) replacing multicol packing
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t1-masonry-engine.md
+      estimated_hours: 3
+    - id: task-80-t2
+      name: Detail region full-width + drag target re-proof
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t2-detail-region.md
+      estimated_hours: 1
+    - id: task-80-t3
+      name: Tile hierarchy, elevation and safe entrance animation
+      priority: 2
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t3-tile-polish.md
+      estimated_hours: 2
+    - id: task-80-t4
+      name: Headless-browser functional suite (CDP, stdlib-only)
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t4-browser-harness.md
+      estimated_hours: 4
+    - id: task-80-t5
+      name: Records — CHANGELOG 0.2.1, README, progress.yaml, carryovers
+      priority: 2
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t5-records.md
+      estimated_hours: 1
 
 # Documentation tracking
 documentation:

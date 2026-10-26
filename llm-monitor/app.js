@@ -121,40 +121,92 @@ function setGauge(valueId, gaugeId, pct, higherBetter) {
 }
 
 // ---------- Drag-and-drop reordering ----------
-// Both the masonry columns and the band read document order, so a drag commits by
-// moving the panel's DOM node. pointermove/pointerup live on the document (not the
-// container) so a drag keeps tracking over the hero, gaps and footer, and the drop
-// target is hit-tested per move — a card can land in the band and vice versa.
+// M79-T3: one .tiles grid replaces the old .masonry + .band containers. The grid
+// reads document order, so a drag commits by moving the panel's DOM node.
+// pointermove/pointerup live on the document (not the container) so a drag keeps
+// tracking over gaps and footer, and the drop target is hit-tested per move.
 // A dashed slot element is inserted at the would-be position and the other panels
 // FLIP-part around it, so the drop point is unambiguous before releasing. The
 // dragged panel eases toward the pointer (CSS transition while dragging) for a
 // fluid follow. The arrangement auto-persists in localStorage on every commit
 // (the latest positions are always recorded); the footer Save button confirms it
 // explicitly and Reset restores the default order. ?reset=1 clears the save too.
+// Old two-container saves ({masonry:[...], band:[...]}) migrate to the single
+// list (masonry first, then band), so pre-M79 layouts survive the switch.
 const ORDER_KEY = "llm-monitor-order";
 const DEFAULT_ORDER = {
-  masonry: ["engine", "live", "context", "throughput", "power", "gpu", "hardware", "cache", "spec", "switch"],
-  band: ["requests", "analysis", "charts", "history", "log"],
+  tiles: ["live", "throughput", "context", "gpu", "power", "usage", "requests", "analysis", "charts", "history"],
+  detail: ["engine", "hardware", "cache", "spec", "switch", "log"],
 };
 let drag = null;
-let containers = [];
+let container = null;      // primary .tiles
+let detailContainer = null; // .tiles--detail inside <details#detail>
 let slotEl = null;
+
+function containersList() {
+  return [container, detailContainer].filter(Boolean);
+}
+
+// ---------- Masonry layout engine (M80-T1, audit-30 F-30-01..03) ----------
+// .tiles is a grid with a fine row unit; each tile gets a row span equal to its
+// own height plus one gap, so columns pack without gutters while DOM order (the
+// drag contract) stays untouched — the engine only writes gridRowEnd.
+// align-items:start in CSS keeps the tile box at content height, so measuring
+// never depends on the previous span (no reset needed, no RO feedback loop).
+const ROW_UNIT = 4;
+function layoutTiles(c) {
+  if (!c) return;
+  const gap = parseFloat(getComputedStyle(c).columnGap) || 0;
+  for (const el of c.children) {
+    if (el === slotEl) continue; // slot span is set by placeSlot, at drag height
+    const h = el.getBoundingClientRect().height;
+    if (!h) {
+      el.style.gridRowEnd = "auto"; // collapsed (closed details, until-found log)
+      continue;
+    }
+    el.style.gridRowEnd = `span ${Math.max(1, Math.ceil((h + gap) / ROW_UNIT))}`;
+  }
+}
+
+function layoutAll() {
+  for (const c of containersList()) layoutTiles(c);
+}
+
+let layoutQueued = false;
+function queueLayout() {
+  if (layoutQueued) return;
+  layoutQueued = true;
+  requestAnimationFrame(() => {
+    layoutQueued = false;
+    layoutAll();
+  });
+}
 
 function persistOrder() {
   const order = {};
-  for (const c of containers) order[c.className.split(" ")[0]] = [...c.children].map((el) => el.id);
+  if (container) order.tiles = [...container.children].filter((el) => el !== slotEl).map((el) => el.id);
+  if (detailContainer) order.detail = [...detailContainer.children].filter((el) => el !== slotEl).map((el) => el.id);
   localStorage.setItem(ORDER_KEY, JSON.stringify(order));
 }
 
 function applyOrder(order) {
-  for (const [cls, ids] of Object.entries(order)) {
-    const container = containers.find((c) => c.className.split(" ")[0] === cls);
-    if (!container) continue;
-    const kids = [...container.children].filter((k) => k !== slotEl);
+  // M79 object form {tiles:[...], detail:[...]}; the pre-M79 two-container form
+  // {masonry:[...], band:[...]} migrates into tiles; a bare array is all-tiles.
+  if (Array.isArray(order)) order = { tiles: order };
+  else if (!order.tiles && (order.masonry || order.band)) {
+    // Pre-M79 saves had no usage panel (it post-dates them); append it so a
+    // migrated layout does not silently drop the tile.
+    const tiles = [...(order.masonry || []), ...(order.band || [])];
+    if (!tiles.includes("usage")) tiles.push("usage");
+    order = { tiles };
+  }
+  for (const c of containersList()) {
+    const ids = c === container ? order.tiles || [] : order.detail || [];
+    const kids = [...c.children].filter((k) => k !== slotEl);
     const byId = new Map(kids.map((k) => [k.id, k]));
     const wanted = ids.map((id) => byId.get(id)).filter(Boolean);
     wanted.concat(kids.filter((k) => !wanted.includes(k)))
-      .forEach((el) => container.appendChild(el));
+      .forEach((el) => c.appendChild(el));
   }
 }
 
@@ -173,11 +225,25 @@ function restoreOrder() {
 }
 
 function hitContainer(x, y) {
-  for (const c of containers) {
+  for (const c of containersList()) {
     const r = c.getBoundingClientRect();
-    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return c;
+    if (r.width || r.height) {
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return c;
+    }
   }
   return null;
+}
+
+// A drag held over the collapsed Detail region opens it, so the drop target is
+// real: while <details> is closed its content is display:none (zero rect) and a
+// panel dropped "into" it would be invisible. The summary's own rect is used.
+function openDetailForDrag(x, y) {
+  const detail = $("detail");
+  if (!detail || detail.open) return;
+  const sum = detail.querySelector("summary");
+  if (!sum) return;
+  const r = sum.getBoundingClientRect();
+  if (x >= r.left && x <= r.right && y >= r.top - 8 && y <= r.bottom + 8) detail.open = true;
 }
 
 // The candidate slot in `container` for a drop at (x, y): nearest sibling by
@@ -203,9 +269,17 @@ function slotAnchor(container, x, y) {
 }
 
 function placeSlot(x, y) {
+  openDetailForDrag(x, y);
   const target = hitContainer(x, y) || (drag && drag.target);
   if (!target || !drag) return;
   drag.target = target;
+  // audit-31 P-01: the preview slot must be as tall as the panel it previews —
+  // its 46px min-height would collapse between tall masonry neighbours.
+  const ph = drag.panel.getBoundingClientRect().height;
+  if (ph) {
+    const gap = parseFloat(getComputedStyle(target).columnGap) || 0;
+    slotEl.style.gridRowEnd = `span ${Math.max(1, Math.ceil((ph + gap) / ROW_UNIT))}`;
+  }
   const a = slotAnchor(target, x, y);
   if (!a) return;
   // Only re-part when the candidate slot actually changed, so the preview does
@@ -290,6 +364,8 @@ function commitDrag(e) {
   if (!moved) return; // a plain click, not a drag — leave the order alone
   if (ref) target.insertBefore(panel, ref);
   else target.appendChild(panel);
+  slotEl.style.gridRowEnd = ""; // audit-31 P-01: clear the drag-height span
+  layoutAll(); // M80-T1: the moved panel re-spans into its new column
 
   // FLIP the resting panels, and glide the dragged one from its hover position
   // to its final slot, so the release reads as one continuous motion.
@@ -750,6 +826,26 @@ function wireLogReveal() {
   log.addEventListener("beforematch", () => {
     log.classList.add("revealed");
   });
+}
+
+// M79-T4: the Detail region opens itself when a TOC anchor or Ctrl-F (find-in-page)
+// targets a panel inside it, so hidden-never-deleted stays navigable.
+function wireDetail() {
+  const detail = $("detail");
+  if (!detail) return;
+  for (const id of ["engine", "hardware", "cache", "spec", "switch", "log"]) {
+    const el = $(id);
+    if (el) el.addEventListener("beforematch", () => { detail.open = true; });
+  }
+  window.addEventListener("hashchange", () => {
+    const target = location.hash.slice(1);
+    if (target && detail.querySelector(`#${CSS.escape(target)}`)) detail.open = true;
+  });
+  // A pending anchor present at load (deep link) also opens it.
+  if (location.hash) {
+    const target = location.hash.slice(1);
+    if (target && detail.querySelector(`#${CSS.escape(target)}`)) detail.open = true;
+  }
 }
 
 // ---------- Clock ----------
@@ -1486,6 +1582,7 @@ async function refresh() {
     // the user knows the numbers are not live.
     console.warn("stats endpoint unavailable", err);
     setBadge(true);
+    layoutAll(); // audit-31 P-05: spans must stay correct even on the failure path
     return;
   }
 
@@ -1513,6 +1610,7 @@ async function refresh() {
   renderHud(data);
 
   lastStatsData = data;
+  layoutAll(); // M80-T1: re-span after every render pass
   if (Date.now() - lastTimeseriesFetch > 15000 && (currentChartRange === "15m" || currentChartRange === "1h")) {
     fetchTimeseries(currentChartRange);
   }
@@ -1774,12 +1872,27 @@ function renderHud(data) {
 }
 
 async function wireDragDrop() {
-  containers = ["masonry", "band"].map((cls) => document.querySelector(`.${cls}`)).filter(Boolean);
+  container = document.querySelector(".tiles");
+  if (!container) return;
   slotEl = document.createElement("div");
   slotEl.className = "drop-slot";
   slotEl.id = "drop-slot";
   // Detached until a drag places it, so it never renders or takes a11y order.
-  for (const container of containers) wireContainer(container);
+  wireContainer(container);
+  // M79-T4: the Detail region is a second tiles container; panels may move between
+  // them, so both are wired and persistOrder records both lists under one key.
+  detailContainer = document.querySelector(".tiles--detail");
+  if (detailContainer) wireContainer(detailContainer);
+  // M80-T1: any child that changes size (poll updates, log lines, details open,
+  // until-found reveal — audit-31 P-03) re-runs the masonry pass. Observing the
+  // children, not the containers, is what catches a <details> growing inside.
+  if (typeof ResizeObserver === "function") {
+    const ro = new ResizeObserver(queueLayout);
+    for (const c of containersList()) {
+      for (const el of c.children) ro.observe(el);
+    }
+  }
+  window.addEventListener("resize", queueLayout);
 }
 
 // M78 usage ledger: today and the last 7 days, every 60 s. A missing source says "unavailable", never 0 (honest labels).
@@ -1809,13 +1922,14 @@ async function init() {
   // interval that JS actually uses.
   document.documentElement.style.setProperty("--poll-ms", `${REFRESH_MS}ms`);
   wireTabs();
+  wireDragDrop(); // collects the containers before any order is applied
   restoreOrder();
-  wireDragDrop();
   wireScrub();
   wireLayoutButtons();
   wireCharts();
   tickClock();
   wireLogReveal();
+  wireDetail();
   await refresh();
   fetchTimeseries("1h");
   fetchUsage();

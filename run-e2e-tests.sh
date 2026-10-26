@@ -34,4 +34,8 @@ if command -v py >/dev/null 2>&1; then PY=(py -3.12); elif command -v python3 >/
 "${PY[@]}" "${PROJECT_ROOT}/tests/usage/run-tests.py"
 pass=$((pass + 1))
 
+# M79: the UI static suites (id contract, tile grid, server smoke; counts enforced by agent/tests/ui/run-tests.py).
+"${PY[@]}" "${PROJECT_ROOT}/agent/tests/ui/run-tests.py"
+pass=$((pass + 1))
+
 echo "run-e2e-tests.sh: ${pass} e2e tests passed"

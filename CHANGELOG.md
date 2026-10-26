@@ -4,6 +4,23 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.2.1] - 2026-10-26
+
+### Changed
+- The tile area is now a masonry grid instead of a fixed-row grid: `app.js` measures each panel and gives it a row span on a 4px track, so columns pack flush with no blank gutters between blocks of different heights. The column count follows the window (`minmax(300px,1fr)`, one column at or below 900px) and is recomputed on load, on every data render, when a `<details>` opens or closes, on resize (ResizeObserver) and after each drag. Wide panels (requests, charts, history) and the whole Detail region span the full width; the Detail region packs in its own columns rather than one narrow stack.
+
+### Added
+- `agent/tests/ui/test_ui_browser.py`: a headless-browser functional suite that drives the dashboard over CDP with a hand-rolled stdlib websocket client (no new dependencies) on its own free port — Edge here, Chrome paths for CI, and a visible `NOTRUN browser-unavailable` skip when no browser exists. Seven checks: clean page load, live masonry row spans with no slack, full-width wide tiles, column count adapting at 1240/980/860/640px, **Save layout** writing the order, **Reset layout** clearing it and restoring the default order, and a trusted-input drag persisting. Mutation-proven: renaming `#layout-save`, removing or inflating the row spans, moving the 900px breakpoint and dropping the wide-tile rule each fail their check.
+
+## [0.2.0] - 2026-10-26
+
+### Changed
+- Dashboard UI modernization (M79): the full view is a compact dashboard — a KPI strip in the sticky header (decode tok/s, model state, watts, % context, % cache hit) replaces the hero band; panels sit in one CSS Grid tile system (wide tiles for requests/charts/history) instead of the multi-column masonry; six secondary panels (engine, hardware, cache, spec, switch, log) move behind a collapsible Detail section. Design-token layer adds spacing/density/elevation/type scale; tables are dense with zebra rows and sticky headers; charts keep their controls and adopt tile sizing; breakpoints collapse at 900px and 480px.
+- Drag-and-drop now works across the tile grid and the Detail region; saved layouts from the old masonry/band format migrate automatically. The footer Save/Reset layout buttons and `?reset=1` keep working.
+
+### Added
+- `agent/tests/ui/`: static UI suite (7 checks) that makes the id contract between index.html and app.js mechanical — literal and template-built ids, DEFAULT_ORDER vs panels, HUD id count, stale-class leftovers, and a free-port server smoke; wired into CI (`usage-tests.yml`). Mutation-proven: deleting a contract id fails the suite.
+
 ## [0.1.15] - 2026-10-25
 
 ### Fixed
