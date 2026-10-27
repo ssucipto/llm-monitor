@@ -846,6 +846,158 @@ def main():
             f"a pre-bound day's impossible prefill mean reached the panel ({bad!r})"
         )
         print("PASS chart-no-impossible-prefill")
+
+        # 19. history-bars (a33-23) — the History panel used to draw up to 90 daily values into
+        #     a 100x30 sparkline with no axis and no ticks. Seeded day rows make the expected
+        #     bar count and dates exact, independent of whatever engine is live.
+        hist_days = [int(time.time() // 86400) - i for i in range(12, 2, -1)]  # 10 ascending days
+        seed3 = sqlite3.connect(test_db)
+        seed3.executemany(
+            "INSERT OR REPLACE INTO day (d, polls, span_s, reqs, prompt, reused, output,"
+            " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean, energy_wh,"
+            " idle_pct, hours, prefill_max, prefill_bounded)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(d, 100, 86400.0, 10 + i * 5, 100000, 60000, 20000, 30.0 + i, 45.0, 300.0,
+              90.0, 70.0, 120.0, 2880.0, 10.0, "[]", 400.0, 0)
+             for i, d in enumerate(hist_days)])
+        seed3.commit()
+        seed3.close()
+
+        # The page polls /api/stats every REFRESH_MS (5 s); wait for the next poll to pick the
+        # seeded days up rather than reaching for a page internal that is not exposed.
+        time.sleep(6.0)
+        bars = js(ws, """(() => {
+          const svg = document.getElementById('hist-bars');
+          if (!svg) return null;
+          return {
+            rects: svg.querySelectorAll('rect.hist-bar').length,
+            texts: [...svg.querySelectorAll('text')].map(t => t.textContent.trim()),
+            caption: (document.getElementById('hist-bars-caption') || {}).textContent || '',
+            first: (document.getElementById('hist-scrub-first') || {}).textContent || '',
+            last: (document.getElementById('hist-scrub-last') || {}).textContent || '',
+            valuetext: (document.getElementById('scrub') || {}).getAttribute('aria-valuetext') || '',
+          };
+        })()""")
+        assert bars, "#hist-bars is missing from the page"
+        assert bars["rects"] >= len(hist_days), (
+            f"expected >= {len(hist_days)} bars for the seeded days, got {bars['rects']}"
+        )
+        # y-axis unit on BOTH the axis title and the top gridline label, plus >=2 dated x ticks.
+        # Selecting by text-anchor keeps the two assertions independent: a check satisfied by
+        # either one would pass with the other removed (proven during this task).
+        axis = js(ws, """(() => {
+          const t = document.querySelector('#hist-bars .chart-axis-title');
+          const grid = [...document.querySelectorAll('#hist-bars text')]
+            .filter(x => x.getAttribute('text-anchor') === 'end')
+            .map(x => x.textContent.trim());
+          return {title: t ? t.textContent.trim() : null, grid};
+        })()""")
+        assert axis["title"] == "req/day", (
+            f"the history chart's axis title does not state the unit ({axis!r})"
+        )
+        assert any(g.endswith("req/day") for g in axis["grid"]), (
+            f"no gridline label carries the unit ({axis['grid']!r})"
+        )
+        dates = [t for t in bars["texts"] if re.fullmatch(r"\d\d-\d\d", t)]
+        assert len(dates) >= 2, f"fewer than two dated x ticks ({bars['texts']!r})"
+        # a33-23 caption: count, range and peak.
+        assert "recorded days" in bars["caption"] and "peak" in bars["caption"], (
+            f"the caption states no range/peak ({bars['caption']!r})"
+        )
+        # a33-24: the track names the day under the marker and the range it spans.
+        assert re.fullmatch(r"\d{4}-\d\d-\d\d", bars["first"]), f"no first-day label ({bars!r})"
+        assert re.fullmatch(r"\d{4}-\d\d-\d\d", bars["last"]), f"no last-day label ({bars!r})"
+        assert re.match(r"^\d{4}-\d\d-\d\d, day \d+ of \d+$", bars["valuetext"]), (
+            f"aria-valuetext does not name the selected day ({bars['valuetext']!r})"
+        )
+        # a33-25: the day/week/month buckets are UTC epoch days while other timestamps on the
+        # page render local, so the table must say which alignment its rows use.
+        utc = js(ws, """(() => {
+          const rows = [...document.querySelectorAll('#history-comparison-tbody tr')]
+            .map(tr => (tr.cells[0] ? tr.cells[0].textContent.trim() : ''));
+          const note = (document.getElementById('hist-table-note') || {}).textContent || '';
+          return {rows, note};
+        })()""")
+        day_rows = [r for r in utc["rows"] if r.startswith(("Today", "This week", "This month"))]
+        assert len(day_rows) == 3, f"expected 3 calendar-period rows, got {utc['rows']!r}"
+        assert all("UTC" in r for r in day_rows), (
+            f"a calendar-period row does not name its alignment ({day_rows!r})"
+        )
+        assert "UTC" in utc["note"], f"no note under the table states the alignment ({utc['note']!r})"
+        # The per-request row must NOT claim UTC: it compares two individual requests, not
+        # calendar periods, so tagging it would be a new kind of wrong label.
+        req_rows = [r for r in utc["rows"] if r.startswith("Last request")]
+        assert req_rows and not any("UTC" in r for r in req_rows), (
+            f"the per-request row is labelled UTC ({req_rows!r})"
+        )
+        print("PASS history-bars")
+
+        # 20. history-metric-switch (a33-18 applied to the history chart) — switching the metric
+        #     must change the axis unit; two units must never share one axis.
+        js(ws, """(() => {
+          const t = document.querySelector('#hist-metric-tabs .chart-tab[data-hmetric=tokens]');
+          if (t) t.click();
+        })()""")
+        time.sleep(0.6)
+        bars2 = js(ws, """(() => {
+          const svg = document.getElementById('hist-bars');
+          if (!svg) return null;
+          return {texts: [...svg.querySelectorAll('text')].map(t => t.textContent.trim()),
+                  unit: (document.querySelector('#hist-bars .chart-axis-title') || {}).textContent || ''};
+        })()""")
+        assert bars2 and "tokens/day" in bars2["unit"], (
+            f"the tokens axis does not state its own unit ({bars2!r})"
+        )
+        assert not any("req/day" == t for t in bars2["texts"]), (
+            f"the old unit survived the metric switch ({bars2['texts'][:6]!r})"
+        )
+        print("PASS history-metric-switch")
+
+        # 21. history-scrub-keyboard (a33-24) — the track declares role="slider", which promises
+        #     keyboard operation; an unfocusable div with no key handling would be a silent a11y
+        #     hole. Arrow keys must move the selection and the aria readout with it.
+        kb = js(ws, """(() => {
+          const track = document.getElementById('scrub');
+          if (!track) return null;
+          const before = {now: track.getAttribute('aria-valuenow'),
+                          text: track.getAttribute('aria-valuetext'),
+                          tabindex: track.getAttribute('tabindex')};
+          const key = (k) => track.dispatchEvent(new KeyboardEvent('keydown',
+              {key: k, bubbles: true, cancelable: true}));
+          key('End');
+          const atEnd = track.getAttribute('aria-valuenow');
+          key('ArrowLeft');
+          const afterLeft = {now: track.getAttribute('aria-valuenow'),
+                             text: track.getAttribute('aria-valuetext'),
+                             selected: (document.getElementById('hist-selected') || {}).textContent || ''};
+          key('Home');
+          const atHome = track.getAttribute('aria-valuenow');
+          return {before, atEnd, afterLeft, atHome,
+                  max: track.getAttribute('aria-valuemax')};
+        })()""")
+        assert kb and kb["before"]["tabindex"] == "0", (
+            f"the slider is not keyboard reachable ({kb!r})"
+        )
+        assert kb["atEnd"] == kb["max"], f"End did not reach the last day ({kb!r})"
+        assert int(kb["afterLeft"]["now"]) == int(kb["max"]) - 1, (
+            f"ArrowLeft did not step back one day ({kb!r})"
+        )
+        assert kb["atHome"] == "0", f"Home did not reach the first day ({kb!r})"
+        # The aria readout and the visible readout must both follow the keyboard, and they must
+        # agree with each other about which day is selected (both name an ISO date).
+        # After End then ArrowLeft the index is max-1, so the readout reads "day max of max+1".
+        last = int(kb["max"])
+        assert re.match(rf"^\d{{4}}-\d\d-\d\d, day {last} of {last + 1}$",
+                        kb["afterLeft"]["text"] or ""), (
+            f"aria-valuetext did not follow the keyboard ({kb!r})"
+        )
+        assert re.match(r"^\d{4}-\d\d-\d\d · ", kb["afterLeft"]["selected"]), (
+            f"the visible day readout did not follow the keyboard ({kb['afterLeft']['selected']!r})"
+        )
+        assert kb["afterLeft"]["text"].split(",")[0] == kb["afterLeft"]["selected"].split(" · ")[0], (
+            f"aria and the visible readout name different days ({kb!r})"
+        )
+        print("PASS history-scrub-keyboard")
         return 0
     finally:
         for p in (proc, server):

@@ -40,6 +40,18 @@
 
 - date: 2026-10-27
   task_type: testing
+  mistake: "Wrote an assertion as `assert (A if cond else B), msg` where `cond` could never be true, so only one branch ever ran; and in the same check I read a DOM readout AFTER a later input event, so it compared the wrong state. The check reported PASS while asserting almost nothing."
+  correction: "Never encode an either/or inside a single assert — write one assert per claim. If a fallback regex is needed, put it in its own assert with its own message. When a check drives several inputs (End, ArrowLeft, Home), capture every observable at the moment it is supposed to be true, not at the end of the sequence. Cross-asserting two independent readouts (aria-valuetext vs the visible line) is what makes 'the wrong value reached the UI' detectable; asserting each against a regex alone lets both be wrong together."
+  priority: high
+
+- date: 2026-10-27
+  task_type: testing
+  mistake: "Wrote an assertion as `daily[-1].get('prefill_max') is not None`. The fixture had no polls on 'today', so db_daily returned no today entry at all and daily[-1] was the FROZEN row — the assertion checked the wrong object and passed green. It only became real once the fixture seeded today and the expected value was pinned to an exact number."
+  correction: "Never assert through a positional pick (list[-1], rows[0]) when the element's existence is what you are testing. Select it by its key (d['d'] == TODAY) so a missing element raises rather than silently substituting, and pin an exact expected value instead of `is not None`. Also check the fixture actually creates the branch: a live 'today' aggregate needs polls whose timestamps fall inside (day_start, now) — anchor them as fractions of the elapsed day so the test cannot break just after midnight UTC."
+  priority: high
+
+- date: 2026-10-27
+  task_type: testing
   mistake: "Wrote an assertion for 'the hourly path bounds impossible prefill readings' as server.bounded_prefill([300.0, 1_210_150.0])[1] == 300.0 — it tested the helper, not db_hour_aggregates. It passed green even with the bound removed from the hour path, because the helper was still correct."
   correction: "An assertion about a code path must assert on that path's own returned record. For every 'X happens in function F' check, call F and inspect F's output; mutating F's body MUST turn the check red. Prove it by deleting the call inside F, not by testing F's helper in isolation. (Found here by actually running the mutation: prefill_max 1210150.0 sailed through.)"
   priority: high

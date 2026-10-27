@@ -742,6 +742,78 @@ carryovers:
     fix_applied_date: 2026-10-26
     verified_in_audit: 33
     notes: "Found while fixing a33-02, not in the original 35. context.pct is already a percentage (server.py multiplies by 100) and renderHud multiplied again; hud-ctx-val/hud-ctx-hint read ctx.used_tokens and ctx.max_tokens, keys build_stats never emits (the payload keys are used and max). M81-T2 corrected both to the real keys and one scaling, matching what the full dashboard already did. Measured against the live payload before the change: pct 74.17 rendered as 7417.0%"
+  - id: a33-18
+    audit: 33
+    finding: "the chart y-axis unit changes meaning without saying so: one axis labelled from total_tokens while the decode/prefill/request lines are scaled by their own private maxima, and no unit appears on the axis at all"
+    location: llm-monitor/app.js:1338
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T4. The left axis now belongs to exactly one series and says which: an axis title element (.chart-axis-title) plus the unit suffix on the top gridline label, both changing with the metric tab (all/tokens -> tokens, throughput -> tok/s, requests -> req). Every series that does NOT own the axis discloses its own scale in the legend ('scaled to peak 66.6 tok/s'), and the axis-owning one is labelled 'left axis', so no line's height is left unexplained. Proven by the browser check chart-axis-labelled, which also switches the metric tab and asserts the unit changed; mutation-proven by blanking the axis title (check fails with title '')"
+  - id: a33-19
+    audit: 33
+    finding: "prefill_max is always null for 7d/30d/90d so the prefill series silently vanishes at long ranges; db_daily never reads a prefill_max column because the day table has none"
+    location: llm-monitor/server.py:951
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T4. The day table gains prefill_max AND prefill_bounded through the existing ALTER loop, db_finalize_days writes both, db_daily and all three day-bucket branches of db_timeseries read them. Live copy (spare port 8126): 7d/30d/90d now report prefill_max available=True max=4680.5 where it was None before. Migration proven by opening a file created with the pre-migration schema through db_init: both columns appear and the old row reads back NULL rather than a copied mean. A day frozen before the bound holds an impossible mean (7,238 / 9,834 / 10,230 tok/s on this PC) whose poll rows are already pruned, so it cannot be recomputed: published_day_prefill suppresses that day's prefill entirely with note 'pre-bound record', keyed structurally (a mean with no max can only come from an older build, since bounded_prefill returns both or neither) rather than by inventing a second threshold. /api/export still ships the raw stored value"
+  - id: a33-20
+    audit: 33
+    finding: "bucket counts are inconsistent across ranges and nothing on the chart states what each bucket covers"
+    location: llm-monitor/app.js:1373
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T4. xStep is now round(N/6) with the last bucket always labelled, so every range gets ~6 evenly spaced labels and the right edge is dated. A new #chart-sum-window element states the scope of every number in the strip: '7d · 7 buckets of 1 d · 9 with no samples'. Proven by chart-gap-marked, which asserts 'buckets of' appears in the strip; mutation-proven by perturbing the count the strip prints (the check compares the strip's count against the in-chart note's and fails on the mismatch)"
+  - id: a33-21
+    audit: 33
+    finding: "3h/6h/12h keep 60-second buckets while only ~240 poll rows exist for 24 h of history, so sparse buckets print as gaps that read as engine idle rather than no samples"
+    location: llm-monitor/server.py:831
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T4 (the arithmetic/rendering half). Every bucket now carries samples: len(b_rows) for poll ranges and the stored polls count for day ranges, and the payload carries n_buckets + empty_buckets. The renderer draws each series as one polyline per contiguous run of observed buckets (a lone observed bucket becomes a dot), so an unobserved stretch is a hole instead of a dip to zero; gap buckets get dashed vertical markers, an in-chart note 'N buckets had no samples', and a tooltip that says nothing was recorded rather than showing zeros. Live: 1h empty=60/60 on a fresh copy, 90d empty=69/90. Proven by chart-gap-marked and chart-series-breaks-at-gap (seeds a deliberate 20-minute hole in the test DB and asserts no series point sits on the plot floor); mutation-proven by mapping unobserved buckets to 0, which puts points at y=265 and fails it. NOT addressed: the bucket sizes themselves are unchanged, and the ThreadingHTTPServer write race that creates duplicate timestamps is still open (a33-12)"
+  - id: a33-22
+    audit: 33
+    finding: "the chart's own summary strip has no timeframe label, so its totals are unscoped"
+    location: llm-monitor/index.html:304
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T4. New #chart-sum-window stat in the strip, rendered from range/n_buckets/bucket_s/empty_buckets so it is derived from the payload rather than the button state. Also closed the related honesty gap the audit noted in passing: chart-sum-prefill-hint used to print 'mean / peak' whether or not a peak existed; it now prints 'mean · peak N · bounded', or 'mean · peak n/a' when no peak was recorded. Covered by chart-gap-marked (asserts the window string) and chart-no-impossible-prefill"
+  - id: a33-23
+    audit: 33
+    finding: "the History sparkline is unreadable by design: up to 90 daily values drawn into a 100x30 CSS pixel figure with no y-axis, no gridlines and no date ticks"
+    location: llm-monitor/index.html:391
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T5. #hist-bars (viewBox 0 0 900 170) replaces it: 4 gridlines, a unit-bearing axis title plus the same unit suffix on the top gridline label, x ticks at stride round(N/6) with the last day always labelled (MM-DD), and rect.hist-bar[data-day] per recorded day. A .chart-tab metric switch offers requests (req/day), tokens (tokens/day) and tok/s; a null tok_s draws no bar rather than a zero-height bar, so an absent metric is never shown as a zero. Caption states 'N recorded days - first -> last - peak X unit - M days with no <label>'. The old sparkline figure is hidden, not deleted, so hist-area/hist-spark/hist-head stay in the DOM for the id contract (static checks 2/3/5). Proven by history-bars; mutation-proven by drawing no bars (0 rects), blanking the axis title, removing the gridline unit suffix, dropping the x ticks and stripping the peak from the caption"
+  - id: a33-24
+    audit: 33
+    finding: "the scrubber has no day labels: #scrub is a bare track and marker that never says which day sits under the marker nor what range it spans"
+    location: llm-monitor/index.html:399
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T5. .scrub__ends names the first and last recorded day (#hist-scrub-first / #hist-scrub-last), filled by selectDay. The track declares role=slider, so it must be keyboard operable: tabindex=0 plus a keydown handler for ArrowLeft/Right/Up/Down, Home, End, PageUp/PageDown (page keys step a week). aria-valuetext reads 'YYYY-MM-DD, day i of N' so a screen reader gets the date rather than an index, and the highlighted bar (.is-selected) follows the selection without redrawing the chart. Clicking any bar selects that day (wireHistBars, delegated on the persistent svg element so it survives redraws). Proven by history-scrub-keyboard; mutation-proven by removing tabindex ('the slider is not keyboard reachable'), deleting the keydown handler ('End did not reach the last day') and naming the wrong date in aria-valuetext ('aria and the visible readout name different days')"
+  - id: a33-25
+    audit: 33
+    finding: "the comparison table mixes units in one row: Current Tokens / Previous Tokens / Token Change / Requests / tok/s sit side by side with no window statement per row"
+    location: llm-monitor/index.html:377
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T5. Rows are relabelled 'Today vs Yesterday (UTC)', 'This week vs Last week (UTC)' and 'This month vs Last month (UTC)', and a one-line note (.history-table__note, #hist-table-note) states that the periods are UTC-day aligned - the buckets are UTC epoch days (server.py _iso_day) while other timestamps render local (fmtSince -> toLocaleString, a33-15). 'Last request' and 'This hour' are deliberately NOT tagged UTC: they are not UTC-day buckets, so labelling them UTC would be a new lie. The row structure (volume and rate in one row) is kept; the fix is that each row now names its window"
   - id: a33-35
     audit: 33
     finding: "browser checks read whatever engine is live on :8080, so any assertion about values rather than structure is inherently flaky"
@@ -750,4 +822,4 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: null
-    notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2"
+    notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2. Partially mitigated by M81-T4 without needing the fixture: chart-series-breaks-at-gap and chart-no-impossible-prefill seed the LLM_MONITOR_DB test file directly, so their expected values are exact and independent of whatever engine is live. The remaining engine-dependent value checks (the gauge family) still rely on the Page.addScriptToEvaluateOnNewDocument fetch fixture rather than a server-side one"

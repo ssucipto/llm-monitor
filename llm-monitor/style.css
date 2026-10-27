@@ -578,6 +578,58 @@ body {
 
 .spark--hist svg { color: var(--accent); }
 
+/* M81-T5 (a33-23): a labelled bar chart replaces the 100x30 sparkline. The old figure
+   stays in the DOM (hidden) because its ids are part of the id contract. */
+.hist-bars {
+  width: 100%;
+  height: 170px;
+  margin-top: 10px;
+  display: block;
+}
+
+.hist-bar {
+  fill: var(--accent);
+  opacity: 0.62;
+  cursor: pointer;
+}
+
+.hist-bar.is-selected {
+  fill: var(--warn);
+  opacity: 1;
+}
+
+.hist-bars__caption {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* a33-25: the periods are UTC-day aligned; other timestamps here render local. */
+.history-table__note {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  font-style: italic;
+}
+
+/* a33-24: name the range the track spans. */
+.scrub__ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+
+/* a33-23: the metric switch reuses the timeseries tab styling. */
+.hist-metric-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
 /* The day scrubber: a track with a draggable marker; its x-position selects a
  * recorded day. */
 .scrub {

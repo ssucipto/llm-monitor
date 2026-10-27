@@ -207,11 +207,11 @@ milestones:
     priority: 1
     file: agent/milestones/milestone-81-information-architecture-and-correctness.md
     status: in_progress
-    progress: 38
+    progress: 54
     started: "2026-10-26"
     completed:
     estimated_weeks: 1
-    tasks_completed: 3
+    tasks_completed: 5
     tasks_total: 8
     notes: |
       Planned from audit-33 (35 findings, a33-01..a33-35) and amended by the audit-34 pre-impl pass
@@ -584,18 +584,18 @@ tasks:
     - id: task-81-t4
       name: Chart axes, scales and range labelling
       priority: 2
-      status: pending
-      started: 2026-10-26
-      completed_date:
+      status: completed
+      started: 2026-10-27
+      completed_date: 2026-10-27
       actual_hours: null
       file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t4-chart-readability.md
       estimated_hours: 3
     - id: task-81-t5
       name: History chart and scrubber
       priority: 2
-      status: pending
+      status: completed
       started: 2026-10-26
-      completed_date:
+      completed_date: 2026-10-27
       actual_hours: null
       file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t5-history-chart.md
       estimated_hours: 3
@@ -644,6 +644,45 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-27
+    description: |
+      M81-T5 — the History panel is readable. The 100x30 requests-per-day squiggle is replaced by a
+      labelled bar chart (4 gridlines, a unit-bearing axis title, <=6 dated x ticks, the scrubbed
+      day highlighted), with a metric switch for requests / tokens / tok/s and a caption that states
+      how many days exist, their range, the peak and how many days have no of the shown metric. The
+      day scrubber now names the first and last recorded day on the track, is keyboard operable
+      (Arrow/Home/End/PageUp/PageDown) and reads its selection aloud as an ISO date via
+      aria-valuetext; clicking a bar selects that day. The comparison table rows state their window
+      and say the periods are UTC-day aligned.
+    items:
+      - "✅ a33-23 closed: #hist-bars (viewBox 0 0 900 170) with rect.hist-bar[data-day] + .is-selected; the old sparkline figure is hidden, never deleted, so its ids stay in the DOM"
+      - "✅ a33-24 closed: scrub ends name first/last day, tabindex=0 + keydown handling, aria-valuetext = 'YYYY-MM-DD, day i of N'"
+      - "✅ a33-25 closed: rows relabelled 'Today vs Yesterday (UTC)' / 'This week vs Last week (UTC)' / 'This month vs Last month (UTC)' plus a UTC-alignment note; 'Last request' and 'This hour' deliberately not tagged UTC because they are not UTC-day buckets"
+      - "🆕 null tok_s draws no bar rather than a zero-height bar, so an absent metric is not shown as a zero"
+      - "🧪 gates at this tree: [tests/ui] PASS (browser 21 / static 11) · tests/telemetry 35+22+25 rc_all=0 · tests/usage 5+33 rc_all=0 · acp.ci.sh --fast PASS 6/6 · node --check clean · py_compile OK"
+      - "🧪 browser suite 20 -> 21 (history-scrub-keyboard); expected.txt bumped and mutation-proven: removing tabindex, deleting the keydown handler and naming the wrong date in aria-valuetext each turn it red"
+      - "🔁 one assertion rewritten after it passed vacuously: it read #hist-selected after Home, comparing the wrong day; it now captures the visible readout at the ArrowLeft point and asserts the aria date and the visible date agree"
+      - "⚠️ :8090 still runs the pre-T3/T4 server (front-end files are served from disk per request, so this task is visible on reload; the T3/T4 server.py changes are not)"
+  - date: 2026-10-27
+    description: |
+      M81-T4 — the Performance & Token chart became readable. The y-axis now belongs to one
+      series and states its unit; every other drawn series discloses its own scale in the
+      legend; unobserved buckets are holes instead of dips to zero; the summary strip states
+      the window and bucket size for every number in it; and the day rollup gained prefill_max
+      and prefill_bounded so 7d/30d/90d can show a real bounded peak. Days frozen before the
+      bound (whose impossible means cannot be recomputed) now publish no prefill figure at all,
+      with a stated reason, instead of showing 9,834 tok/s on a card that decodes at 4-124.
+    items:
+      - "✅ a33-18 closed: axis title + unit suffix per metric tab, and a per-series scale in the legend ('scaled to peak 66.6 tok/s' / '· left axis'). Browser check chart-axis-labelled switches tabs and re-reads the unit"
+      - "✅ a33-19 closed: day table ALTER-migrates prefill_max + prefill_bounded; db_finalize_days/db_daily/db_timeseries thread them. Live copy on 8126: 7d/30d/90d prefill_max 4680.5 where it was None. Migration proven by re-opening a pre-migration schema file (both columns appear, old row reads NULL)"
+      - "✅ a33-20 closed: xStep = round(N/6) with the last bucket always labelled; new #chart-sum-window states '7d · 7 buckets of 1 d · 9 with no samples'"
+      - "✅ a33-21 closed (rendering half): every bucket carries samples, series draw as contiguous runs so a gap is a hole, dashed markers + an in-chart note name the empty buckets, and the tooltip refuses to present zeros for an unobserved bucket"
+      - "✅ a33-22 closed: the strip is scoped; chart-sum-prefill-hint also stopped printing 'mean / peak' when no peak exists (now 'mean · peak n/a' or '· bounded')"
+      - "🆕 found while implementing: db_export's poll_cols omitted the prompt_ms column added in T3, breaking the export-stays-re-derivable contract. Fixed and asserted"
+      - "🆕 pre-bound day rows (mean with no max) are suppressed by published_day_prefill using a structural marker, not an invented threshold — 8 of 20 live day rows held means of 3,866-10,230 tok/s"
+      - "🧪 new tests/telemetry/test_telemetry_timeseries.py (25 assertions); browser suite 15 -> 18 (chart-axis-labelled, chart-gap-marked, chart-series-breaks-at-gap, chart-legend-matches-series, chart-no-impossible-prefill); static suite 10 -> 11 (fallback-bucket-shape)"
+      - "📋 gates at this tree: tests/telemetry 35+22+25 rc_all=0 · tests/usage 5+33 rc_all=0 · run-e2e-tests.sh 5 passed · [tests/ui] PASS (browser 18 / static 11) · acp.ci.sh --fast PASS 6/6"
+      - "⚠️ :8090 still runs the pre-T3/T4 server. Its day table has neither new column, so until the supervisor restarts it the day ranges show no prefill peak at all (NULL) rather than a wrong one. Restart: Stop-ScheduledTask -TaskName LLMMonitor then Start-ScheduledTask -TaskName LLMMonitor"
   - date: 2026-10-27
     description: |
       M81-T3 — the Telemetry panel's rates now mean what their labels claim. Hit and accept rates

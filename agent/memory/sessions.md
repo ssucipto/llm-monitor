@@ -5,6 +5,52 @@
 - date: 2026-10-27
   executor: zed
   branch: main
+  tasks: [task-81-t5]
+  done:
+    - "a33-23 History sparkline (100x30, no axis) replaced by #hist-bars: 4 gridlines, unit-bearing axis title + unit suffix on the top gridline label, x ticks at stride round(N/6) with the last day always labelled, rect.hist-bar[data-day]; old sparkline <figure> hidden not deleted so its ids stay in the DOM"
+    - "metric switch (requests / tokens / tok/s) reusing .chart-tab; a null tok_s draws NO bar rather than a zero-height bar"
+    - "a33-24 scrub ends name first/last recorded day, tabindex=0 + Arrow/Home/End/PageUp/PageDown, aria-valuetext = 'YYYY-MM-DD, day i of N', .is-selected follows selection without a redraw, clicking a bar selects that day"
+    - "a33-25 comparison rows relabelled 'Today vs Yesterday (UTC)' / week / month + a UTC-day-alignment note; 'Last request' and 'This hour' deliberately left untagged because they are not UTC-day buckets"
+    - "browser suite 20 -> 21 (history-scrub-keyboard), expected.txt bumped"
+    - "mutations proven: no bars (0 rects), blank axis title, no gridline unit suffix, no x ticks, caption without peak, scrub ends left at '--', empty aria-valuetext, forced histMetric on tab click, tabindex removed, keydown handler deleted, wrong date in aria-valuetext"
+    - "records: a33-23/24/25 added as fixed carryovers (they were missing from the file), progress.yaml M81 5/8"
+  deferred:
+    - "M81 T6 block order + collapsible Requests + Detail re-categorisation, T7 header, T8 steps 2-6 -> those tasks"
+    - "audit-34 G-34-01: test_ui_browser detail-packing asserts >=4 tiles; T6 shrinks the region to 3 and MUST update that assertion in the same commit"
+    - "a33-37 System log panel tails only Hermes llama.cpp logs while Strata's own log is never read -> needs its own task"
+    - "a33-32 saved-layout versioning decision -> must be surfaced to the user before T6 ships"
+    - "a33-35 LLM_MONITOR_FIXTURE -> task-81-t8 step 2; a32-02 fixed sleeps -> task-81-t8 step 3"
+    - ":8090 restart -> front-end files are served from disk so T5 is visible on reload, but the T3/T4 server.py changes are not"
+  key_fact: "A check that reads a DOM readout AFTER a later keyboard event compares the wrong state: history-scrub-keyboard first captured #hist-selected after Home, so the aria-vs-visible agreement assertion had to sample at the ArrowLeft point instead. Cross-asserting two independent readouts (aria-valuetext vs the visible line) is what made naming the wrong date detectable."
+
+- date: 2026-10-27
+  executor: zed
+  branch: main
+  tasks: [task-81-t4]
+  done:
+    - "a33-18 chart axis states its unit and the unit follows the metric tab; every series that does not own the axis discloses its own peak in the legend, the axis owner is labelled 'left axis'"
+    - "a33-19 day table gains prefill_max + prefill_bounded via the existing ALTER loop; db_finalize_days / db_daily / all three db_timeseries day branches thread them. Live copy: 7d/30d/90d prefill_max 4680.5 where it was None"
+    - "a33-20 xStep = round(N/6) with the last bucket always labelled; new #chart-sum-window states 'range · N buckets of Xs · M with no samples'"
+    - "a33-21 every bucket carries samples; series draw as contiguous runs so an unobserved stretch is a hole not a dip to zero; dashed gap markers, an in-chart note, and a tooltip that refuses to present zeros for an unobserved bucket"
+    - "a33-22 the summary strip is scoped to its window; chart-sum-prefill-hint stopped printing 'mean / peak' when no peak exists"
+    - "new published_day_prefill: a day frozen before the bound holds an impossible mean whose poll rows are pruned, so it publishes no prefill figure with note 'pre-bound record'; keyed structurally (a mean with no max can only be an older build) rather than by inventing a second threshold"
+    - "found and fixed a T3 gap the audit never saw: db_export's poll_cols omitted prompt_ms, breaking the export-stays-re-derivable contract"
+    - "new tests/telemetry/test_telemetry_timeseries.py (25 assertions incl. a real old-schema migration proof); browser suite 15 -> 18; static suite 10 -> 11 (fallback-bucket-shape)"
+    - "mutations proven: axis title blanked, gap count perturbed, unobserved buckets mapped to 0 (points at y=265), legend hide/scale disabled, pre-bound rule off (9833 reached the panel), fallback bucket missing samples, day prefill_max ALTER removed, export column dropped"
+    - "records: a33-18/19/20/21/22 closed with evidence, a33-35 annotated as partially mitigated by direct DB seeding, progress.yaml M81 4/8"
+  deferred:
+    - "M81 T5 history chart + scrubber, T6 block order + collapsible Requests + Detail re-categorisation, T7 header, T8 steps 2-6 -> those tasks"
+    - "a33-21's other half: the bucket sizes themselves (3h/6h/12h still use 60 s buckets) are unchanged, and a33-12's ThreadingHTTPServer write race is still open"
+    - "audit-34 G-34-01: test_ui_browser detail-packing asserts >=4 tiles; T6 shrinks the region to 3 and MUST update that assertion in the same commit"
+    - "a33-37 System log panel tails only Hermes llama.cpp logs while Strata's own log (6.2 MB, live today) is never read -> needs its own task"
+    - "a33-32 saved-layout versioning decision -> must be surfaced to the user before T6 ships"
+    - "a32-02 fixed sleeps -> task-81-t8 step 3; a25-02 reboot test -> still user-gated"
+    - ":8090 restart -> its day table has neither new column, so until the supervisor restarts it the day ranges show no prefill peak (NULL) rather than a wrong one"
+  key_fact: "Suppressing an unrepairable historical aggregate needs a structural marker, not a threshold: since bounded_prefill returns mean and max together or neither, 'a stored mean with no stored max' can only be a pre-fix row, so no second invented cutoff is needed. And seeding the test DB directly (rather than the live engine) makes value assertions exact — two of the five new browser checks depend on nothing that runs on :8080."
+
+- date: 2026-10-27
+  executor: zed
+  branch: main
   tasks: [task-81-t3]
   done:
     - "a33-08 hit/accept rates are now the span's own ratios (window_pct over cumulative counters) in db_analysis, db_hour_aggregates and day_aggregates; legacy *_pct_mean keys kept so /api/stats stays additive"

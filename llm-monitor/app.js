@@ -1099,11 +1099,14 @@ function renderHistory(periods, daily, requests) {
   if (tbody) {
     tbody.innerHTML = "";
     const pairs = [
+      // M81-T5 (a33-25): the day/week/month buckets are UTC epoch days (_iso_day), while
+      // timestamps elsewhere on the page render local. Naming the alignment in the row keeps
+      // "Today" from meaning two different things on one screen.
       { label: "Last request vs Previous", p: reqPeriod },
       { label: "This hour vs Last hour", p: periods?.hour },
-      { label: "Today vs Yesterday", p: periods?.day },
-      { label: "This week vs Last week", p: periods?.week },
-      { label: "This month vs Last month", p: periods?.month },
+      { label: "Today vs Yesterday (UTC)", p: periods?.day },
+      { label: "This week vs Last week (UTC)", p: periods?.week },
+      { label: "This month vs Last month (UTC)", p: periods?.month },
     ];
     pairs.forEach((row, i) => {
       const tr = document.createElement("tr");
@@ -1179,7 +1182,133 @@ function renderHistory(periods, daily, requests) {
   }
 
   drawSpark("hist", days.map((x) => x.requests), "req/day", 86400000);
+  renderHistBars();
   selectDay(Math.min(scrubIdx, Math.max(0, days.length - 1)), true);
+}
+
+// M81-T5 (a33-23): the History panel drew up to 90 daily values into a 100x30 sparkline —
+// no axis, no ticks, no way to read a value off it. This is a real bar chart: a labelled
+// y-axis with a unit, dated x ticks, and a caption that states the range and the peak.
+// One metric at a time on purpose (a33-18's lesson): requests, tokens and tok/s have
+// different units and must never share an axis.
+let histMetric = "requests";
+const HIST_METRICS = {
+  requests: { get: (d) => d.requests, unit: "req/day", label: "requests per day" },
+  tokens: { get: (d) => d.total_tokens, unit: "tokens/day", label: "tokens per day" },
+  // A quiet day rolls up a null mean since M81-T3; null must be an absent bar, never a
+  // zero-height one that reads as "decoded nothing".
+  tok_s: { get: (d) => d.tok_s_mean, unit: "tok/s", label: "mean decode speed" },
+};
+
+function renderHistBars() {
+  const svg = $("hist-bars");
+  if (!svg) return;
+  const m = HIST_METRICS[histMetric] || HIST_METRICS.requests;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const caption = $("hist-bars-caption");
+  if (!days.length) {
+    if (caption) caption.textContent = "awaiting history";
+    return;
+  }
+
+  const W = 900, H = 170;
+  const pad = { left: 58, right: 20, top: 16, bottom: 34 };
+  const chartW = W - pad.left - pad.right;
+  const chartH = H - pad.top - pad.bottom;
+  const N = days.length;
+
+  const vals = days.map(m.get);
+  const known = vals.filter((v) => v != null && !Number.isNaN(v));
+  const peak = known.length ? Math.max(...known) : 0;
+  const axisMax = peak > 0 ? peak * 1.12 : 1;
+
+  // y axis: 4 gridlines, labelled, unit on the top one and in the axis title.
+  for (let s = 0; s <= 4; s++) {
+    const frac = s / 4;
+    const y = pad.top + chartH * (1 - frac);
+    svg.appendChild(svgElem("line", {
+      x1: pad.left, y1: y, x2: W - pad.right, y2: y, class: "chart-grid-line",
+    }));
+    const val = axisMax * frac;
+    const txt = svgElem("text", {
+      x: pad.left - 8, y: y + 4, class: "chart-axis-text", "text-anchor": "end",
+    });
+    let label = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M`
+      : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k`
+      : `${Math.round(val)}`;
+    if (s === 4) label = `${label} ${m.unit}`;
+    txt.textContent = label;
+    svg.appendChild(txt);
+  }
+  const title = svgElem("text", {
+    x: 6, y: pad.top - 4, class: "chart-axis-text chart-axis-title", "text-anchor": "start",
+  });
+  title.textContent = m.unit;
+  svg.appendChild(title);
+
+  // Bars. Below ~30 days a full-width bar would merge into a block, so the bar keeps a
+  // gap and a minimum visible width for a non-zero value.
+  const slot = chartW / N;
+  const barW = Math.max(1, Math.min(slot * 0.8, 46));
+  days.forEach((d, i) => {
+    const v = vals[i];
+    const cx = pad.left + slot * (i + 0.5);
+    if (v == null || Number.isNaN(v)) return;
+    const h = Math.max(v > 0 ? 1 : 0, (v / axisMax) * chartH);
+    const rect = svgElem("rect", {
+      x: (cx - barW / 2).toFixed(1),
+      y: (pad.top + chartH - h).toFixed(1),
+      width: barW.toFixed(1),
+      height: h.toFixed(1),
+      class: "hist-bar" + (i === scrubIdx ? " is-selected" : ""),
+    });
+    rect.dataset.day = String(i);
+    svg.appendChild(rect);
+  });
+
+  // x ticks: at most ~6, always including the first and last recorded day.
+  const stride = Math.max(1, Math.round(N / 6));
+  const ticks = [];
+  for (let i = 0; i < N; i += stride) ticks.push(i);
+  if (ticks[ticks.length - 1] !== N - 1) ticks.push(N - 1);
+  ticks.forEach((i) => {
+    const cx = pad.left + slot * (i + 0.5);
+    const t = svgElem("text", {
+      x: cx.toFixed(1), y: H - 12, class: "chart-axis-text", "text-anchor": "middle",
+    });
+    // MM-DD keeps 90 days legible; the full ISO date is in the scrubber readout.
+    t.textContent = (days[i].date || "").slice(5);
+    svg.appendChild(t);
+    svg.appendChild(svgElem("line", {
+      x1: cx.toFixed(1), y1: pad.top + chartH, x2: cx.toFixed(1), y2: pad.top + chartH + 4,
+      class: "chart-grid-line",
+    }));
+  });
+
+  if (caption) {
+    const unmeasured = N - known.length;
+    caption.textContent =
+      `${N} recorded day${N === 1 ? "" : "s"} · ${days[0].date} → ${days[N - 1].date} · ` +
+      `peak ${fmtNum(peak, ` ${m.unit}`, peak >= 100 ? 0 : 1)}` +
+      (unmeasured > 0 ? ` · ${unmeasured} day${unmeasured === 1 ? "" : "s"} with no ${m.label}` : "");
+  }
+}
+
+function wireHistMetricTabs() {
+  const tabs = document.querySelectorAll("#hist-metric-tabs .chart-tab");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => {
+        t.classList.remove("is-active");
+        t.setAttribute("aria-selected", "false");
+      });
+      tab.classList.add("is-active");
+      tab.setAttribute("aria-selected", "true");
+      histMetric = tab.dataset.hmetric || "requests";
+      renderHistBars();
+    });
+  });
 }
 
 // The scrubber: the marker's x-position picks a recorded day; the day's numbers
@@ -1196,6 +1325,9 @@ function selectDay(idx, force) {
     marker.style.left = "0%";
     sel.textContent = "no recorded days yet — history builds as the engine runs";
     track.setAttribute("aria-valuenow", "0");
+    track.removeAttribute("aria-valuetext");
+    setText("hist-scrub-first", "--");
+    setText("hist-scrub-last", "--");
     return;
   }
   scrubIdx = Math.max(0, Math.min(idx, days.length - 1));
@@ -1205,6 +1337,19 @@ function selectDay(idx, force) {
   track.setAttribute("aria-valuenow", String(scrubIdx));
 
   const x = days[scrubIdx];
+  // a33-24: an index is not a day. Screen readers (and the caption beside the track) need
+  // the date itself, and the track ends must name the range it spans.
+  track.setAttribute("aria-valuetext", `${x.date}, day ${scrubIdx + 1} of ${days.length}`);
+  setText("hist-scrub-first", days[0].date || "--");
+  setText("hist-scrub-last", days[days.length - 1].date || "--");
+
+  // Keep the bar highlight in sync without redrawing the whole chart.
+  const svg = $("hist-bars");
+  if (svg) {
+    svg.querySelectorAll(".hist-bar").forEach((r) => {
+      r.classList.toggle("is-selected", r.dataset.day === String(scrubIdx));
+    });
+  }
   const prev = scrubIdx > 0 ? days[scrubIdx - 1] : null;
   const bits = [`${fmtInt(x.requests)} req`, `${fmtInt(x.total_tokens || 0)} tok`, `${fmtNum(x.tok_s_mean, " tok/s", 1)}`];
   if (x.energy_wh != null) bits.push(`${fmtNum(x.energy_wh, " Wh", 1)}`);
@@ -1237,6 +1382,35 @@ function wireScrub() {
     if (scrubbing) pick(e);
   });
   track.addEventListener("pointerup", () => (scrubbing = false));
+
+  // M81-T5: the element declares role="slider", which promises keyboard operation. Without
+  // this, a keyboard or screen-reader user could not select a day at all.
+  track.addEventListener("keydown", (e) => {
+    if (!days.length) return;
+    const last = days.length - 1;
+    let next = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") next = Math.min(last, scrubIdx + 1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") next = Math.max(0, scrubIdx - 1);
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+    else if (e.key === "PageUp") next = Math.min(last, scrubIdx + 7);
+    else if (e.key === "PageDown") next = Math.max(0, scrubIdx - 7);
+    if (next === null) return;
+    e.preventDefault();
+    selectDay(next, false);
+  });
+}
+
+// The panel's own hint says "click a day", and since the bars are now real elements that is
+// worth honouring. Delegation on the persistent <svg> means one listener, not one per bar.
+function wireHistBars() {
+  const svg = $("hist-bars");
+  if (!svg) return;
+  svg.addEventListener("click", (e) => {
+    const day = e.target && e.target.dataset ? e.target.dataset.day : undefined;
+    if (day === undefined) return;
+    selectDay(parseInt(day, 10), false);
+  });
 }
 
 // ---------- Performance & Token Timeseries Charts ----------
@@ -2105,6 +2279,8 @@ async function init() {
   wireDragDrop(); // collects the containers before any order is applied
   restoreOrder();
   wireScrub();
+  wireHistMetricTabs();
+  wireHistBars();
   wireLayoutButtons();
   wireCharts();
   tickClock();

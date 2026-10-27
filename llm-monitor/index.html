@@ -379,7 +379,7 @@
         <div class="fact"><dt>This month</dt><dd id="hist-tokens-month">--</dd></div>
       </dl>
       <table class="history-table" id="history-comparison-table">
-        <caption class="history-table__caption">Period comparison & token usage</caption>
+        <caption class="history-table__caption">Period comparison &amp; token usage</caption>
         <thead>
           <tr>
             <th scope="col">Comparison</th>
@@ -392,7 +392,21 @@
         </thead>
         <tbody id="history-comparison-tbody"></tbody>
       </table>
-      <figure class="spark spark--hist">
+      <!-- M81-T5 (a33-25): the buckets are UTC epoch days while other timestamps on this
+           page render local, so the alignment has to be stated rather than assumed. -->
+      <p class="history-table__note" id="hist-table-note">day, week and month periods are aligned to UTC calendar days</p>
+
+      <div class="hist-metric-tabs" id="hist-metric-tabs" role="tablist" aria-label="History chart metric">
+        <button class="chart-tab is-active" type="button" role="tab" aria-selected="true" data-hmetric="requests">Requests</button>
+        <button class="chart-tab" type="button" role="tab" aria-selected="false" data-hmetric="tokens">Tokens</button>
+        <button class="chart-tab" type="button" role="tab" aria-selected="false" data-hmetric="tok_s">Decode tok/s</button>
+      </div>
+
+      <svg id="hist-bars" class="hist-bars" viewBox="0 0 900 170" preserveAspectRatio="none"
+           role="img" aria-label="Recorded days as a bar chart with a labelled axis"></svg>
+      <p class="hist-bars__caption" id="hist-bars-caption">awaiting history</p>
+
+      <figure class="spark spark--hist" hidden>
         <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Requests per day over recorded history">
           <polygon class="spark__area" id="hist-area" points="" fill="url(#spark-fill)" />
           <polyline class="spark__line" id="hist-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
@@ -400,8 +414,13 @@
         </svg>
         <figcaption class="spark__caption" id="hist-caption">requests per day, recorded history</figcaption>
       </figure>
-      <div class="scrub" id="scrub" role="slider" aria-label="Slide to select a recorded day" aria-valuemin="0" aria-valuenow="0">
+      <div class="scrub" id="scrub" role="slider" tabindex="0" aria-label="Slide to select a recorded day" aria-valuemin="0" aria-valuenow="0">
         <span class="scrub__marker" id="scrub-marker"></span>
+      </div>
+      <!-- M81-T5 (a33-24): the track used to be a bare line with no dates on it. -->
+      <div class="scrub__ends">
+        <span class="scrub__end" id="hist-scrub-first">--</span>
+        <span class="scrub__end scrub__end--last" id="hist-scrub-last">--</span>
       </div>
       <p class="hist__selected" id="hist-selected">slide the marker (or click a day) to inspect that day</p>
     </section>
