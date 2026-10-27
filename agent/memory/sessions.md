@@ -5,6 +5,27 @@
 - date: 2026-10-27
   executor: zed
   branch: main
+  tasks: [task-81-t7, task-81-t8]
+  done:
+    - "a33-26 header de-duplicated: .topbar__meta is only the liveness cluster, #top-tok kept hidden for the id contract, prefill moved into the KPI strip; new static check header-unique-units asserts on visible unit LABELS so any future pair of header cells claiming the same thing fails"
+    - "a33-27 gauge scale: #top-gauge-ceiling prints 'gauge to N', aria-label names reading and scale, ceiling = max(600, ceil(1.25 x p95)) with 20% hysteresis computed from the already-bounded series; static check gauge-scale-labelled rejects a hardcoded 2000"
+    - "a33-28 liveness: #top-uptime from totals.since (unparseable -> '--', never NaN), #top-age from lastPollOkAtMs re-ticked every second, #top-build shows engine.build_info; browser check header-liveness pins since + build_info + a p95 of 1,000 and asserts the scale reads 1,250 and 2,000 appears nowhere"
+    - "a33-35 closed: LLM_MONITOR_FIXTURE in server.py answers _get_json from agent/tests/ui/fixtures/engine.json; an unusable fixture raises SystemExit(2) rather than falling back to the live engine. New browser check fixture-engine-values asserts exact payload numbers and the rendered GPU panel; new static check engine-fixture-honoured proves a missing fixture stops the server"
+    - "a32-02 closed: settle / settle_spans / settle_render / settle_usage / settle_chart replace every read-after-change sleep; app.js exposes __lastLayout, __lastRender, __lastChartFetch, __lastChartRender, __lastUsage; new static check geometry-read-settled fails if a fixed sleep returns between a viewport change and its settle"
+    - "real flake found by the settles and fixed at the source: fetchUsage() rewrites and grows the Usage tile after load, so a masonry pass that merely post-dated a viewport change was stale ('tiles without a sufficient row span: [usage:66]'); queueLayout() in fetchUsage plus tile height in SPANS_SIG; flake.py 4 -> 0 failing runs of 4"
+    - "isolation re-proven with the finished suite: production telemetry.sqlite3 poll 20,289 / day 20 before, after run 1 and after run 2 (delta 0 both times), identical pass counts across runs (browser 25/25, static 16/16)"
+    - "expected.txt browser 24 -> 25, static 14 -> 16; nine mutation probes run this session and each produced a targeted failure, all reverted"
+    - "records: M81 8/8 completed, version 0.2.1 -> 0.3.0 in progress.yaml and CHANGELOG.md together, task-81-t8 + milestone doc closed, a33-35 and a32-02 added as fixed carryovers with receipts"
+  deferred:
+    - "a33-37 Strata/llama log tailing -> needs its own task (still pending)"
+    - "the striped no-data meter track still needs one human eyeball (Chrome pseudo-element paint is unobservable from CDP)"
+    - ":8090 was refusing connections all session; the scheduled task was left untouched per machine rules, so T3/T4 server.py changes are not yet live on the dashboard"
+    - "nothing pushed: main is 6 commits ahead of origin/main (27fcd7b, f253291, f87f201, 99be9f9, 19f6197 + this one) - push only when asked"
+  key_fact: "A page-level fetch fixture (Page.addScriptToEvaluateOnNewDocument) SURVIVES navigation, so a later check that navigates to a different server silently inherits it - keep the identifier and call Page.removeScriptToEvaluateOnNewDocument. And a settle whose baseline is captured AFTER the action passes or fails on nothing: capture the before-value before the input."
+
+- date: 2026-10-27
+  executor: zed
+  branch: main
   tasks: [task-81-t6]
   done:
     - "a33-29 DEFAULT_ORDER.tiles = live, throughput, context, cache, spec, analysis, charts, requests, gpu, power, hardware, usage, history; the <section> blocks physically moved in index.html so the pre-JS fallback matches the JS default"

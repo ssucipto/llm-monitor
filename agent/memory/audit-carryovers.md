@@ -621,10 +621,10 @@ carryovers:
     finding: "the browser suite reads geometry after fixed time.sleep() waits (3.0 s after navigate, 0.5-0.8 s per viewport change) instead of an observable settle condition, so a slow runner can produce a flaky read"
     location: agent/tests/ui/test_ui_browser.py
     severity: low
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-10-27
     verified_in_audit: null
-    notes: "Left deliberately in audit-32 (F-32-09): the waits are generous and the checks assert on computed style, not animation. Worth a settle helper (poll until two consecutive identical geometry reads) if a false failure is ever seen in CI"
+    notes: "Left deliberately in audit-32 (F-32-09): the waits are generous and the checks assert on computed style, not animation. Worth a settle helper (poll until two consecutive identical geometry reads) if a false failure is ever seen in CI. CLOSED 2026-10-27 (M81-T8 step 3): every read-after-change sleep replaced by an observable — app.js stamps __lastLayout, __lastRender, __lastChartFetch, __lastChartRender and __lastUsage; the suite's settle/settle_spans/settle_render/settle_usage/settle_chart poll them. A real flake was found this way: 'tiles without a sufficient row span: [usage:66]' — fetchUsage() rewrites the Usage tile after load and grows it, so a masonry pass that merely post-dated a viewport change could be stale; fixed at the source with queueLayout() in fetchUsage plus tile height in SPANS_SIG. Evidence: python agent/scratch-m81-t8/flake.py 4 -> run 1..4 rc=0 OK, 0 failing runs of 4. Made mechanical by the new static check geometry-read-settled (mutation-proven: inserting time.sleep(3.0) after a viewport override fails it). Remaining sleeps are settle poll back-offs (0.15 s), startup polls (0.25 s) and drag input pacing (0.12 s)"
   - id: a33-01
     audit: 33
     finding: "the dashboard names the wrong graphics card and labels it measured: engine hardware_static.gpu_name says AMD Radeon RX 6800 XT on a PC whose live adapter is an RX 7900 XTX"
@@ -891,7 +891,7 @@ carryovers:
     finding: "browser checks read whatever engine is live on :8080, so any assertion about values rather than structure is inherently flaky"
     location: agent/tests/ui/test_ui_browser.py:178
     severity: medium
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-10-27
     verified_in_audit: null
-    notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2. Partially mitigated by M81-T4 without needing the fixture: chart-series-breaks-at-gap and chart-no-impossible-prefill seed the LLM_MONITOR_DB test file directly, so their expected values are exact and independent of whatever engine is live. The remaining engine-dependent value checks (the gauge family) still rely on the Page.addScriptToEvaluateOnNewDocument fetch fixture rather than a server-side one"
+    notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2. Partially mitigated by M81-T4 without needing the fixture: chart-series-breaks-at-gap and chart-no-impossible-prefill seed the LLM_MONITOR_DB test file directly, so their expected values are exact and independent of whatever engine is live. The remaining engine-dependent value checks (the gauge family) still rely on the Page.addScriptToEvaluateOnNewDocument fetch fixture rather than a server-side one. CLOSED 2026-10-27 (M81-T8 step 2): server.py honours LLM_MONITOR_FIXTURE and _get_json answers from agent/tests/ui/fixtures/engine.json; an unusable fixture raises SystemExit(2) instead of falling back to the live engine. New browser check fixture-engine-values asserts exact numbers only the fixture can produce (gpu.temp_c 71.0, util_pct 62.0/measured, mem_pct 73.2421875, power_w 187.0, throughput.prefill 200.0, prefill_mean 500.0, spec.accept_pct 70.0, cache.hit_pct 80.0) and the rendered panel (#gpu-temp '71%', #gpu-util '62%', #gpu-mem '73%', temp meter value 71, #gpu-state 'counters live' plus the engine/OS name disagreement). New static check engine-fixture-honoured. Mutation-proven: removing the _FIXTURE branch fails static and makes the browser check report the live engine's numbers (prefill_mean 211.58 vs 500.0, accept_pct 77.70 vs 70.0, hit_pct 97.76 vs 80.0); replacing SystemExit(2) with pass fails static; changing the fixture's gpu_temp to 65.0 fails the browser check. python agent/tests/ui/run-tests.py -> ok test_ui_browser.py: 25/25, ok test_ui_static.py: 16/16, [tests/ui] PASS"

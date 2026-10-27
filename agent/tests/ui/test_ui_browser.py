@@ -162,6 +162,104 @@ ORDER_SIG = """(() => {
   return { tiles: [...t.children].map(e => e.id), detail: [...d.children].map(e => e.id) };
 })()"""
 
+# ---------- Settle helpers (M81-T8 / audit-32 a32-02) ----------
+# The suite used to read geometry after a fixed time.sleep(), so a slow runner could read the
+# page mid-pass and produce a false failure. Every wait below is now an observable:
+#   __lastLayout  - stamped by layoutAll() on every masonry pass (app.js)
+#   __lastRender  - stamped at the end of refresh(), i.e. "these values are on screen"
+# Both are on window (not module scope), so unlike app.js's consts they ARE reachable from
+# Runtime.evaluate.
+
+def settle(ws, predicate_expr, what, timeout=10.0):
+    """Poll an in-page predicate until it is truthy. Returns the value; raises on timeout."""
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        last = js(ws, predicate_expr)
+        if last:
+            return last
+        time.sleep(0.15)
+    raise AssertionError(f"settle timed out after {timeout}s: {what} (last value {last!r})")
+
+
+def mark_layout(ws):
+    """Stamp of the most recent masonry pass, for settle_spans(since=...)."""
+    return js(ws, "window.__lastLayout || 0")
+
+
+def settle_spans(ws, since=None, what="after the change", timeout=10.0):
+    """Wait for two consecutive identical reads of every tile's span+height.
+
+    When `since` is given, also require a masonry pass newer than it AND newer than every
+    content stamp (__lastUsage / __lastRender). The content-stamp condition is what caught a
+    real flake on 2026-10-27: the usage ledger fetch rewrites the Usage panel's text after
+    load, growing it, so a pass that merely post-dates a viewport change can still be stale
+    relative to content that lands later. Requiring __lastLayout >= max(__lastUsage,
+    __lastRender) means the spans cover every known mutation; the double read catches
+    anything that moves afterwards.
+    """
+    if since is not None:
+        cond = ("(window.__lastLayout || 0) > %d"
+                " && window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)"
+                % int(since))
+        settle(ws, cond, f"no masonry pass covering all content changes {what}", timeout)
+    else:
+        settle(ws, "window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)",
+               f"no masonry pass covering all content changes {what}", timeout)
+    deadline = time.time() + timeout
+    prev = js(ws, SPANS_SIG)
+    while time.time() < deadline:
+        cur = js(ws, SPANS_SIG)
+        if cur == prev:
+            return cur
+        prev = cur
+        time.sleep(0.15)
+    raise AssertionError(f"row spans never agreed within {timeout}s {what}")
+
+
+def settle_render(ws, since, what="after the change", timeout=20.0):
+    """Wait for a poll to finish rendering (values on screen) later than `since`.
+    REFRESH_MS is 5 s, so the default timeout covers at least one full poll interval."""
+    return settle(ws, "(window.__lastRender || 0) > %d" % int(since),
+                  f"no render after {what}", timeout)
+
+
+def settle_usage(ws, timeout=45.0):
+    """Wait for the usage ledger fetch to land. It runs at init and every 60 s, and its text is
+    longer than the '--' it replaces, so the Usage tile grows when it arrives. The server may
+    take several seconds to answer while it catches the ledger up, hence the generous timeout.
+    """
+    return settle(ws, "(window.__lastUsage || 0) > 0", "the usage ledger fetch", timeout)
+
+
+def settle_chart(ws, since, what="after the chart control", timeout=20.0):
+    """Wait for a /api/timeseries fetch AND its render later than `since`.
+
+    The timeseries fetch is throttled to one request per 15 s while the 15m/1h tabs are
+    active, so waiting only for __lastChartRender could be satisfied by the next /api/stats
+    re-render of the OLD data. This waits for the fetch itself and then for a render that
+    follows it, which is what makes a seeded DB row provably reach the chart.
+    """
+    settle(ws, "(window.__lastChartFetch || 0) > %d" % int(since),
+           f"no timeseries fetch after {what}", timeout)
+    return settle(ws, "(window.__lastChartRender || 0) > %d" % int(since),
+                  f"no chart render after {what}", timeout)
+
+
+SPANS_SIG = """(() => {
+  const out = [];
+  for (const sel of ['.tiles', '.tiles--detail']) {
+    const t = document.querySelector(sel);
+    if (!t) continue;
+    for (const el of t.children) {
+      // Height is part of the signature: a span can stay the same while the tile grows past it.
+      out.push(el.id + ':' + getComputedStyle(el).gridRowEnd + ':'
+               + Math.round(el.getBoundingClientRect().height));
+    }
+  }
+  return out.join('|');
+})()"""
+
 
 def main():
     browser = find_browser()
@@ -231,8 +329,9 @@ def main():
                 break
             time.sleep(0.25)
         assert ready == "complete", f"page never reached complete (got {ready!r})"
-        # Let the first poll + render land, and collect any thrown errors while it does.
-        time.sleep(3.0)
+        # Wait for the first poll to have rendered rather than guessing a wall-clock interval
+        # (a32-02), and collect any thrown errors while it does.
+        settle_render(ws, 0, "the first poll after load")
 
         # 1. page-clean — no uncaught exceptions during load and first renders.
         errs = [e["params"].get("exceptionDetails", {}) for e in ws.events if e.get("method") == "Runtime.exceptionThrown"]
@@ -241,9 +340,12 @@ def main():
 
         # Pin a known viewport so geometry assertions are deterministic.
         ws.call("Emulation.setDeviceMetricsOverride", {"width": 1240, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-        time.sleep(0.5)
+        # The ledger fetch rewrites the Usage tile; settle it before any geometry read so no
+        # span is measured against a tile that is about to grow (the a32-02 flake class).
+        settle_usage(ws)
+        stamp = mark_layout(ws)
         js(ws, "window.dispatchEvent(new Event('resize'))")
-        time.sleep(0.8)
+        settle_spans(ws, stamp, "after pinning the viewport to 1240px")
 
         # 2. masonry-spans — every tile has a JS-computed span tall enough for it and no
         #    slack in it, and the container is no taller than wide rows + tallest column.
@@ -328,10 +430,12 @@ def main():
             })()""")
 
         def set_viewport(w):
+            # The resize listener calls queueLayout, so the pass that follows a viewport change
+            # is observable: wait for a newer __lastLayout, then for the spans to stop moving.
+            stamp = mark_layout(ws)
             ws.call("Emulation.setDeviceMetricsOverride", {"width": w, "height": 900, "deviceScaleFactor": 1, "mobile": False})
-            time.sleep(0.6)
             js(ws, "window.dispatchEvent(new Event('resize'))")
-            time.sleep(0.6)
+            settle_spans(ws, stamp, f"after setting the viewport to {w}px")
 
         set_viewport(1240)
         wide_n = col_count()
@@ -343,8 +447,9 @@ def main():
         bp_n = col_count()
         set_viewport(640)
         narrow_n = col_count()
+        stamp = mark_layout(ws)
         ws.call("Emulation.clearDeviceMetricsOverride")
-        time.sleep(0.6)
+        settle_spans(ws, stamp, "after clearing the viewport override")
         assert wide_n >= 3, f"expected >=3 columns at 1240px, got {wide_n}"
         assert mid_n == 2, f"expected 2 columns at 980px, got {mid_n}"
         assert bp_n == 1, f"expected the max-width:900px rule to force 1 column at 860px, got {bp_n}"
@@ -363,9 +468,12 @@ def main():
             assert box, f"no #{eid} button"
             for et, cc in (("mousePressed", 1), ("mouseReleased", 1)):
                 ws.call("Input.dispatchMouseEvent", {"type": et, "x": box["x"], "y": box["y"], "button": "left", "clickCount": cc})
-            time.sleep(0.4)
+            # No fixed wait here: every caller settles on the observable its click is supposed to
+            # produce (localStorage, data-view, a new layout pass), so a sleep in the helper would
+            # just hide a missing effect instead of failing on one.
 
         click_id("layout-save")
+        settle(ws, "localStorage.getItem('llm-monitor-order')", "the Save button writing the order")
         saved = js(ws, "localStorage.getItem('llm-monitor-order')")
         assert saved, "Save layout wrote nothing to localStorage"
         order = json.loads(saved)
@@ -389,10 +497,10 @@ def main():
         # 7. drag-persists — trusted mouse input drags a panel by its heading and the new DOM
         #    order is remembered (audit-31 P-04: dispatchMouseEvent, not synthetic events).
         # A taller viewport keeps two whole panels on screen for the press/move/release.
+        stamp = mark_layout(ws)
         ws.call("Emulation.setDeviceMetricsOverride", {"width": 1240, "height": 1400, "deviceScaleFactor": 1, "mobile": False})
-        time.sleep(0.6)
         js(ws, "window.dispatchEvent(new Event('resize'))")
-        time.sleep(0.8)
+        settle_spans(ws, stamp, "after opening a taller viewport for the drag")
         # Pick two panels that are actually inside the viewport (dispatchMouseEvent uses
         # viewport coords, so an off-screen handle can never receive the press). Drag the
         # later one onto the earlier one's top edge.
@@ -414,14 +522,23 @@ def main():
         assert pts, "no two on-screen panels to drag"
         src = pts["src"]
         before = js(ws, ORDER_SIG)
+        # Captured BEFORE the press: the drag persists synchronously on release, so reading the
+        # saved order afterwards and comparing it to itself would pass or fail on nothing.
+        before_saved = js(ws, "localStorage.getItem('llm-monitor-order')")
         ws.call("Input.dispatchMouseEvent", {"type": "mousePressed", "x": pts["x0"], "y": pts["y0"], "button": "left", "clickCount": 1})
         for i in (1, 2, 3):
             mx = pts["x0"] + (pts["x1"] - pts["x0"]) * i / 3
             my = pts["y0"] + (pts["y1"] - pts["y0"]) * i / 3
             ws.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": mx, "y": my, "button": "left"})
+            # Input pacing, not a read-after-change wait: the drag handler needs distinct move
+            # events, so this interval is part of the input, not part of the observation.
             time.sleep(0.12)
         ws.call("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": pts["x1"], "y": pts["y1"], "button": "left", "clickCount": 1})
-        time.sleep(0.6)
+        # The drag handler persists on release, so the observable is a saved order that differs
+        # from the pre-drag one — not a delay.
+        settle(ws, "(localStorage.getItem('llm-monitor-order') || '') !== %s"
+                  % json.dumps(before_saved or ""),
+               "the drag committing to localStorage")
         after = js(ws, ORDER_SIG)
         assert before and after, "order signature unavailable"
         assert after["tiles"] != before["tiles"], f"drag did not reorder the tiles: {before['tiles']}"
@@ -443,6 +560,8 @@ def main():
         # 8. detail-packing — the Detail region packs in its own columns with tight spans.
         #    audit-30 F-30-01 / carryover a30-01: it used to be crammed into one narrow stack,
         #    which wide-full-width (a width check) could not detect.
+        # The drag above reordered tiles, so wait for the spans to settle before reading them.
+        settle_spans(ws, None, "after the drag re-ordered the tiles")
         dgeo = js(ws, """(() => {
           const t = document.querySelector('.tiles--detail'); if (!t) return null;
           const cs = getComputedStyle(t);
@@ -481,12 +600,15 @@ def main():
         # 9. view-toggle-spans — Full -> Compact -> Full leaves every span correct.
         #    Hiding #view-full zeroes tile heights (audit-32 F-32-05); the spans must be
         #    recomputed when the view is shown again. Tabs are trusted clicks in the sticky header.
+        stamp = mark_layout(ws)
         click_id("tab-compact")
-        time.sleep(0.6)
+        settle(ws, "document.body.getAttribute('data-view') === 'compact'", "the Compact view becoming active")
         assert js(ws, "document.body.getAttribute('data-view')") == "compact", "Compact tab did not switch the view"
         click_id("tab-full")
-        time.sleep(0.6)
+        settle(ws, "document.body.getAttribute('data-view') === 'full'", "the Full view becoming active")
         assert js(ws, "document.body.getAttribute('data-view')") == "full", "Full tab did not switch the view"
+        # switchView() calls queueLayout(), so the re-span after unhiding is observable.
+        settle_spans(ws, stamp, "after returning to the Full view")
         vgeo = js(ws, """(() => {
           const t = document.querySelector('.tiles');
           const unit = parseFloat(getComputedStyle(t).gridAutoRows) || 4;
@@ -524,7 +646,9 @@ def main():
                 break
             time.sleep(0.25)
         assert fresh, "never observed a fresh document after Page.navigate"
-        time.sleep(3.0)   # first poll + render + layout pass
+        # Wait for this document's first poll to render; the sentinel above already proves the
+        # document is new, so __lastRender cannot belong to the pre-reload page.
+        settle_render(ws, 0, "the first poll after the reload")
         got = js(ws, ORDER_SIG)
         assert got, "containers missing after reload"
         assert got["tiles"] == expected.get("tiles"), (
@@ -541,7 +665,10 @@ def main():
         #     meter, never as a number.
         #     The fixture is injected in the page (addScriptToEvaluateOnNewDocument runs before
         #     app.js), so the check does not depend on what the live engine happens to report.
-        ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+        #     The identifier is kept so check 25 can remove this script before navigating to the
+        #     fixture-backed server: an injected fetch wrapper survives navigation and would
+        #     otherwise rewrite the fixture's answers.
+        null_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
           (() => {
             // The flag is runtime-flippable so one document can show both states: a null poll
             // followed by a measured one. That is what makes gauge-clears-on-real-reading failable.
@@ -680,12 +807,15 @@ def main():
         assert "tokens" in axis["title"], (
             f"the default (all) axis must name its unit, got {axis['title']!r}"
         )
-        # Switch the metric tab; the unit must change with it.
+        # Switch the metric tab; the unit must change with it. A metric tab re-renders from the
+        # data already in hand (no fetch), so the observable is a newer chart render.
+        chart_stamp = js(ws, "window.__lastChartRender || 0")
         js(ws, """(() => {
           const t = document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]');
           if (t) t.click();
         })()""")
-        time.sleep(0.5)
+        settle(ws, "(window.__lastChartRender || 0) > %d" % int(chart_stamp),
+               "the throughput metric tab re-rendering the chart")
         axis2 = js(ws, """(() => {
           const g = document.getElementById('chart-grid');
           if (!g) return null;
@@ -753,12 +883,15 @@ def main():
         seed.commit()
         seed.close()
 
+        # The seeded rows must reach the chart through a NEW /api/timeseries fetch, so wait for
+        # the fetch and the render that follows it rather than guessing an interval (a32-02).
+        fetch_stamp = js(ws, "window.__lastChartFetch || 0")
         js(ws, """(() => {
           document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]').click();
           const b = document.querySelector("#chart-range-btns .chart-range-btn[data-range='1h']");
           if (b) b.click();
         })()""")
-        time.sleep(1.5)
+        settle_chart(ws, fetch_stamp, "the 1h range button after seeding poll rows")
         lines = js(ws, """(() => {
           const g = document.getElementById('chart-series-lines');
           if (!g) return null;
@@ -834,11 +967,12 @@ def main():
         seed2.commit()
         seed2.close()
 
+        fetch_stamp2 = js(ws, "window.__lastChartFetch || 0")
         js(ws, """(() => {
           const b = document.querySelector("#chart-range-btns .chart-range-btn[data-range='7d']");
           if (b) b.click();
         })()""")
-        time.sleep(2.0)
+        settle_chart(ws, fetch_stamp2, "the 7d range button after seeding the old day")
         panel = js(ws, r"""(() => {
           const p = document.getElementById('charts');
           return p ? p.textContent.replace(/\s+/g, ' ') : null;
@@ -867,9 +1001,10 @@ def main():
         seed3.commit()
         seed3.close()
 
-        # The page polls /api/stats every REFRESH_MS (5 s); wait for the next poll to pick the
-        # seeded days up rather than reaching for a page internal that is not exposed.
-        time.sleep(6.0)
+        # The page polls /api/stats every REFRESH_MS (5 s); wait for the poll whose render is
+        # newer than this point rather than reaching for a wall-clock guess (a32-02).
+        render_stamp = js(ws, "window.__lastRender || 0")
+        settle_render(ws, render_stamp, "the poll that picks up the seeded day rows", timeout=25.0)
         bars = js(ws, """(() => {
           const svg = document.getElementById('hist-bars');
           if (!svg) return null;
@@ -938,11 +1073,14 @@ def main():
 
         # 20. history-metric-switch (a33-18 applied to the history chart) — switching the metric
         #     must change the axis unit; two units must never share one axis.
+        # A history metric tab re-renders from data already in hand, so the observable is the
+        # bars group changing, not a fetch.
         js(ws, """(() => {
           const t = document.querySelector('#hist-metric-tabs .chart-tab[data-hmetric=tokens]');
           if (t) t.click();
         })()""")
-        time.sleep(0.6)
+        settle(ws, "(document.querySelector('#hist-bars .chart-axis-title') || {}).textContent === 'tokens/day'",
+               "the tokens/day axis label after the history metric switch")
         bars2 = js(ws, """(() => {
           const svg = document.getElementById('hist-bars');
           if (!svg) return null;
@@ -1032,8 +1170,11 @@ def main():
         assert fold0["open"] and fold0["contentShown"], (
             f"the Requests fold does not ship open with its contents painted ({fold0!r})"
         )
+        fold_stamp = mark_layout(ws)
         js(ws, "(() => { const s = document.querySelector('#requests details.panel__fold summary'); if (s) s.click(); })()")
-        time.sleep(0.8)
+        # The ResizeObserver re-runs the pass when the fold collapses; waiting for a newer
+        # __lastLayout plus stable spans is what makes the height read below deterministic.
+        settle_spans(ws, fold_stamp, "after closing the Requests fold")
         fold1 = js(ws, """(() => {
           const p = document.getElementById('requests');
           const d = p && p.querySelector('details.panel__fold');
@@ -1080,8 +1221,9 @@ def main():
             f"(span={fold1['span']}, height={fold1['h']:.0f})"
         )
         # Re-open so later checks (and the user) see the table as shipped.
+        reopen_stamp = mark_layout(ws)
         js(ws, "(() => { const s = document.querySelector('#requests details.panel__fold summary'); if (s) s.click(); })()")
-        time.sleep(0.5)
+        settle_spans(ws, reopen_stamp, "after re-opening the Requests fold")
         print("PASS requests-collapsible")
 
         # 23. layout-version-migration (a33-32) — the default arrangement is the point of M81, and a
@@ -1116,7 +1258,9 @@ def main():
                 break
             time.sleep(0.25)
         assert fresh3, "never observed a fresh document after navigating with ?reset=1"
-        time.sleep(2.0)
+        # Wait for this document's first render; the sentinel proves the document is new, so
+        # __lastRender cannot be left over from the previous one.
+        settle_render(ws, 0, "the first poll after ?reset=1")
         markup = js(ws, ORDER_SIG)
         # The initial DOM order is the pre-JS fallback; if it drifts from DEFAULT_ORDER, a user with
         # JS disabled or a slow load sees a different dashboard than everyone else.
@@ -1145,7 +1289,7 @@ def main():
                 break
             time.sleep(0.25)
         assert fresh4, "never observed a fresh document after planting a stale layout"
-        time.sleep(2.0)
+        settle_render(ws, 0, "the first poll after the migrated load")
         migrated = js(ws, ORDER_SIG)
         assert migrated["tiles"] == expected_tiles, (
             f"a stale saved layout was honoured instead of the new defaults:\n  "
@@ -1177,7 +1321,7 @@ def main():
         #     scale was a hardcoded 2000 tok/s this engine never approaches. Everything is pinned by
         #     a fixture so the check tests the render path instead of whatever the live engine
         #     happens to report at the moment the suite runs.
-        ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+        head_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
           (() => {
             window.__m81_bad_since = false;
             const real = window.fetch;
@@ -1264,6 +1408,140 @@ def main():
             f"an unparseable totals.since printed {honest!r}; it must print '--'"
         )
         print("PASS header-liveness")
+
+        # Both injected fetch wrappers are removed here: they survive navigation, and check 25
+        # needs the server's own answers, not page-level rewrites of them.
+        for script in (null_script, head_script):
+            ident = (script or {}).get("identifier")
+            if ident:
+                ws.call("Page.removeScriptToEvaluateOnNewDocument", {"identifier": ident})
+
+        # 25. fixture-engine-values (a33-35) — every check above either asserts structure or pins
+        #     values by rewriting the response inside the page. Neither can prove that server.py
+        #     turns a KNOWN engine answer into a KNOWN payload field, because both still depend on
+        #     whatever engine happens to own :8080 when the suite runs (and on CI, none does).
+        #     This starts a second copy of the real server with LLM_MONITOR_FIXTURE pointed at
+        #     agent/tests/ui/fixtures/engine.json, whose gpu_* counters carry values the live AMD
+        #     HIP driver never supplies — so the GPU panel's measured path becomes testable, and
+        #     every number below is one only the fixture can produce.
+        fx_port = free_port()
+        fx_db = os.path.join(profile, "telemetry-fixture.sqlite3")
+        fx_server = subprocess.Popen(
+            [sys.executable, os.path.join(UI, "server.py"), str(fx_port)],
+            cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            env=dict(os.environ,
+                     LLM_MONITOR_DB=os.path.join(profile, "telemetry-fixture-poll.sqlite3"),
+                     LLM_MONITOR_FIXTURE=os.path.join(HERE, "fixtures", "engine.json")),
+        )
+        try:
+            fx_base = f"http://127.0.0.1:{fx_port}"
+            fx_up = False
+            for _ in range(40):
+                try:
+                    urllib.request.urlopen(fx_base + "/", timeout=1)
+                    fx_up = True
+                    break
+                except (urllib.error.URLError, ConnectionError, OSError):
+                    time.sleep(0.25)
+            assert fx_up, "the fixture-backed server did not come up"
+
+            # (a) the payload: exact numbers derived from the fixture document.
+            fx = json.loads(urllib.request.urlopen(fx_base + "/api/stats", timeout=15).read())
+            gpu = fx.get("gpu") or {}
+            problems = []
+            if gpu.get("temp_c") != 71.0:
+                problems.append(f"gpu.temp_c is {gpu.get('temp_c')!r}, expected 71.0 from the fixture")
+            if gpu.get("util_pct") != 62.0 or gpu.get("util_source") != "measured":
+                problems.append(f"gpu utilisation is {gpu.get('util_pct')!r}/{gpu.get('util_source')!r}; "
+                                f"a counter the fixture supplies must be labelled measured")
+            if gpu.get("mem_pct") != 73.2421875:
+                problems.append(f"gpu.mem_pct is {gpu.get('mem_pct')!r}, expected 73.2421875")
+            if gpu.get("power_w") != 187.0 or gpu.get("power_source") != "measured":
+                problems.append(f"gpu power is {gpu.get('power_w')!r}/{gpu.get('power_source')!r}")
+            # The OS keeps its precedence over the engine even under a fixture: the fixture names
+            # a fake adapter, and the payload must report that disagreement rather than pick one.
+            if gpu.get("name_conflict") != "Fixture Virtual Adapter":
+                problems.append(f"gpu.name_conflict is {gpu.get('name_conflict')!r}")
+            thr = fx.get("throughput") or {}
+            # 2,000 tokens actually read / 10,000 ms prompt_ms from the fixture's newest request.
+            if thr.get("prefill") != 200.0:
+                problems.append(f"throughput.prefill is {thr.get('prefill')!r}, expected 200.0")
+            if thr.get("prefill_mean") != 500.0:
+                problems.append(f"throughput.prefill_mean is {thr.get('prefill_mean')!r}, "
+                                f"expected 500.0 ((400000-320000) read / 160 s)")
+            spec = fx.get("spec") or {}
+            if spec.get("accept_pct") != 70.0:
+                problems.append(f"spec.accept_pct is {spec.get('accept_pct')!r}, expected 70.0")
+            cache = fx.get("cache") or {}
+            if cache.get("hit_pct") != 80.0:
+                problems.append(f"cache.hit_pct is {cache.get('hit_pct')!r}, expected 80.0")
+            engine = fx.get("engine") or {}
+            if engine.get("build_info") != "Strata 9.9.99-fixture":
+                problems.append(f"engine.build_info is {engine.get('build_info')!r}")
+            eps = fx.get("endpoints") or {}
+            missing_eps = sorted(k for k, v in eps.items() if k != "status" and not v)
+            if missing_eps:
+                problems.append(f"the fixture does not answer for: {missing_eps}")
+            assert not problems, "fixture answers did not reach the payload:\n  " + "\n  ".join(problems)
+
+            # (b) the DOM: the same fixture seen through the page. This is the GPU panel the user
+            #     reported as "all 0%" — with counters present it must show them, not zeros.
+            js(ws, "window.__m81_pre_fixture_nav = 1")
+            ws.call("Page.navigate", {"url": fx_base + "/"})
+            fresh6 = False
+            for _ in range(60):
+                state = js(ws, "({sentinel: window.__m81_pre_fixture_nav, ready: document.readyState})")
+                if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                    fresh6 = True
+                    break
+                time.sleep(0.25)
+            assert fresh6, "never observed a fresh document on the fixture-backed server"
+            settle_render(ws, 0, "the first poll against the fixture-backed server")
+
+            def read_gpu_panel():
+                return js(ws, """(() => {
+                  const pick = (id) => { const e = document.getElementById(id); return e ? e.textContent : null; };
+                  const gm = document.getElementById('gpu-util-gauge');
+                  const tm = document.getElementById('gpu-temp-gauge');
+                  return {util: pick('gpu-util'), mem: pick('gpu-mem'), temp: pick('gpu-temp'),
+                          state: pick('gpu-state'), name: pick('gpu-name'), power: pick('gpu-power'),
+                          utilVal: gm ? gm.getAttribute('value') : null,
+                          tempVal: tm ? tm.getAttribute('value') : null};
+                })()""")
+
+            # setGauge eases each number toward its target over 600 ms, so poll until the readings
+            # land rather than reading once and racing the tween.
+            gpane = None
+            for _ in range(40):
+                gpane = read_gpu_panel()
+                if gpane and gpane["temp"] == "71%" and gpane["util"] == "62%":
+                    break
+                time.sleep(0.25)
+            assert gpane, "the GPU panel is missing on the fixture-backed server"
+            problems = []
+            if gpane["temp"] != "71%":
+                problems.append(f"#gpu-temp reads {gpane['temp']!r}, expected '71%'")
+            if gpane["util"] != "62%":
+                problems.append(f"#gpu-util reads {gpane['util']!r}, expected '62%'")
+            if gpane["mem"] not in ("73%",):
+                problems.append(f"#gpu-mem reads {gpane['mem']!r}, expected '73%'")
+            if gpane["tempVal"] != "71":
+                problems.append(f"the temp meter is sized to {gpane['tempVal']!r}, expected '71'")
+            if not gpane["state"] or "counters live" not in gpane["state"]:
+                problems.append(f"#gpu-state reads {gpane['state']!r}; with measured counters it "
+                                f"must say the counters are live")
+            if "engine says Fixture Virtual Adapter" not in (gpane["state"] or ""):
+                problems.append(f"the engine/OS name disagreement is not shown ({gpane['state']!r})")
+            if "Fixture Virtual Adapter" in (gpane["name"] or ""):
+                problems.append(f"#gpu-name shows the engine's adapter instead of the OS's: {gpane['name']!r}")
+            assert not problems, "the fixture's GPU counters did not reach the panel:\n  " + "\n  ".join(problems)
+            print("PASS fixture-engine-values")
+        finally:
+            try:
+                fx_server.terminate()
+                fx_server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                fx_server.kill()
         return 0
     finally:
         for p in (proc, server):

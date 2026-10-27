@@ -56,6 +56,29 @@ LLAMA_PROFILES = [
 ]
 HTTP_TIMEOUT = 3.0
 
+# M81-T8 (audit-33 a33-35): the browser suite starts this real server, and every value it reads
+# then depends on whatever the live engine happens to report at that moment — so any assertion
+# about values rather than structure is inherently flaky, and on a CI runner with no engine on
+# :8080 the whole payload degrades to nulls and only structural checks can say anything.
+# LLM_MONITOR_FIXTURE=<path.json> replaces the engine's HTTP answers with a fixed document:
+# the file maps endpoint paths ("/metrics", "/health", ...) to the JSON that endpoint returns.
+# Only _get_json is intercepted — workspace state files, log tails and our own SQLite history
+# stay real, so the fixture pins the engine and nothing else. A missing or unreadable fixture is
+# a startup failure rather than a silent fall back to the live engine, because testing the live
+# engine by accident is exactly the defect this exists to remove.
+FIXTURE_PATH = os.environ.get("LLM_MONITOR_FIXTURE") or None
+_FIXTURE = None
+if FIXTURE_PATH:
+    try:
+        with open(FIXTURE_PATH, "r", encoding="utf-8") as fh:
+            _doc = json.load(fh)
+        if not isinstance(_doc, dict):
+            raise ValueError("the fixture must be a JSON object of {endpoint: response}")
+        _FIXTURE = _doc
+    except Exception as err:
+        print(f"[fixture] LLM_MONITOR_FIXTURE={FIXTURE_PATH} unusable: {err}")
+        raise SystemExit(2)
+
 # ---------- Telemetry + power model ----------
 # The SQLite history is deliberately tiny: one numeric row per poll, no JSON blobs,
 # bounded to DB_MAX_ROWS (~1-2 MB), pruned in one cheap DELETE every DB_PRUNE_EVERY
@@ -300,7 +323,13 @@ def _get_json(path):
     Results are cached for the duration of one poll (_poll_reset clears the cache in
     build_stats), so the ~10 sections that all want /metrics pay for one request. This
     keeps the monitor from hammering the engine it is measuring.
+
+    With LLM_MONITOR_FIXTURE set (M81-T8 / a33-35) the fixture answers instead, and a path the
+    fixture does not list is None — the same "endpoint unreachable" shape the live path yields,
+    so a fixture can be partial without changing what the code under test sees.
     """
+    if _FIXTURE is not None:
+        return _FIXTURE.get(path)
     if path in _CACHE:
         return _CACHE[path]
     try:

@@ -4,6 +4,25 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.3.0] - 2026-10-27
+
+### Changed
+- **The dashboard leads with what the model is doing.** The default tile order is now engine performance (live, throughput, context, cache, speculative decode, telemetry), then activity (charts, requests, history, usage), then hardware (gpu, power, hardware); engine config, engine switch and the system log stay a collapsed Reference region. Cache and speculative decode moved out of that region because they are engine readings. The Requests table folds in place inside its own panel. A saved layout from before this release is replaced by the new defaults and the page says so, with Dismiss and Reset beside it.
+- **The GPU panel names the right card.** The engine indexes the Windows display class in class order, so on a PC with a leftover driver entry for a removed card it named an RX 6800 XT on a machine holding an RX 7900 XTX. `server.py` now resolves the name and VRAM from the registry itself (stdlib `winreg`, guarded so Linux CI still imports the file), labels the source (`via OS` / `via engine` / `rated`) and shows a disagreement instead of picking silently. WMI's `AdapterRAM` is never used: it is a UInt32 cap.
+- **A missing reading no longer looks like a zero.** `setGauge` renders null as `--` with a striped indeterminate meter rather than `0%`; the GPU Temp row had been claiming a definite 0% on a driver that exposes no temperature counter. Every gauge now names where its number came from (measured / derived / modelled / rated).
+- **Telemetry rates mean what their labels claim.** Hit and accept rates are computed from the window's own totals rather than averaged over session-cumulative per-poll ratios (on this PC: 88.19% shown as 65.96%). Prefill samples above a 5,000 tok/s ceiling are excluded and the panel is told via `prefill_bounded`, because one impossible historical sample (1,905,830 tok/s) flattened every real value in the chart. Each figure states the window it covers.
+- **The Performance & Token chart became readable.** The y-axis belongs to one metric with its unit printed, buckets with no samples are marked as gaps instead of drawn as zero, the legend matches the plotted series, and each range tab labels the span it shows.
+- **History is a labelled bar chart** with a day scrubber and keyboard access, replacing a 100x30 squiggle with no axis and no ticks. Calendar-period rows name their UTC alignment.
+- **The header says what it measures.** The duplicated decode tok/s cell is gone, the prefill gauge's scale is printed next to it (`gauge to 1,250`) and derived from the series instead of a hardcoded 2000 tok/s this engine never approaches, and the header now carries engine uptime, the age of the numbers on screen and the answering build string.
+- Payload keys are **additive only** (this milestone deliberately lifts the M79/M80 "zero /api changes" rule): `gpu.name_source`, `gpu.name_conflict`, `hardware.gpu_name_source`, `power.rated_w`, per-bucket `samples`, `n_buckets`/`empty_buckets`, window-weighted rate keys and `prefill_bounded`.
+
+### Added
+- `LLM_MONITOR_DB` / `LLM_MONITOR_FIXTURE` overrides in `server.py`. The browser suite drives the real server, so without them every `/api/stats` it requested appended a poll row to production `telemetry.sqlite3` (measured 20,280 -> 20,282 for one request) and every value assertion depended on whatever engine owned :8080. The fixture answers `_get_json` from a pinned document and aborts startup if that document is unusable, never falling back to the live engine silently.
+- `agent/tests/ui/fixtures/engine.json` — pinned Strata-shaped engine answers whose `gpu_*` counters carry values this PC's AMD driver never supplies, which finally makes the GPU panel's measured path testable.
+- The UI suite grew from browser 10 / static 7 to **browser 25 / static 16**, every new check mutation-proven. New browser checks cover the null gauge, HUD context scaling, chart axes/gaps/legend/series breaks, history bars and scrubbing, the Requests fold, layout version migration, header liveness and fixture-driven GPU values; new static checks cover GPU name provenance, empty-prior percentages, fallback bucket shape, nav coverage, header unit uniqueness, gauge scale labelling, fixture honouring and settle discipline.
+- Fixed sleeps replaced by observable settles (`__lastLayout`, `__lastRender`, `__lastChartFetch`, `__lastChartRender`, `__lastUsage`). This caught a real flake: `fetchUsage()` grows the Usage tile after load, so a masonry pass that merely post-dated a viewport change could be stale — `tiles without a sufficient row span: ['usage:66']`.
+- `tests/telemetry/`: the first unit tests for the telemetry maths (35 analysis + 22 day-rollup + 25 timeseries checks), running in CI alongside the usage and UI suites.
+
 ## [0.2.1] - 2026-10-26
 
 ### Changed

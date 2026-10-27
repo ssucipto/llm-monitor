@@ -139,3 +139,46 @@
   guards:
     - assert the initial markup order equals the JS default order (pre-JS fallback drift)
     - when a region shrinks, re-measure its count/geometry assertions in the same commit
+
+- date: 2026-10-27
+  name: deterministic-harness-for-a-live-dependent-app
+  kind: testing-pattern
+  problem: |
+    A dashboard's test harness starts the REAL server, which talks to a live upstream
+    (an inference engine on a fixed port). So every value assertion depends on what the
+    upstream happens to report at run time, and on a CI runner with no upstream the whole
+    payload degrades to nulls so only structural checks can say anything. Worse, the test
+    server writes into the PRODUCTION history file, so the suite pollutes the data it is
+    meant to observe, and fixed sleeps before geometry reads make runs flaky.
+  solution: |
+    Make the upstream source overridable at the single boundary that talks to it, and
+    fail loudly when the override is unusable. (1) ENV override for the persistence path
+    so no test writes production rows; assert the production row count is UNCHANGED by a
+    full suite run - that measurement is the proof. (2) ENV override pointing at a pinned
+    document that answers the same function the live path uses; an unset key in the
+    document returns the same shape as "endpoint unreachable" so fixtures may be partial;
+    an unreadable fixture aborts startup (SystemExit) rather than silently testing the
+    live upstream. Give the fixture values the real host CANNOT produce, which is what
+    makes the measured code path reachable in tests at all. (3) Replace every
+    read-after-change sleep with an in-page stamp the app already sets at the end of each
+    pass (layout, render, fetch, render-of-chart, secondary fetch), then poll a predicate.
+    Where a fetch is throttled, wait for the FETCH stamp and THEN the render stamp, or a
+    later re-render of stale data satisfies the wait.
+  example: |
+    llm-monitor/server.py: DB_PATH/USAGE_DB overrides, FIXTURE_PATH + _get_json's
+    `if _FIXTURE is not None: return _FIXTURE.get(path)`, SystemExit(2) on a bad fixture;
+    agent/tests/ui/fixtures/engine.json; test_ui_browser.py settle/settle_spans/
+    settle_render/settle_usage/settle_chart + SPANS_SIG; app.js __lastLayout,
+    __lastRender, __lastChartFetch, __lastChartRender, __lastUsage; static checks
+    telemetry-db-isolated, engine-fixture-honoured, geometry-read-settled.
+  applies_to: any harness that drives a real server whose upstream is live, host-specific
+    or absent on CI
+  guards:
+    - a page-level fetch fixture survives navigation: keep the identifier and remove it
+      before a check that needs the server's own answers
+    - capture the "before" value BEFORE the action; a settle baselined afterwards passes
+      or fails on nothing
+    - a secondary fetch that rewrites text grows its tile after load, so geometry waits
+      must require layout >= max(all content stamps), not just newer than the viewport change
+    - app.js is <script type=module>: its consts are module-scoped and unreachable from
+      CDP Runtime.evaluate; expose window stamps for observables, parse the source for consts

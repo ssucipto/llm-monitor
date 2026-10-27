@@ -103,3 +103,9 @@
   mistake: "Shipped three new browser checks as if they were coverage. One (reload-restores-order) would have compared the PRE-reload DOM, because document.readyState can still report 'complete' on the old document right after Page.navigate. Another (view-toggle-spans) turned out to be unfailable: with both the explicit layout call and the ResizeObserver removed, nothing sets gridRowEnd:auto, so it can never go red."
   correction: "Every new assertion gets a mutation attempt in the same session. If it cannot be made to fail, say so in the report and the task doc instead of implying coverage. When a test reloads a page, prove the document is fresh (set window.__sentinel before navigating, poll until it is gone) — never trust readyState alone."
   priority: high
+
+- date: 2026-10-27
+  task_type: testing
+  mistake: "Wrote a static check meant to prove 'no fixed sleep sits between a viewport change and its settle' with a 5-line look-ahead window, and it failed on CORRECT code: at test_ui_browser.py:342 an override is legitimately followed by settle_usage() before settle_spans(). The window encoded an assumption about the ORDER of settles instead of the rule being asserted."
+  correction: "When a check asserts 'X happens before Y', widen the window to allow any intervening legitimate step and forbid only the specific bad pattern (a bare time.sleep), rather than requiring Y to be the next call. Then prove it both ways: inject the old sleep pattern (must fail) and remove a settle helper or an app.js observable (must fail)."
+  priority: normal

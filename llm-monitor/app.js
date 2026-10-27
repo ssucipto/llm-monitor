@@ -209,6 +209,10 @@ function layoutTiles(c) {
 
 function layoutAll() {
   for (const c of containersList()) layoutTiles(c);
+  // M81-T8 (a32-02): the UI suite must not guess when a layout pass has landed. Every
+  // geometry wait polls this stamp (or compares two consecutive span reads) instead of
+  // sleeping a fixed interval, so a slow runner cannot produce a flaky read.
+  window.__lastLayout = Date.now();
 }
 
 let layoutQueued = false;
@@ -1638,11 +1642,16 @@ async function fetchTimeseries(range = currentChartRange, force = false) {
     const data = await res.json();
     currentTimeseriesData = data;
     lastTimeseriesFetch = Date.now();
+    // M81-T8 (a32-02): the fetch and its render are stamped separately because the fetch is
+    // throttled — a wait on the render alone could be satisfied by the next /api/stats
+    // re-render of stale data.
+    window.__lastChartFetch = Date.now();
     renderTimeseriesChart(data, currentChartMetric, currentChartRange);
   } catch (err) {
     const fallback = synthesizeFallbackTimeseries(range);
     if (fallback) {
       currentTimeseriesData = fallback;
+      window.__lastChartFetch = Date.now();
       renderTimeseriesChart(fallback, currentChartMetric, currentChartRange);
     }
   }
@@ -1914,6 +1923,9 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     const p = item.peak > 0 ? (item.unit === "tok/s" ? item.peak.toFixed(1) : fmtInt(item.peak)) : null;
     peakEl.textContent = p != null ? `· scaled to peak ${p}${item.unit ? " " + item.unit : ""}` : "· no data";
   });
+  // M81-T8 (a32-02): stamped at the very end of the pass, so the UI suite can wait for a chart
+  // render newer than its own click instead of sleeping a guessed interval.
+  window.__lastChartRender = Date.now();
 }
 
 function wireCharts() {
@@ -2075,6 +2087,11 @@ async function refresh() {
   renderHud(data);
 
   lastStatsData = data;
+  // M81-T8 (a32-02): marks the poll whose values are now on screen. The suite waits for this
+  // instead of sleeping, which is also what lets a check prove a seeded DB row or a pinned
+  // fixture actually reached the DOM. Stamped before layoutAll so a masonry pass always
+  // post-dates the content it is spanning.
+  window.__lastRender = Date.now();
   layoutAll(); // M80-T1: re-span after every render pass
   if (Date.now() - lastTimeseriesFetch > 15000 && (currentChartRange === "15m" || currentChartRange === "1h")) {
     fetchTimeseries(currentChartRange);
@@ -2394,6 +2411,12 @@ async function fetchUsage() {
     console.error(err);
     $("usage-sources").textContent = `unavailable (${err.message})`;
   }
+  // M81-T8 (a32-02): the ledger text is longer than the "--" it replaces, so the panel grows.
+  // switchView re-spans for the same reason — a tile's span must not depend on when the
+  // ResizeObserver happens to fire, or the row underneath it is measured against a stale span.
+  // The stamp lets the UI suite require that a layout pass happened AFTER the ledger landed.
+  window.__lastUsage = Date.now();
+  queueLayout();
 }
 
 async function init() {

@@ -21,6 +21,8 @@ Checks
  12 toc-covers-panels every panel is reachable from the nav, and no nav link is dead (a33-31)
  13 header-unique-units no two visible header cells print the same unit label (a33-26)
  14 gauge-scale-labelled the prefill gauge's scale is named in markup and driven from data (a33-27)
+ 15 engine-fixture-honoured LLM_MONITOR_FIXTURE answers _get_json, and a bad fixture aborts startup (a33-35)
+ 16 geometry-read-settled every viewport change is followed by a settle, not a fixed sleep (a32-02)
 """
 import json
 import os
@@ -280,6 +282,87 @@ def main():
     if hardcoded:
         problems.append(f"the gauge ceiling is hardcoded again: {hardcoded[:2]}")
     expect("gauge-scale-labelled", not problems, problems)
+
+    # 15 — M81-T8 (audit-33 a33-35): the browser suite drives the real server, so without an
+    # engine-independent source of engine answers every value assertion either pins numbers inside
+    # the page or depends on whatever owns :8080 at run time. server.py must honour
+    # LLM_MONITOR_FIXTURE, and it must fail loudly when that fixture is unusable rather than
+    # quietly fall back to the live engine — which would test the live engine by accident.
+    srv_src = open(os.path.join(UI, "server.py"), encoding="utf8").read()
+    fixture_path = os.path.join(HERE, "fixtures", "engine.json")
+    problems = []
+    if 'os.environ.get("LLM_MONITOR_FIXTURE")' not in srv_src:
+        problems.append("server.py does not read LLM_MONITOR_FIXTURE")
+    if re.search(r"if _FIXTURE is not None:\s*\n\s*return _FIXTURE\.get\(path\)", srv_src) is None:
+        problems.append("_get_json does not answer from the fixture")
+    if "raise SystemExit(2)" not in srv_src:
+        problems.append("an unusable fixture does not abort startup (silent fallback to the engine)")
+    # The fixture must exist, parse, and cover the endpoints the payload needs.
+    doc = None
+    try:
+        doc = json.load(open(fixture_path, encoding="utf8"))
+    except Exception as exc:
+        problems.append(f"fixtures/engine.json unreadable: {exc}")
+    if isinstance(doc, dict):
+        need = ("/health", "/metrics", "/props", "/slots", "/v1/models")
+        absent = [p for p in need if p not in doc]
+        if absent:
+            problems.append(f"fixture is missing endpoints: {absent}")
+        hw = ((doc.get("/metrics") or {}).get("hardware") or {})
+        # The whole point of this fixture: gpu_* counters carry values, so the GPU panel's
+        # measured path is reachable in a test even though this PC's driver reports none.
+        dead = [k for k in ("gpu_util", "gpu_temp", "gpu_power", "gpu_mem_used")
+                if hw.get(k) is None]
+        if dead:
+            problems.append(f"fixture gpu counters carry no value: {dead}")
+    # Behaviour, not just text: a bad fixture path must stop the server from starting.
+    try:
+        bad_proc = subprocess.run(
+            [sys.executable, os.path.join(UI, "server.py"), str(free_port())],
+            cwd=UI, capture_output=True, text=True, timeout=30,
+            env=dict(os.environ, LLM_MONITOR_FIXTURE=os.path.join(HERE, "fixtures", "nope.json")),
+        )
+        if bad_proc.returncode == 0:
+            problems.append("a missing fixture file did not stop the server")
+    except subprocess.TimeoutExpired:
+        # The server stayed up, which is exactly the silent-fallback failure this guards.
+        problems.append("the server kept running with an unusable LLM_MONITOR_FIXTURE")
+    expect("engine-fixture-honoured", not problems, problems)
+
+    # 16 — M81-T8 (audit-32 a32-02): a geometry read must follow an observable settle, never a
+    # fixed sleep. Rather than ban time.sleep outright (the suite legitimately sleeps while polling
+    # for an observable), assert the rule that matters: every viewport change is followed by a
+    # settle_spans() before anything reads spans, with no sleep in between. Inserting a sleep(3.0)
+    # after an override — the old pattern — fails this.
+    src = open(os.path.join(HERE, "test_ui_browser.py"), encoding="utf8").read()
+    lines = src.splitlines()
+    problems = []
+    change_at = [i for i, ln in enumerate(lines)
+                 if "DeviceMetricsOverride" in ln and "ws.call" in ln]
+    if not change_at:
+        problems.append("no viewport overrides found — the geometry checks would not be pinned")
+    for i in change_at:
+        # A generous window: a viewport change may legitimately be followed by another settle
+        # (e.g. settle_usage) before settle_spans, as long as no fixed sleep is involved.
+        window = lines[i + 1:i + 9]
+        joined = "\n".join(window)
+        if "settle_spans(" not in joined:
+            problems.append(f"line {i+1}: a viewport change is not followed by settle_spans()")
+        for off, ln in enumerate(window):
+            if "settle_spans(" in ln:
+                break
+            if re.search(r"time\.sleep\(\s*\d", ln) and "for _ in range" not in ln:
+                problems.append(f"line {i+2+off}: a fixed sleep sits between a viewport change and "
+                                f"its settle: {ln.strip()[:70]}")
+    # And the settle helpers themselves must still be observable-driven.
+    for helper in ("def settle(", "def settle_spans(", "def settle_render(", "def settle_chart(",
+                   "def settle_usage("):
+        if helper not in src:
+            problems.append(f"settle helper {helper!r} is gone")
+    for stamp in ("__lastLayout", "__lastRender", "__lastChartFetch", "__lastChartRender", "__lastUsage"):
+        if stamp not in read("app.js"):
+            problems.append(f"app.js no longer exposes the {stamp} observable the suite waits on")
+    expect("geometry-read-settled", not problems, problems)
 
     if fails:
         print(f"[tests/ui static] FAIL {len(fails)}: {fails}")

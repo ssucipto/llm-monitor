@@ -1,3 +1,3 @@
 # tests/ui suites and their PASS counts (M79-T8 / M80-T4). A change in count changes this file.
-test_ui_static.py 14
-test_ui_browser.py 24
+test_ui_static.py 16
+test_ui_browser.py 25
