@@ -17,6 +17,7 @@ Checks
   8 db-isolation       the poll row lands in LLM_MONITOR_DB, not beside server.py
   9 gpu-provenance     gpu.name_source is never "measured"; name_conflict exists
  10 no-empty-prior-pct no hardcoded +100% out of an empty prior period (a33-16)
+ 11 fallback-shape   the offline fallback builds buckets with the same keys the API emits
 """
 import json
 import os
@@ -194,6 +195,24 @@ def main():
             bad_pct = [ln.strip() for ln in js.splitlines() if '"+100%"' in ln or "'+100%'" in ln]
             expect("no-empty-prior-percent", not bad_pct,
                    f"hardcoded +100% out of an empty prior: {bad_pct[:4]}")
+
+            # 11 — M81-T4 (a33-21): the renderer decides what is observed from bucket.samples.
+            # The offline fallback in app.js builds its own buckets, and if it stops setting the
+            # fields the renderer reads, every fallback bucket looks unobserved and the chart
+            # silently draws nothing. Assert both bucket builders set the same contract keys.
+            server_src = srv_src
+            api_bucket = re.search(r'"samples":', server_src) is not None
+            fb_blocks = re.findall(r'buckets\.push\(\{(.*?)\n      \}\);', js, re.S)
+            problems = []
+            if not api_bucket:
+                problems.append("server.py db_timeseries no longer emits a per-bucket samples count")
+            if len(fb_blocks) != 2:
+                problems.append(f"expected 2 fallback bucket builders in app.js, found {len(fb_blocks)}")
+            for i, blk in enumerate(fb_blocks):
+                for key in ("samples", "tok_s_mean", "prefill_mean", "prefill_max", "total_tokens"):
+                    if re.search(rf"\b{key}\b", blk) is None:
+                        problems.append(f"fallback bucket builder {i+1} omits {key}")
+            expect("fallback-bucket-shape", not problems, problems)
     finally:
         proc.terminate()
         try:

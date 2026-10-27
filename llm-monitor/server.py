@@ -714,10 +714,22 @@ def db_init():
             "CREATE TABLE day (d INTEGER, polls INTEGER, span_s REAL, reqs INTEGER,"
             " prompt INTEGER, reused INTEGER, output INTEGER, tok_mean REAL, tok_max REAL,"
             " prefill_mean REAL, hit_mean REAL, accept_mean REAL, power_mean REAL,"
-            " energy_wh REAL, idle_pct REAL, hours TEXT)"
+            " energy_wh REAL, idle_pct REAL, hours TEXT, prefill_max REAL,"
+            " prefill_bounded INTEGER)"
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
+    # M81-T4 (a33-19): the day rollup had no prefill-max column, so db_timeseries
+    # hard-set prefill_max to None for every day-range bucket and the 7d/30d/90d
+    # views could not show a peak. Days frozen before this column exists stay NULL,
+    # which the front end prints as "peak n/a" rather than reusing the mean.
+    # prefill_bounded records that the bound fired when the day was aggregated, so the
+    # "· bounded" tag survives into the day ranges instead of defaulting to false.
+    for col, ctype in (("prefill_max", "REAL"), ("prefill_bounded", "INTEGER")):
+        try:
+            con.execute(f"ALTER TABLE day ADD COLUMN {col} {ctype}")
+        except sqlite3.OperationalError:
+            pass  # the column is already there
     try:
         con.execute("CREATE INDEX IF NOT EXISTS idx_poll_t ON poll(t)")
     except sqlite3.OperationalError:
@@ -864,6 +876,29 @@ def bounded_prefill(vals):
     return sum(kept) / len(kept), max(kept), bounded
 
 
+def published_day_prefill(mean, maximum):
+    """(mean, max, note) for a prefill aggregate already frozen in the day table.
+
+    Days finalised before M81-T3 stored an UNBOUNDED mean: on this PC they read
+    7,238 / 9,834 / 10,230 tok/s on a card that decodes at 4-124, which is the a33-10
+    defect reaching the 7d/30d/90d charts. A stored mean cannot be recomputed (the poll
+    rows behind it are pruned), so there is no honest way to repair it: publishing None
+    with a reason beats inventing a number or showing an impossible one.
+
+    The marker is structural, not a threshold. Since M81-T3 every day aggregate takes
+    mean and max from the SAME bounded_prefill call, which returns both or neither, so
+    "a mean with no max" can only be a row written by an older build. That avoids
+    inventing a second, unmeasured cutoff for stored means (the live distribution's p50
+    is 345 tok/s, so plenty of sub-ceiling day means are still implausible — but the
+    ceiling is the only bound this project measured, and applying it twice would be
+    guessing). /api/export still ships the raw stored value.
+    """
+    if mean is not None and maximum is None:
+        return None, None, "pre-bound record"
+        return None, None, "pre-bound record"
+    return mean, maximum, None
+
+
 def day_aggregates(con, lo, hi):
     """Summarise one [lo, hi) span of poll rows (a UTC day slice).
 
@@ -980,11 +1015,13 @@ def db_finalize_days(con):
         con.execute(
             "INSERT INTO day (d, polls, span_s, reqs, prompt, reused, output,"
             " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean,"
-            " energy_wh, idle_pct, hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " energy_wh, idle_pct, hours, prefill_max, prefill_bounded)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (d, agg["polls"], agg["span_s"], agg["requests"], agg["prompt_tokens"],
              agg["reused"], agg["output_tokens"], agg["tok_s_mean"], agg["tok_s_max"],
              agg["prefill_mean"], agg["hit_mean"], agg["accept_mean"], agg["power_mean"],
-             agg["energy_wh"], agg["idle_pct"], json.dumps(agg["hours"])),
+             agg["energy_wh"], agg["idle_pct"], json.dumps(agg["hours"]), agg["prefill_max"],
+             1 if agg["prefill_bounded"] else 0),
         )
     con.commit()
 
@@ -1077,16 +1114,25 @@ def db_daily(con, limit=DB_DAILY_MAX):
     for r in con.execute(
         "SELECT d, polls, span_s, reqs, prompt, reused, output,"
         " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean,"
-        " energy_wh, idle_pct, hours FROM day ORDER BY d"
+        " energy_wh, idle_pct, hours, prefill_max, prefill_bounded FROM day ORDER BY d"
     ):
         out.append({
             "d": r[0], "date": _iso_day(r[0]), "polls": r[1], "requests": r[3],
             "total_tokens": (r[4] or 0) + (r[6] or 0),
             "prompt_tokens": r[4], "reused": r[5], "output_tokens": r[6],
-            "tok_s_mean": r[7], "tok_s_max": r[8], "prefill_mean": r[9],
+            "tok_s_mean": r[7], "tok_s_max": r[8],
             "hit_mean": r[10], "accept_mean": r[11], "power_mean": r[12],
             "energy_wh": r[13], "idle_pct": r[14], "hours": json.loads(r[15]),
         })
+        # M81-T4 (a33-10/a33-19): a day frozen before the bound was introduced holds an
+        # impossible prefill mean, and its poll rows are already pruned, so it cannot be
+        # recomputed. Publish nothing with a reason rather than an impossible number.
+        pm, px, pnote = published_day_prefill(r[9], r[16])
+        out[-1]["prefill_mean"] = pm
+        out[-1]["prefill_max"] = px
+        out[-1]["prefill_bounded"] = bool(r[17])
+        if pnote:
+            out[-1]["prefill_note"] = pnote
     now = datetime.now(timezone.utc).timestamp()
     d = int(now // 86400)
     agg = day_aggregates(con, d * 86400, now + 1)
@@ -1144,7 +1190,10 @@ def db_timeseries(con, range_str="1h"):
             b_rows = [r for r in rows if b_lo <= r[0] < b_hi]
 
             tok_vals = [r[1] for r in b_rows if r[1] is not None]
-            prefill_vals = [r[2] for r in b_rows if r[2] is not None]
+            # M81-T4 (a33-19) + T3 policy: the chart is a published path, so its
+            # prefill samples go through the same ceiling as every other aggregate.
+            # Raw rows stay untouched in the DB; n_bounded says how much was cut.
+            b_prefill_mean, b_prefill_max, b_prefill_bounded = bounded_prefill([r[2] for r in b_rows])
 
             cur_reqs = b_rows[-1][3] if b_rows else None
             cur_prompt = b_rows[-1][4] if b_rows else None
@@ -1179,6 +1228,9 @@ def db_timeseries(con, range_str="1h"):
                 "t": round(b_mid, 1),
                 "time": dt.isoformat(),
                 "label": label,
+                # M81-T4 (a33-21): a bucket with no polls is a gap in observation, not
+                # an idle engine. The renderer needs to tell those two apart.
+                "samples": len(b_rows),
                 "requests": req_delta,
                 "prompt_tokens": prompt_delta,
                 "reused": reused_delta,
@@ -1186,8 +1238,9 @@ def db_timeseries(con, range_str="1h"):
                 "total_tokens": prompt_delta + output_delta,
                 "tok_s_mean": round(sum(tok_vals) / len(tok_vals), 1) if tok_vals else None,
                 "tok_s_max": round(max(tok_vals), 1) if tok_vals else None,
-                "prefill_mean": round(sum(prefill_vals) / len(prefill_vals), 1) if prefill_vals else None,
-                "prefill_max": round(max(prefill_vals), 1) if prefill_vals else None,
+                "prefill_mean": round(b_prefill_mean, 1) if b_prefill_mean is not None else None,
+                "prefill_max": round(b_prefill_max, 1) if b_prefill_max is not None else None,
+                "prefill_bounded": b_prefill_bounded,
             })
 
     elif range_str in days_map:
@@ -1198,8 +1251,8 @@ def db_timeseries(con, range_str="1h"):
         start_day = today_idx - (num_days - 1)
 
         day_rows = con.execute(
-            "SELECT d, reqs, prompt, reused, output, tok_mean, tok_max, prefill_mean "
-            "FROM day WHERE d >= ? ORDER BY d ASC",
+            "SELECT d, reqs, prompt, reused, output, tok_mean, tok_max, prefill_mean, prefill_max,"
+            " polls, prefill_bounded FROM day WHERE d >= ? ORDER BY d ASC",
             (start_day,),
         ).fetchall()
         by_d = {r[0]: r for r in day_rows}
@@ -1216,6 +1269,7 @@ def db_timeseries(con, range_str="1h"):
                     "t": d * 86400 + 43200,
                     "time": dt.isoformat(),
                     "label": label,
+                    "samples": today_agg.get("polls") or 0,
                     "requests": today_agg.get("requests") or 0,
                     "prompt_tokens": today_agg.get("prompt_tokens") or 0,
                     "reused": today_agg.get("reused") or 0,
@@ -1224,16 +1278,23 @@ def db_timeseries(con, range_str="1h"):
                     "tok_s_mean": today_agg.get("tok_s_mean"),
                     "tok_s_max": today_agg.get("tok_s_max"),
                     "prefill_mean": today_agg.get("prefill_mean"),
-                    "prefill_max": None,
+                    # a33-19: the live day aggregate does compute a max, so today's
+                    # bucket is no longer forced to None.
+                    "prefill_max": today_agg.get("prefill_max"),
+                    "prefill_bounded": today_agg.get("prefill_bounded", False),
                 })
             elif d in by_d:
                 r = by_d[d]
                 p = r[2] or 0
                 o = r[4] or 0
+                # Same publication rule as db_daily: a day frozen before the bound holds
+                # an impossible prefill mean whose poll rows are already pruned.
+                pm, px, pnote = published_day_prefill(r[7], r[8])
                 buckets.append({
                     "t": d * 86400 + 43200,
                     "time": dt.isoformat(),
                     "label": label,
+                    "samples": r[9] or 0,
                     "requests": r[1] or 0,
                     "prompt_tokens": p,
                     "reused": r[3] or 0,
@@ -1241,14 +1302,20 @@ def db_timeseries(con, range_str="1h"):
                     "total_tokens": p + o,
                     "tok_s_mean": r[5],
                     "tok_s_max": r[6],
-                    "prefill_mean": r[7],
-                    "prefill_max": None,
+                    "prefill_mean": pm,
+                    # NULL for days frozen before the prefill_max column existed.
+                    # Honest absence: the front end says "peak n/a", never reuses the mean.
+                    "prefill_max": px,
+                    "prefill_bounded": bool(r[10]),
+                    # Why a day shows no prefill at all (older builds), for the tooltip.
+                    "prefill_note": pnote,
                 })
             else:
                 buckets.append({
                     "t": d * 86400 + 43200,
                     "time": dt.isoformat(),
                     "label": label,
+                    "samples": 0,
                     "requests": 0,
                     "prompt_tokens": 0,
                     "reused": 0,
@@ -1266,6 +1333,9 @@ def db_timeseries(con, range_str="1h"):
     tok_maxes = [b["tok_s_max"] for b in buckets if b["tok_s_max"] is not None]
     pre_means = [b["prefill_mean"] for b in buckets if b["prefill_mean"] is not None]
     pre_maxes = [b["prefill_max"] for b in buckets if b["prefill_max"] is not None]
+    # a33-21: how many buckets hold no samples at all. A gap means "nothing was
+    # observed", which the summary must say rather than let a flat line imply.
+    empty_buckets = sum(1 for b in buckets if not b.get("samples"))
 
     summary = {
         "total_requests": sum(b["requests"] for b in buckets),
@@ -1277,6 +1347,8 @@ def db_timeseries(con, range_str="1h"):
         "tok_s_max": max(tok_maxes) if tok_maxes else None,
         "prefill_mean": round(sum(pre_means) / len(pre_means), 1) if pre_means else None,
         "prefill_max": max(pre_maxes) if pre_maxes else None,
+        # a33-10: says a bound fired somewhere in the window, so the panel can tag it.
+        "prefill_bounded": any(b.get("prefill_bounded") for b in buckets),
     }
 
     return {
@@ -1284,6 +1356,10 @@ def db_timeseries(con, range_str="1h"):
         "span_s": span_s,
         "bucket_s": bucket_s,
         "buckets": buckets,
+        # a33-20/a33-21: the window and its sampling reality travel with the payload so
+        # every number on screen can be labelled with the period it describes.
+        "n_buckets": len(buckets),
+        "empty_buckets": empty_buckets,
         "summary": summary,
     }
 
@@ -1301,7 +1377,10 @@ def db_export(con, fmt="json"):
     poll_cols = ("t", "cpu", "ram", "tok_s", "prefill", "ctx_used", "ctx_pct", "hit_pct",
                  "accept_pct", "reqs", "prompt_tokens", "reused", "output_tokens",
                  "power_w", "power_src", "gpu_util", "gpu_power", "busy", "vram_used", "vram_total",
-                 "drafts_offered", "drafts_accepted", "pcie_share")
+                 # M81-T3 follow-up: prompt_ms is the denominator for a window's prefill
+                 # rate. Omitting it would make the export non-re-derivable, which is
+                 # exactly the contract this function's docstring promises.
+                 "drafts_offered", "drafts_accepted", "pcie_share", "prompt_ms")
     rows = con.execute(f"SELECT {', '.join(poll_cols)} FROM poll ORDER BY t").fetchall()
     days = db_daily(con)
     if fmt == "csv":

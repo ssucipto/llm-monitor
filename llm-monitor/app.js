@@ -1268,6 +1268,9 @@ function synthesizeFallbackTimeseries(range) {
         t: d.d * 86400,
         time: `${d.date}T00:00:00Z`,
         label: d.date.slice(5),
+        // M81-T4: the fallback path must carry the same fields the API emits, or the
+        // gap-aware renderer treats every fallback bucket as unobserved and draws nothing.
+        samples: d.polls || 0,
         requests: d.requests || 0,
         prompt_tokens: d.prompt_tokens || 0,
         reused: d.reused || 0,
@@ -1276,7 +1279,7 @@ function synthesizeFallbackTimeseries(range) {
         tok_s_mean: d.tok_s_mean,
         tok_s_max: d.tok_s_max,
         prefill_mean: d.prefill_mean,
-        prefill_max: null,
+        prefill_max: d.prefill_max ?? null,
       });
     }
   } else if (lastStatsData.history && lastStatsData.history.requests) {
@@ -1293,6 +1296,8 @@ function synthesizeFallbackTimeseries(range) {
         t: now - (n - 1 - i) * 60,
         time: dt.toISOString(),
         label: dt.toTimeString().slice(0, 5),
+        // One history sample = one poll, so this bucket was observed.
+        samples: 1,
         requests: r,
         prompt_tokens: r * 800,
         reused: 0,
@@ -1314,6 +1319,8 @@ function synthesizeFallbackTimeseries(range) {
     range,
     span_s: isDay ? buckets.length * 86400 : buckets.length * 60,
     bucket_s: isDay ? 86400 : 60,
+    n_buckets: buckets.length,
+    empty_buckets: buckets.filter((b) => !b.samples).length,
     buckets,
     summary: {
       total_requests: buckets.reduce((s, b) => s + b.requests, 0),
@@ -1350,6 +1357,14 @@ async function fetchTimeseries(range = currentChartRange, force = false) {
   }
 }
 
+function fmtBucket(s) {
+  // Human size of one bucket, so "60 buckets of 30 s" can be read off the strip.
+  if (s >= 86400) return `${Math.round(s / 86400)} d`;
+  if (s >= 3600) return `${Math.round(s / 3600)} h`;
+  if (s >= 60) return `${Math.round(s / 60)} min`;
+  return `${Math.round(s)} s`;
+}
+
 function renderTimeseriesChart(data, metric = currentChartMetric, range = currentChartRange) {
   if (!data || !data.buckets) return;
   const buckets = data.buckets;
@@ -1361,7 +1376,16 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   setText("chart-sum-tok", sum.tok_s_mean != null ? `${sum.tok_s_mean.toFixed(1)} tok/s` : "--");
   setText("chart-sum-tok-hint", sum.tok_s_max != null ? `mean · peak ${sum.tok_s_max.toFixed(1)}` : "mean / peak");
   setText("chart-sum-prefill", sum.prefill_mean != null ? `${sum.prefill_mean.toFixed(0)} tok/s` : "--");
-  setText("chart-sum-prefill-hint", sum.prefill_max != null ? `mean · peak ${sum.prefill_max.toFixed(0)}` : "mean / peak");
+  // a33-19: "mean / peak" used to be printed whether or not a peak existed. Days rolled
+  // up before the prefill_max column has none, and saying so is better than a blank.
+  setText("chart-sum-prefill-hint",
+    sum.prefill_max != null
+      ? `mean · peak ${sum.prefill_max.toFixed(0)}${sum.prefill_bounded ? " · bounded" : ""}`
+      : (sum.prefill_mean != null ? "mean · peak n/a" : "mean / peak"));
+  // a33-20: every number above is scoped to this window, so the window is stated.
+  setText("chart-sum-window",
+    `${data.range} · ${data.n_buckets ?? buckets.length} buckets of ${fmtBucket(data.bucket_s)}`
+    + (data.empty_buckets ? ` · ${data.empty_buckets} with no samples` : ""));
 
   const gGrid = $("chart-grid");
   const gAreas = $("chart-series-areas");
@@ -1380,6 +1404,8 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   const chartW = W - pad.left - pad.right;
   const chartH = H - pad.top - pad.bottom;
   const N = buckets.length;
+  const getX = (i) => pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
+  const getY = (val, maxVal) => pad.top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / maxVal)));
 
   if (N === 0) {
     const emptyText = svgElem("text", {
@@ -1398,6 +1424,20 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   const maxPrefill = Math.max(1, ...buckets.map(b => b.prefill_max || b.prefill_mean || 0));
   const maxTokens = Math.max(1, ...buckets.map(b => b.total_tokens || 0));
   const maxReqs = Math.max(1, ...buckets.map(b => b.requests || 0));
+
+  // M81-T4 (a33-18): one axis, several private scales was the unreadable part. The
+  // left axis belongs to ONE series (the primary) and says which; every other drawn
+  // series states its own peak in the legend, so no line's height is left unexplained.
+  const METRIC_UNIT = { throughput: "tok/s", tokens: "tokens", requests: "req", all: "tokens" };
+  const unit = METRIC_UNIT[metric] || "";
+  const seriesPeak = {
+    // Raw maxima for display, without the Math.max(1, …) axis floors above: a series
+    // with no data must read "no data", not "scaled to peak 1".
+    tok: Math.max(0, ...buckets.map(b => (b.tok_s_max ?? b.tok_s_mean) ?? 0)),
+    prefill: Math.max(0, ...buckets.map(b => (b.prefill_max ?? b.prefill_mean) ?? 0)),
+    tokens: Math.max(0, ...buckets.map(b => b.total_tokens || 0)),
+    reqs: Math.max(0, ...buckets.map(b => b.requests || 0)),
+  };
 
   let primaryMax = 100;
   if (metric === "throughput") {
@@ -1432,6 +1472,9 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     } else if (metric === "tokens" || metric === "all") {
       labelText = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M` : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k` : `${Math.round(val)}`;
     }
+    // a33-18: the top gridline carries the unit so the number can never be read as a
+    // bare count. The axis title element below states it again in words.
+    if (s === gridSteps && labelText) labelText = `${labelText} ${unit}`;
     const txt = svgElem("text", {
       x: pad.left - 8,
       y: y + 4,
@@ -1442,10 +1485,47 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     gGrid.appendChild(txt);
   }
 
-  const xStep = Math.max(1, Math.floor(N / 6));
-  for (let i = 0; i < N; i += xStep) {
+  // Axis title, so the unit is stated in words and not only as a suffix.
+  const axisTitle = svgElem("text", {
+    x: 6,
+    y: pad.top - 10,
+    class: "chart-axis-text chart-axis-title",
+    "text-anchor": "start",
+  });
+  axisTitle.textContent = metric === "all" ? `tokens (left axis)` : unit;
+  gGrid.appendChild(axisTitle);
+
+  // M81-T4 (a33-21): a bucket with no polls is an observation gap, not a quiet engine.
+  const gaps = buckets.filter((b) => !b.samples).length;
+  if (gaps) {
+    buckets.forEach((b, i) => {
+      if (b.samples) return;
+      const x = getX(i);
+      gGrid.appendChild(svgElem("line", {
+        x1: x, y1: pad.top, x2: x, y2: pad.top + chartH,
+        class: "chart-gap-line",
+      }));
+    });
+    const gapNote = svgElem("text", {
+      x: W - pad.right,
+      y: H - 22,
+      class: "chart-axis-text chart-gap-note",
+      "text-anchor": "end",
+    });
+    gapNote.textContent = `${gaps} bucket${gaps > 1 ? "s" : ""} had no samples`;
+    gGrid.appendChild(gapNote);
+  }
+
+  // M81-T4 (a33-20): a fixed stride of floor(N/6) gave every range a different label
+  // density and never dated the right edge. Derive the stride for ~6 labels and always
+  // include the last bucket.
+  const xStep = Math.max(1, Math.round(N / 6));
+  const xIdx = [];
+  for (let i = 0; i < N; i += xStep) xIdx.push(i);
+  if (xIdx[xIdx.length - 1] !== N - 1 && N - 1 - xIdx[xIdx.length - 1] >= xStep * 0.5) xIdx.push(N - 1);
+  xIdx.forEach((i) => {
     const b = buckets[i];
-    const x = pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
+    const x = getX(i);
     const txt = svgElem("text", {
       x: x,
       y: H - 10,
@@ -1454,90 +1534,95 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     });
     txt.textContent = b.label;
     gGrid.appendChild(txt);
-  }
+  });
 
-  const getX = (i) => pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
-  const getY = (val, maxVal) => pad.top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / maxVal)));
+  // M81-T4 (a33-21): a polyline that dips to 0 over an unobserved bucket reads as
+  // "the engine was idle" when the truth is "no tab was open". Each series is drawn
+  // as one polyline per contiguous run of observed buckets, and its area closes only
+  // within a run.
+  const drawSeries = (values, maxVal, { stroke, width, dash, areaFill }) => {
+    let run = [];
+    const flush = () => {
+      if (run.length === 1) {
+        // A lone observed bucket still deserves a mark rather than vanishing.
+        gPoints.appendChild(svgElem("circle", {
+          cx: run[0].x, cy: run[0].y, r: "2.5", fill: stroke,
+        }));
+      } else if (run.length > 1) {
+        const pts = run.map((p) => `${p.x},${p.y}`).join(" ");
+        if (areaFill) {
+          const first = run[0], last = run[run.length - 1];
+          gAreas.appendChild(svgElem("path", {
+            d: `M ${first.x},${(pad.top + chartH).toFixed(1)} L ${pts} L ${last.x},${(pad.top + chartH).toFixed(1)} Z`,
+            fill: areaFill,
+          }));
+        }
+        const attrs = { points: pts, fill: "none", stroke, "stroke-width": width, "stroke-linejoin": "round" };
+        if (dash) attrs["stroke-dasharray"] = dash;
+        gLines.appendChild(svgElem("polyline", attrs));
+      }
+      run = [];
+    };
+    values.forEach((v, i) => {
+      if (v == null) { flush(); return; }
+      run.push({ x: getX(i).toFixed(1), y: getY(v, maxVal).toFixed(1) });
+    });
+    flush();
+  };
+
+  // Observed means unobserved buckets are holes: no samples at all, or a null rate for
+  // a bucket that was sampled (a quiet day rolls up null since M81-T3).
+  const observed = (b) => Boolean(b.samples);
 
   if (metric === "all" || metric === "tokens") {
-    const pts = buckets.map((b, i) => `${getX(i).toFixed(1)},${getY(b.total_tokens, primaryMax).toFixed(1)}`);
-    const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${pts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
-    const area = svgElem("path", {
-      d: areaD,
-      fill: "url(#chart-grad-tokens)",
-      class: "chart-area-tokens",
-    });
-    gAreas.appendChild(area);
-
-    const line = svgElem("polyline", {
-      points: pts.join(" "),
-      fill: "none",
-      stroke: "#bc8cff",
-      "stroke-width": "2",
-      "stroke-linejoin": "round",
-    });
-    gLines.appendChild(line);
+    drawSeries(buckets.map((b) => (observed(b) ? b.total_tokens || 0 : null)), primaryMax,
+               { stroke: "#bc8cff", width: "2", areaFill: "url(#chart-grad-tokens)" });
   }
 
   if (metric === "all" || metric === "requests") {
     const rMax = metric === "requests" ? primaryMax : Math.max(maxReqs, 1);
-    const pts = buckets.map((b, i) => `${getX(i).toFixed(1)},${getY(b.requests, rMax).toFixed(1)}`);
-    if (metric === "requests") {
-      const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${pts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
-      const area = svgElem("path", {
-        d: areaD,
-        fill: "url(#chart-grad-reqs)",
-      });
-      gAreas.appendChild(area);
-    }
-    const line = svgElem("polyline", {
-      points: pts.join(" "),
-      fill: "none",
-      stroke: "#d29922",
-      "stroke-width": metric === "requests" ? "2.2" : "1.8",
-      "stroke-dasharray": metric === "all" ? "4,3" : "none",
-      "stroke-linejoin": "round",
-    });
-    gLines.appendChild(line);
+    drawSeries(buckets.map((b) => (observed(b) ? b.requests || 0 : null)), rMax,
+               { stroke: "#d29922", width: metric === "requests" ? "2.2" : "1.8",
+                 dash: metric === "all" ? "4,3" : null,
+                 areaFill: metric === "requests" ? "url(#chart-grad-reqs)" : null });
   }
 
   if (metric === "all" || metric === "throughput") {
     const tMax = metric === "throughput" ? primaryMax : Math.max(maxTok, 1);
-    const tokPts = buckets.map((b, i) => {
-      const val = b.tok_s_mean != null ? b.tok_s_mean : 0;
-      return `${getX(i).toFixed(1)},${getY(val, tMax).toFixed(1)}`;
-    });
-    if (metric === "throughput") {
-      const areaD = `M ${getX(0).toFixed(1)},${(pad.top + chartH).toFixed(1)} L ${tokPts.join(" L ")} L ${getX(N - 1).toFixed(1)},${(pad.top + chartH).toFixed(1)} Z`;
-      const area = svgElem("path", {
-        d: areaD,
-        fill: "url(#chart-grad-tok)",
-      });
-      gAreas.appendChild(area);
-    }
-    const tokLine = svgElem("polyline", {
-      points: tokPts.join(" "),
-      fill: "none",
-      stroke: "#58a6ff",
-      "stroke-width": "2.2",
-      "stroke-linejoin": "round",
-    });
-    gLines.appendChild(tokLine);
+    drawSeries(buckets.map((b) => (observed(b) ? b.tok_s_mean : null)), tMax,
+               { stroke: "#58a6ff", width: "2.2",
+                 areaFill: metric === "throughput" ? "url(#chart-grad-tok)" : null });
 
     const pMax = metric === "throughput" ? Math.max(maxPrefill * 1.15, 100) : Math.max(maxPrefill, 1);
-    const prefPts = buckets.map((b, i) => {
-      const val = b.prefill_mean != null ? b.prefill_mean : 0;
-      return `${getX(i).toFixed(1)},${getY(val, pMax).toFixed(1)}`;
-    });
-    const prefLine = svgElem("polyline", {
-      points: prefPts.join(" "),
-      fill: "none",
-      stroke: "#3fb950",
-      "stroke-width": "1.8",
-      "stroke-linejoin": "round",
-    });
-    gLines.appendChild(prefLine);
+    drawSeries(buckets.map((b) => (observed(b) ? b.prefill_mean : null)), pMax,
+               { stroke: "#3fb950", width: "1.8" });
   }
+
+  // M81-T4 (a33-18/a33-22): the legend is the disclosure for every series that does NOT
+  // own the left axis, so each drawn series states its own peak; items for series that
+  // are not in this metric mode are hidden instead of implying an absent line.
+  const legend = [
+    { sel: ".legend-tok", on: metric === "all" || metric === "throughput", peak: seriesPeak.tok, unit: "tok/s" },
+    { sel: ".legend-prefill", on: metric === "all" || metric === "throughput", peak: seriesPeak.prefill, unit: "tok/s" },
+    { sel: ".legend-tokens", on: metric === "all" || metric === "tokens", peak: seriesPeak.tokens, unit: "" },
+    { sel: ".legend-reqs", on: metric === "all" || metric === "requests", peak: seriesPeak.reqs, unit: "" },
+  ];
+  legend.forEach((item) => {
+    const el = document.querySelector(`#chart-legend ${item.sel}`);
+    if (!el) return;
+    el.hidden = !item.on;
+    const peakEl = el.querySelector(".legend-peak");
+    if (!peakEl) return;
+    if (!item.on) { peakEl.textContent = ""; return; }
+    // A series scaled by the left axis needs no extra disclosure; the others do.
+    const ownsAxis = (metric === "throughput" && item.sel === ".legend-tok")
+      || (metric === "tokens" && item.sel === ".legend-tokens")
+      || (metric === "requests" && item.sel === ".legend-reqs")
+      || (metric === "all" && item.sel === ".legend-tokens");
+    if (ownsAxis) { peakEl.textContent = "· left axis"; return; }
+    const p = item.peak > 0 ? (item.unit === "tok/s" ? item.peak.toFixed(1) : fmtInt(item.peak)) : null;
+    peakEl.textContent = p != null ? `· scaled to peak ${p}${item.unit ? " " + item.unit : ""}` : "· no data";
+  });
 }
 
 function wireCharts() {
@@ -1601,14 +1686,23 @@ function wireCharts() {
 
     const tokStr = b.tok_s_mean != null ? `${b.tok_s_mean.toFixed(1)} tok/s` : "--";
     const prefStr = b.prefill_mean != null ? `${b.prefill_mean.toFixed(0)} tok/s` : "--";
-
-    tooltip.innerHTML = `
+    // a33-21: hovering an unobserved bucket must not present zeros as measurements.
+    if (!b.samples) {
+      tooltip.innerHTML = `
+        <div class="chart-tip__head">${b.time ? b.time.replace("T", " ").replace("Z", "") : b.label} (${b.label})</div>
+        <div class="chart-tip__row">No samples in this bucket — nothing was recorded, which is not the same as idle.</div>
+      `;
+    } else {
+      tooltip.innerHTML = `
       <div class="chart-tip__head">${b.time ? b.time.replace("T", " ").replace("Z", "") : b.label} (${b.label})</div>
       <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#58a6ff;"></span>Decode: <b>${tokStr}</b></div>
       <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#3fb950;"></span>Prefill: <b>${prefStr}</b></div>
       <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#bc8cff;"></span>Tokens: <b>${fmtInt(b.total_tokens)}</b> (${fmtInt(b.prompt_tokens)} in / ${fmtInt(b.output_tokens)} out)</div>
       <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#d29922;"></span>Requests: <b>${fmtInt(b.requests)}</b></div>
+      ${b.prefill_note ? `<div class="chart-tip__row chart-tip__sub">Prefill not shown: this day was recorded before readings were bounded, and its samples are no longer kept, so its figure cannot be recomputed.</div>` : ""}
+      <div class="chart-tip__row chart-tip__sub">${b.samples} sample${b.samples === 1 ? "" : "s"}</div>
     `;
+    }
 
     const wrapRect = wrap.getBoundingClientRect();
     const px = (bucketX / W) * wrapRect.width;

@@ -19,7 +19,9 @@ fit two 300px columns there).
 import base64
 import json
 import os
+import re
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -659,6 +661,191 @@ def main():
             f"the no-data track stayed on a measured value (class={live['cls']!r}, value={live['val']!r})"
         )
         print("PASS gauge-clears-on-real-reading")
+
+        # 14. chart-axis-labelled (a33-18) — the y-axis must state its unit, and the unit must
+        #     follow the metric tab. With a fresh temp DB every bucket has samples == 0, so the
+        #     axis is still drawn while every series is a hole: that makes the label the thing
+        #     under test rather than whatever the engine happened to report.
+        axis = js(ws, """(() => {
+          const g = document.getElementById('chart-grid');
+          if (!g) return null;
+          const texts = [...g.querySelectorAll('text')].map(t => t.textContent.trim());
+          return {texts, title: (document.querySelector('.chart-axis-title') || {}).textContent};
+        })()""")
+        assert axis and axis["title"], f"no chart axis title was rendered ({axis!r})"
+        assert "tokens" in axis["title"], (
+            f"the default (all) axis must name its unit, got {axis['title']!r}"
+        )
+        # Switch the metric tab; the unit must change with it.
+        js(ws, """(() => {
+          const t = document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]');
+          if (t) t.click();
+        })()""")
+        time.sleep(0.5)
+        axis2 = js(ws, """(() => {
+          const g = document.getElementById('chart-grid');
+          if (!g) return null;
+          const texts = [...g.querySelectorAll('text')].map(t => t.textContent.trim());
+          return {texts, title: (document.querySelector('.chart-axis-title') || {}).textContent};
+        })()""")
+        assert axis2 and "tok/s" in axis2["title"], (
+            f"the throughput axis must read tok/s, got {axis2!r}"
+        )
+        assert any("tok/s" in t for t in axis2["texts"]), (
+            f"no gridline label carries the unit ({axis2['texts'][:8]!r})"
+        )
+        print("PASS chart-axis-labelled")
+
+        # 15. chart-gap-marked (a33-21) — an unobserved bucket must be marked as a gap, not
+        #     drawn as a flat zero. The empty temp DB makes every bucket unobserved, so the
+        #     note is deterministic here.
+        gaps = js(ws, """(() => {
+          const g = document.getElementById('chart-grid');
+          if (!g) return null;
+          const note = (document.querySelector('.chart-gap-note') || {}).textContent || '';
+          return {note, lines: g.querySelectorAll('.chart-gap-line').length,
+                  window: (document.getElementById('chart-sum-window') || {}).textContent || ''};
+        })()""")
+        assert gaps and "no samples" in gaps["note"], (
+            f"an all-gap window printed no gap note ({gaps!r})"
+        )
+        assert gaps["lines"] > 0, f"no gap markers were drawn ({gaps!r})"
+        # a33-21: the count must agree between the in-chart note and the summary strip.
+        # Both are read from the DOM, so this is not a literal the check can satisfy alone.
+        m = re.search(r"(\d+) bucket", gaps["note"])
+        assert m and f"{m.group(1)} with no samples" in gaps["window"], (
+            f"the gap count differs between the chart note ({gaps['note']!r}) "
+            f"and the summary strip ({gaps['window']!r})"
+        )
+        # a33-20: the summary strip must state the window every number covers.
+        assert "buckets of" in gaps["window"], (
+            f"the summary strip does not state its window ({gaps['window']!r})"
+        )
+        print("PASS chart-gap-marked")
+
+        # 16. chart-series-breaks-at-gap (a33-21) — a series must not fall to zero across an
+        #     unobserved stretch. Seeding the test DB directly (not the live engine) makes the
+        #     pattern deterministic: samples, a ten-minute hole, samples again.
+        test_db = os.path.join(profile, "telemetry-test.sqlite3")
+        seed = sqlite3.connect(test_db)
+        now_ts = time.time()
+        cols = ("t", "cpu", "ram", "tok_s", "prefill", "ctx_used", "ctx_pct", "hit_pct",
+                "accept_pct", "reqs", "prompt_tokens", "reused", "output_tokens", "power_w",
+                "power_src", "gpu_util", "gpu_power", "busy", "vram_used", "vram_total",
+                "drafts_offered", "drafts_accepted", "pcie_share", "prompt_ms")
+        ph = ",".join("?" * len(cols))
+
+        def seed_row(t, tok):
+            return (t, 10.0, 1000.0, tok, 400.0, 1000.0, 10.0, 90.0, 70.0, 10, 20000, 15000,
+                    500, 100.0, "modelled", None, None, 1, 8000.0, 24576.0, 50, 35, None, 900.0)
+
+        seeded = []
+        for t in range(int(now_ts) - 3300, int(now_ts) - 3000, 20):
+            seeded.append(seed_row(t, 40.0))
+        # deliberate hole: nothing between -3000 and -1800
+        for t in range(int(now_ts) - 1800, int(now_ts) - 1500, 20):
+            seeded.append(seed_row(t, 42.0))
+        seed.executemany(f"INSERT INTO poll ({', '.join(cols)}) VALUES ({ph})", seeded)
+        seed.commit()
+        seed.close()
+
+        js(ws, """(() => {
+          document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]').click();
+          const b = document.querySelector("#chart-range-btns .chart-range-btn[data-range='1h']");
+          if (b) b.click();
+        })()""")
+        time.sleep(1.5)
+        lines = js(ws, """(() => {
+          const g = document.getElementById('chart-series-lines');
+          if (!g) return null;
+          return [...g.querySelectorAll('polyline')].map(p => (p.getAttribute('points') || '').trim());
+        })()""")
+        assert lines, "no chart series lines were rendered after seeding"
+        decode = [ln for ln in lines if ln]
+        assert len(decode) >= 2, (
+            f"the seeded hole did not break the decode series into separate runs ({decode!r})"
+        )
+        # A dip to zero would put a point on the plot floor (y = pad.top + chartH = 25 + 240).
+        bottoms = [ln for ln in decode for pt in ln.split()
+                   if abs(float(pt.split(",")[1]) - 265.0) < 0.6]
+        assert not bottoms, (
+            f"a series point sits on the plot floor, i.e. an unobserved bucket drew zero ({bottoms[:4]!r})"
+        )
+        print("PASS chart-series-breaks-at-gap")
+
+        # 17. chart-legend-matches-series (a33-22) — the legend must show only series that are
+        #     actually drawn, and each non-axis series must state the scale it is drawn to.
+        legend = js(ws, """(() => {
+          const out = {};
+          for (const sel of ['.legend-tok', '.legend-prefill', '.legend-tokens', '.legend-reqs']) {
+            const el = document.querySelector('#chart-legend ' + sel);
+            if (!el) return null;
+            out[sel] = {hidden: el.hidden,
+                        peak: ((el.querySelector('.legend-peak') || {}).textContent || '').trim()};
+          }
+          return out;
+        })()""")
+        assert legend, "a legend item is missing from index.html"
+        # The page is in throughput mode after the previous check.
+        assert legend[".legend-tokens"]["hidden"] and legend[".legend-reqs"]["hidden"], (
+            f"tokens/requests are not drawn in throughput mode but stay in the legend ({legend!r})"
+        )
+        assert not legend[".legend-tok"]["hidden"] and not legend[".legend-prefill"]["hidden"], (
+            f"a drawn series is hidden from the legend ({legend!r})"
+        )
+        # The decode line owns the left axis; prefill does not, so it must disclose its own.
+        assert "left axis" in legend[".legend-tok"]["peak"], (
+            f"the axis-owning series is not labelled as such ({legend['.legend-tok']!r})"
+        )
+        assert "scaled to peak" in legend[".legend-prefill"]["peak"], (
+            f"the privately scaled prefill line states no scale ({legend['.legend-prefill']!r})"
+        )
+        print("PASS chart-legend-matches-series")
+
+        # 18. chart-no-impossible-prefill (a33-10/a33-19) — a day frozen before the bound holds
+        #     an impossible prefill mean that cannot be recomputed (its poll rows are pruned), so
+        #     no figure derived from it may reach the panel. Seeded directly into the test DB, so
+        #     the value is known exactly and the assertion is one robust text scan rather than
+        #     hover geometry. The server-side rule has its own unit tests in tests/telemetry.
+        old_day = int(time.time() // 86400) - 5
+        seed2 = sqlite3.connect(test_db)
+        cols2 = ("t", "cpu", "ram", "tok_s", "prefill", "ctx_used", "ctx_pct", "hit_pct",
+                 "accept_pct", "reqs", "prompt_tokens", "reused", "output_tokens", "power_w",
+                 "power_src", "gpu_util", "gpu_power", "busy", "vram_used", "vram_total",
+                 "drafts_offered", "drafts_accepted", "pcie_share", "prompt_ms")
+        ph2 = ",".join("?" * len(cols2))
+        seed2.executemany(
+            f"INSERT INTO poll ({', '.join(cols2)}) VALUES ({ph2})",
+            [(old_day * 86400 + h * 3600, 10.0, 1000.0, 40.0, 400.0, 1000.0, 10.0, 90.0, 70.0,
+              10 + h, 20000, 15000, 500, 100.0, "modelled", None, None, 1, 8000.0, 24576.0,
+              50, 35, None, 900.0) for h in range(24)])
+        # The shape an older build wrote: an unbounded mean, no prefill_max, no bound flag.
+        seed2.execute(
+            "INSERT OR REPLACE INTO day (d, polls, span_s, reqs, prompt, reused, output,"
+            " tok_mean, tok_max, prefill_mean, hit_mean, accept_mean, power_mean, energy_wh,"
+            " idle_pct, hours, prefill_max, prefill_bounded)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (old_day, 24, 86400.0, 24, 480000, 360000, 12000, 40.0, 55.0, 9833.65,
+             90.0, 70.0, 120.0, 2880.0, 10.0, "[]", None, None))
+        seed2.commit()
+        seed2.close()
+
+        js(ws, """(() => {
+          const b = document.querySelector("#chart-range-btns .chart-range-btn[data-range='7d']");
+          if (b) b.click();
+        })()""")
+        time.sleep(2.0)
+        panel = js(ws, r"""(() => {
+          const p = document.getElementById('charts');
+          return p ? p.textContent.replace(/\s+/g, ' ') : null;
+        })()""")
+        assert panel, "the charts panel is missing"
+        # 9833.65 rounds to 9834 (0 dp) or 9,834 with separators; catch either form.
+        bad = [t for t in ("9833", "9834", "9,833", "9,834") if t in panel]
+        assert not bad, (
+            f"a pre-bound day's impossible prefill mean reached the panel ({bad!r})"
+        )
+        print("PASS chart-no-impossible-prefill")
         return 0
     finally:
         for p in (proc, server):

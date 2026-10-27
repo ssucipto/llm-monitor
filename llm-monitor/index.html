@@ -324,6 +324,10 @@
           <span class="chart-stat__value" id="chart-sum-prefill">-- tok/s</span>
           <span class="chart-stat__hint" id="chart-sum-prefill-hint">mean / peak</span>
         </div>
+        <div class="chart-stat chart-stat--window">
+          <span class="chart-stat__label">Window</span>
+          <span class="chart-stat__value chart-stat__sub" id="chart-sum-window">--</span>
+        </div>
       </div>
 
       <div class="chart-canvas-wrap" id="chart-canvas-wrap">
@@ -356,10 +360,10 @@
       </div>
 
       <div class="chart-legend" id="chart-legend">
-        <span class="legend-item legend-tok"><span class="legend-dot"></span> Decode (tok/s)</span>
-        <span class="legend-item legend-prefill"><span class="legend-dot"></span> Prefill (tok/s)</span>
-        <span class="legend-item legend-tokens"><span class="legend-dot"></span> Tokens (Prompt + Out)</span>
-        <span class="legend-item legend-reqs"><span class="legend-dot"></span> Requests</span>
+        <span class="legend-item legend-tok"><span class="legend-dot"></span> Decode (tok/s) <span class="legend-peak"></span></span>
+        <span class="legend-item legend-prefill"><span class="legend-dot"></span> Prefill (tok/s) <span class="legend-peak"></span></span>
+        <span class="legend-item legend-tokens"><span class="legend-dot"></span> Tokens (Prompt + Out) <span class="legend-peak"></span></span>
+        <span class="legend-item legend-reqs"><span class="legend-dot"></span> Requests <span class="legend-peak"></span></span>
       </div>
     </section>
 
