@@ -834,6 +834,40 @@ meter {
 ::-webkit-meter-suboptimum-value { background: var(--warn); }
 ::-webkit-meter-even-less-good-value { background: var(--down); }
 
+/* M81-T2 (audit-33 a33-02): "no reading" must not look like "zero". An empty <meter> value
+ * falls back to the minimum per HTML, which paints as an empty track — indistinguishable from a
+ * genuine 0. The striped track gives absence its own appearance, everywhere a gauge is null.
+ * Two rules, not one grouped selector: an unrecognised pseudo-element would invalidate the whole
+ * group in a strict parser and drop the element rule with it. The browser suite asserts on the
+ * element rule because Chrome's getComputedStyle does not report a meter pseudo-element's own
+ * background — see the honest-limit note in agent/tasks/milestone-81-.../task-81-t2-honest-rendering.md
+ * for what the browser check can and cannot prove. */
+meter.is-none {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--border) 0,
+    var(--border) 4px,
+    transparent 4px,
+    transparent 9px
+  );
+}
+
+meter.is-none::-webkit-meter-bar {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--border) 0,
+    var(--border) 4px,
+    transparent 4px,
+    transparent 9px
+  );
+}
+
+meter.is-none::-webkit-meter-optimum-value,
+meter.is-none::-webkit-meter-suboptimum-value,
+meter.is-none::-webkit-meter-even-less-good-value {
+  background: transparent;
+}
+
 /* Severity drives the value text so the reading is legible even where the
    native bar cannot be restyled (Firefox). */
 .is-ok { color: var(--ok); }

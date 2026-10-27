@@ -5,6 +5,27 @@
 - date: 2026-10-26
   executor: zed
   branch: main
+  tasks: [audit-33, audit-34, task-81-t1, task-81-t2, task-81-t8-step-1]
+  done:
+    - "audit-33 (36 findings) on visual presentation + measurement correctness; every claim re-verified against live /api/stats, live /metrics, the registry, the live SQLite DB or a direct experiment"
+    - "M81 planned: milestone doc + 8 task docs + progress.yaml block; audit-34 pre-impl pass (8 findings) amended it before any code"
+    - "a33-01 GPU named wrong: detect_host_hardware() (stdlib winreg join of Enum\PCI instances to display-class subkeys, ConfigFlags filter) names the live card; 1.3 ms, once at import; name_source os/engine/rated and name_conflict added"
+    - "a33-02/03/04/05/07/36 front end: setGauge null renders -- with a striped is-none track, never 0; HUD power gauge (was reading a nonexistent rated_w) fixed via a peak_w alias; HUD context printed 7417.0% for a real 74.2%; HUD VRAM scales by mem_source; stale sparklines cleared"
+    - "a33-34 test isolation: LLM_MONITOR_DB override; production poll rows unchanged across a full suite run (20,357 -> 20,357)"
+    - "a32-01 closed with evidence: Actions run 40304874790 logs 'ok test_ui_browser.py: 10/10', no NOTRUN"
+    - "five new checks (browser 13 / static 9), each mutation-proven against the exact original symptom"
+  deferred:
+    - "M81 T3 telemetry maths (window-correct hit/accept ratios, prefill outliers, day_aggregates ghost-idle, tests/telemetry) -> task-81-t3"
+    - "M81 T4/T5/T6/T7 charts, history, block order + collapsible Requests, header -> those tasks"
+    - "audit-34 G-34-01: test_ui_browser detail-packing asserts >=4 tiles; T6 shrinks the region to 3 and MUST update that assertion in the same commit"
+    - "a32-02 fixed sleeps -> task-81-t8 step 3 (new checks settle instead of sleeping; older ones still sleep)"
+    - "a25-02 reboot test -> still user-gated"
+    - "restart of the :8090 server -> supervisor owns it; until then the running dashboard keeps serving the pre-fix GPU name"
+  key_fact: "The engine's hardware_static.gpu_name is not a measurement: Strata indexes the Windows display device class in class order, so a leftover driver entry for a removed card (ConfigFlags 32) outranks the installed one. WMI AdapterRAM is a UInt32 cap and must never be used as VRAM total; the registry's qwMemorySize is the trustworthy size."
+
+- date: 2026-10-26
+  executor: zed
+  branch: main
   tasks: [task-80-t1, task-80-t2, task-80-t3, task-80-t4, task-80-t5]
   done:
     - masonry-row-span-engine (ROW_UNIT 4px, layoutTiles/layoutAll/queueLayout, ResizeObserver)

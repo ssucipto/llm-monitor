@@ -611,10 +611,10 @@ carryovers:
     finding: "the browser suite is wired into CI but its execution there has never been observed; if no browser were found it would print NOTRUN and the run would report PASS with a SKIP, so seven functional gates could sit unexecuted on every push"
     location: .github/workflows/usage-tests.yml
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Evidence gathered 2026-10-26: the ubuntu-24.04 runner image (20261023.334.3) ships Google Chrome 155, Chromium 155 and Edge 155, so /usr/bin/google-chrome in the suite's BROWSERS list should resolve. Still unverified: no CI run since the wiring landed has been read. Close by reading one Actions run log and confirming 'ok test_ui_browser.py: 10/10' rather than a SKIP line"
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: 33
+    notes: "CLOSED with evidence. Read the Actions log for run 40304874790 (commit 3f3b368, usage-tests job): 'ok test_ui_browser.py: 10/10' and '[tests/ui] PASS' appear twice (once in the ui step, once in the acp.ci --full step). No NOTRUN/SKIP line. The browser suite really executes on GitHub, so all ten functional gates gate every push"
 
   - id: a32-02
     audit: 32
@@ -625,3 +625,66 @@ carryovers:
     fix_applied_date: null
     verified_in_audit: null
     notes: "Left deliberately in audit-32 (F-32-09): the waits are generous and the checks assert on computed style, not animation. Worth a settle helper (poll until two consecutive identical geometry reads) if a false failure is ever seen in CI"
+  - id: a33-01
+    audit: 33
+    finding: "the dashboard names the wrong graphics card and labels it measured: engine hardware_static.gpu_name says AMD Radeon RX 6800 XT on a PC whose live adapter is an RX 7900 XTX"
+    location: llm-monitor/server.py:1462
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: 33
+    notes: "M81-T1. server.py now resolves the GPU name through detect_host_hardware() (stdlib winreg, once at import) ahead of the engine's value, labels name_source os/engine/rated (never 'measured'), and exposes name_conflict so the disagreement is visible. Live /api/stats on spare port 8124: gpu.name 'AMD Radeon RX 7900 XTX', name_source 'os', name_conflict 'AMD Radeon RX 6800 XT', vram total 24560 from the OS. Both panels (gpu-name, hw-gpu) read the same resolved value. Root cause is upstream: /c/Project/Strata/serve/telemetry.py:360 windows_display_adapters indexes the display device class by HIP order, and this PC keeps a leftover driver entry for a removed card. Proof it is stale: Enum\\PCI instance ConfigFlags 32 (not present) on DEV_73BF vs 0 on DEV_744C, which is the ID WMI reports live. Stdlib fix measured on this host: join Enum\\PCI to the class subkeys through the instance Driver value, filter ConfigFlags 0x20/0x02 -> 1.3 ms, returns RX 7900 XTX + 24560 MiB. Planned as M81-T1"
+  - id: a33-02
+    audit: 33
+    finding: "setGauge coerces null to 0, so the GPU Temp gauge prints a definite 0% where no driver counter exists"
+    location: llm-monitor/app.js:108
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: 33
+    notes: "M81-T2. setGauge now writes '--' plus an empty (indeterminate) meter for null; HUD power reads the new rated_w alias of peak_w so its gauge is no longer stuck at 0; HUD VRAM scales by mem_source like the GPU panel; source labels report 'none' instead of inventing one. Proven by a new browser check null-gauge-not-zero (fixture injected with Page.addScriptToEvaluateOnNewDocument) and MUTATION-PROVEN: restoring the old coercion fails it with \"the null fixture never reached the Temp row, it reads '0%'\". Distinct from a5-04 (wontfix): that was about the missing counter, this is about rendering its absence. Also fixes the Compact HUD power gauge, which reads pw.rated_w while build_stats emits peak_w, so it is permanently zero (app.js:1755). Planned as M81-T2"
+  - id: a33-08
+    audit: 33
+    finding: "Telemetry hit-rate and accept-rate window means average session-cumulative ratios per poll, so the panel shows a session ratio under a window label"
+    location: llm-monitor/server.py:1240
+    severity: high
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Two snapshots of the same 60-min window: hit_pct_mean 95.77 vs true delta ratio 80.2, and 95.71 vs 89.1. Window-correct value is cumulative_delta(window,reused)/cumulative_delta(window,prompt). db_hour_aggregates:786 has the same shape but already carries the M75 ghost guard. Planned as M81-T3"
+  - id: a33-10
+    audit: 33
+    finding: "physically impossible prefill readings are stored and charted: poll rows hold 1,354,360 / 1,210,150 / 1,205,830 tok/s on a card that decodes at 35-70"
+    location: llm-monitor/server.py:1400
+    severity: high
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "prefill_rate(last_req) divides a token count by a prompt_ms from a different request boundary, then every idle poll re-samples it. The live panel shows prefill_peak 173582 and the chart axis rescales to it. Must be bounded AND labelled, never silently dropped. Planned as M81-T3"
+  - id: a33-34
+    audit: 33
+    finding: "the browser UI suite writes synthetic poll rows into the production telemetry.sqlite3 on every run"
+    location: agent/tests/ui/test_ui_browser.py:178
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: 33
+    notes: "M81-T8 step 1, pulled forward. DB_PATH now honours LLM_MONITOR_DB (mirroring the USAGE_DB convention) and both UI suites pass a temp path. Measured: production poll rows 20,357 before a full suite run and 20,357 after (delta 0), where one spare-port server + one /api/stats previously moved 20,280 -> 20,282. New static check telemetry-db-isolation asserts the poll rows landed in the test file. Original evidence: Proven by experiment 2026-10-26: starting llm-monitor/server.py on spare port 8123 and issuing one /api/stats moved the production DB from 20,280 to 20,282 poll rows. DB_PATH (server.py:68) has no env override, unlike USAGE_DB/CLAUDE_ROOT/HERMES_DB at :72-74. Fix: LLM_MONITOR_DB override plus a row-count-unchanged assertion. Planned as M81-T8 step 1, pulled ahead of the value-dependent checks"
+  - id: a33-36
+    audit: 33
+    finding: "the Compact HUD context card renders 7417.0% where the real figure is 74.2%, and its two token rows always show --"
+    location: llm-monitor/app.js:1788
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-26
+    verified_in_audit: 33
+    notes: "Found while fixing a33-02, not in the original 35. context.pct is already a percentage (server.py multiplies by 100) and renderHud multiplied again; hud-ctx-val/hud-ctx-hint read ctx.used_tokens and ctx.max_tokens, keys build_stats never emits (the payload keys are used and max). M81-T2 corrected both to the real keys and one scaling, matching what the full dashboard already did. Measured against the live payload before the change: pct 74.17 rendered as 7417.0%"
+  - id: a33-35
+    audit: 33
+    finding: "browser checks read whatever engine is live on :8080, so any assertion about values rather than structure is inherently flaky"
+    location: agent/tests/ui/test_ui_browser.py:178
+    severity: medium
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2"

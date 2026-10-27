@@ -105,19 +105,49 @@ function tweenNumber(node, to, suffix, digits) {
 }
 
 // A gauge element (data value + sibling <meter>) driven by one percentage.
+// M81-T2 (audit-33 a33-02): null means "no reading", and it must never render as 0. A 0 on a
+// severity gauge is a claim about the machine — the GPU Temp row showed a definite 0% on a driver
+// that exposes no temperature counter at all.
 function setGauge(valueId, gaugeId, pct, higherBetter) {
   const value = $(valueId);
   const gauge = $(gaugeId);
   if (!value) return;
 
-  const shown = pct === null || pct === undefined ? 0 : pct;
-  tweenNumber(value, shown, "%", 0);
-  if (gauge) gauge.setAttribute("value", shown.toFixed(0));
-
-  if (pct !== null && pct !== undefined) {
-    value.classList.remove("is-ok", "is-warn", "is-bad");
-    value.classList.add(`is-${severity(pct, higherBetter)}`);
+  if (pct === null || pct === undefined) {
+    setText(valueId, "--");
+    clearGauge(gaugeId);
+    return;
   }
+
+  tweenNumber(value, pct, "%", 0);
+  if (gauge) {
+    gauge.setAttribute("value", pct.toFixed(0));
+    gauge.classList.remove("is-none");
+  }
+
+  value.classList.remove("is-ok", "is-warn", "is-bad");
+  value.classList.add(`is-${severity(pct, higherBetter)}`);
+}
+
+// An absent reading must not look like a reading. Setting the meter's value to "" is only half
+// of it: per HTML, an invalid/missing <meter> value falls back to the minimum, so the bar still
+// paints as a zero-width fill — visually the same claim as 0. The is-none class draws a striped
+// track over the element and blanks the fill pseudo-elements, so "no data" has its own look.
+function clearGauge(gaugeId) {
+  const gauge = $(gaugeId);
+  if (!gauge) return;
+  gauge.setAttribute("value", "");
+  gauge.classList.add("is-none");
+}
+
+// The HUD sizes its <meter> elements directly (it has no paired data element), so it shares this
+// one rule with setGauge rather than re-implementing the null case three times.
+function setMeter(gaugeId, pct) {
+  const gauge = $(gaugeId);
+  if (!gauge) return;
+  if (pct === null || pct === undefined) { clearGauge(gaugeId); return; }
+  gauge.classList.remove("is-none");
+  gauge.setAttribute("value", pct.toFixed(0));
 }
 
 // ---------- Drag-and-drop reordering ----------
@@ -511,6 +541,12 @@ function drawSpark(prefix, samples, unit, windowMs) {
 
   const vals = (samples || []).filter((v) => v !== null && v !== undefined).slice(-SPARK_SAMPLES);
   if (vals.length < 2) {
+    // audit-33 a33-07: clear the previous curve. Without this, a series that runs out of samples
+    // keeps last poll's polyline painted under an "awaiting samples" caption, which reads as data.
+    line.setAttribute("points", "");
+    if (area) area.setAttribute("points", "");
+    if (head) { head.setAttribute("cx", 0); head.setAttribute("cy", 30); }
+    if (halo) { halo.setAttribute("cx", 0); halo.setAttribute("cy", 30); }
     if (caption) caption.textContent = `${unit}, awaiting samples`;
     return;
   }
@@ -575,6 +611,16 @@ function renderPower(power, history) {
 // from: measured (a real counter), derived (VRAM from the engine's live vram_free_mib),
 // modelled (engine state), or rated (this machine's card). Nothing is presented as a
 // measurement it cannot make.
+// Where a GPU name came from, in words the operator can read. One table shared by the GPU panel
+// and the Hardware panel so the two can never label the same source differently (M81-T1).
+const NAME_SOURCE_TAG = { os: "via OS", engine: "via engine", rated: "rated" };
+
+// A derived VRAM figure is in MiB (the engine reports vram_free_mib); a driver counter would
+// report bytes. One rule, used by the GPU panel and the HUD alike, so they cannot drift.
+function vramScale(gpu) {
+  return gpu.mem_source === "derived" ? 1048576 : 1;
+}
+
 function renderGpu(gpu, history, power) {
   if (!gpu) return;
   const gpuCaption = $("gpu-caption");
@@ -588,12 +634,15 @@ function renderGpu(gpu, history, power) {
       : gpu.name ? "no counters on this driver" : "no gpu readings";
     state.classList.remove("measured");
     if (measured) state.classList.add("measured");
+    // audit-33 a33-01: the engine names the wrong adapter on a PC with a leftover display-class
+    // entry. We resolve the name off the OS and show the disagreement instead of picking silently.
+    if (gpu.name_conflict) state.textContent += ` — engine says ${gpu.name_conflict}`;
   }
   setGauge("gpu-util", "gpu-util-gauge", gpu.util_pct, false);
   setGauge("gpu-mem", "gpu-mem-gauge", gpu.mem_pct, false);
   // A derived figure is in MiB (the engine reports vram_free_mib); a counter the
   // engine supplies would be bytes, so scale by the source rather than assume.
-  const scale = gpu.mem_source === "derived" ? 1048576 : 1;
+  const scale = vramScale(gpu);
   // Guard with != null, not truthiness: a fully-free card legitimately reports mem_used
   // === 0, which must render as "0 MiB / 24 GiB", not fall back to the placeholder.
   setText("gpu-mem-hint", gpu.mem_used != null && gpu.mem_total != null
@@ -606,7 +655,11 @@ function renderGpu(gpu, history, power) {
     ? `${gpuW} W${gpu.power_limit_w ? ` / ${gpu.power_limit_w} limit` : ""}${gpu.power_source === "modelled" ? " · modelled" : ""}`
     : "--");
   setText("gpu-pcie", gpu.pcie_rx_mb != null ? `${gpu.pcie_rx_mb.toFixed(1)} MB${gpu.pcie_gen ? ` · gen ${gpu.pcie_gen}/${gpu.pcie_gen_max ?? gpu.pcie_gen} · ${gpu.pcie_width ?? "--"}G` : ""}` : "--");
-  setText("gpu-name", gpu.name ? `${gpu.name} ×${gpu.count ?? 1}${gpu.name_source === "rated" ? " (rated)" : ""}` : (gpu.count ? `${gpu.count} GPU(s)` : "--"));
+  // M81-T1 (a33-01): name + where the name came from. "(rated)" used to be the only tag; an
+  // engine-supplied string is no longer shown as if it were measured, because it is not.
+  setText("gpu-name", gpu.name
+    ? `${gpu.name} ×${gpu.count ?? 1}${NAME_SOURCE_TAG[gpu.name_source] ? ` (${NAME_SOURCE_TAG[gpu.name_source]})` : ""}`
+    : (gpu.count ? `${gpu.count} GPU(s)` : "--"));
   // VRAM is the one GPU reading this driver can supply, so prefer its series; a build
   // with real gpu_* counters (e.g. NVML) still gets the utilisation sparkline.
   const vramSeries = history && history.vram_pct;
@@ -688,7 +741,12 @@ function renderHardware(hw) {
   setText("hw-ram-hint", hw.ram_used != null && hw.ram_total != null ? `${fmtBytes(hw.ram_used)} / ${fmtBytes(hw.ram_total)}` : "used / total");
   setText("hw-vram", hw.vram_free_mib != null ? `${hw.vram_free_mib} MiB free` : "--");
   setText("hw-disk", hw.disk_read_mb != null ? `${hw.disk_read_mb.toFixed(1)} / ${fmtNum(hw.disk_write_mb, "", 1)} MB` : "--");
-  setText("hw-gpu", hw.gpu_name ? `${hw.gpu_name} ×${hw.gpu_count ?? 1}` : (hw.gpu_count ? `${hw.gpu_count} GPU(s)` : "--"));
+  // M81-T1 (a33-06): this row used to read the engine's raw field, which could print "1 GPU(s)"
+  // or name a card that is not installed. The server now resolves gpu_name the same way the GPU
+  // panel gets it, so the two panels cannot disagree.
+  setText("hw-gpu", hw.gpu_name
+    ? `${hw.gpu_name} ×${hw.gpu_count ?? 1}${NAME_SOURCE_TAG[hw.gpu_name_source] ? ` (${NAME_SOURCE_TAG[hw.gpu_name_source]})` : ""}`
+    : (hw.gpu_count ? `${hw.gpu_count} GPU(s)` : "--"));
   setText("hw-cpu-name", hw.cpu_name ? `${hw.cpu_name} · ${hw.cores}c/${hw.threads}t` : "--");
 }
 
@@ -1735,45 +1793,53 @@ function renderHud(data) {
 
   // VRAM Card
   const gpu = data.gpu || {};
-  setText("hud-vram-source", gpu.mem_source || "derived");
+  // M81-T2 (a33-04): report the source the server sent; inventing one hides the difference
+  // between "derived from vram_free_mib" and "we have no idea".
+  setText("hud-vram-source", gpu.mem_source || "none");
   setText("hud-vram-val", gpu.mem_pct != null ? `${gpu.mem_pct.toFixed(0)}%` : "--");
-  const vramGauge = $("hud-vram-gauge");
-  if (vramGauge) vramGauge.setAttribute("value", gpu.mem_pct != null ? gpu.mem_pct.toFixed(0) : "0");
+  setMeter("hud-vram-gauge", gpu.mem_pct);
   const vramVal = $("hud-vram-val");
   if (vramVal && gpu.mem_pct != null) {
     vramVal.classList.remove("is-ok", "is-warn", "is-bad");
     vramVal.classList.add(`is-${severity(gpu.mem_pct, false)}`);
   }
+  // A derived figure is in MiB (the engine reports vram_free_mib); a driver counter would be
+  // bytes. Shares the GPU panel's rule so the two views can never disagree (audit-33 a33-05).
+  const vramScaleFactor = vramScale(gpu);
   setText("hud-vram-hint", gpu.mem_used != null && gpu.mem_total != null
-    ? `${fmtBytes(gpu.mem_used * 1048576)} / ${fmtBytes(gpu.mem_total * 1048576)}`
+    ? `${fmtBytes(gpu.mem_used * vramScaleFactor)} / ${fmtBytes(gpu.mem_total * vramScaleFactor)}`
     : (data.hardware && data.hardware.vram_free_mib != null ? `${data.hardware.vram_free_mib} MiB free` : "used / total"));
 
   // Power Card
   const pw = data.power || {};
-  setText("hud-power-source", pw.source || "modelled");
+  setText("hud-power-source", pw.source || "none");
   setText("hud-power-val", pw.total_w != null ? `${pw.total_w} W` : "--");
-  const pwPct = pw.total_w && pw.rated_w ? (pw.total_w / pw.rated_w) * 100 : null;
-  const pwGauge = $("hud-power-gauge");
-  if (pwGauge) pwGauge.setAttribute("value", pwPct != null ? pwPct.toFixed(0) : "0");
+  // rated_w is the server's alias of peak_w; before M81-T2 it did not exist, so this gauge was
+  // permanently zero. Guard with != null: a genuine 0 W reading must still size the gauge.
+  const pwPct = pw.total_w != null && pw.rated_w ? (pw.total_w / pw.rated_w) * 100 : null;
+  setMeter("hud-power-gauge", pwPct);
   const pwVal = $("hud-power-val");
   if (pwVal && pwPct != null) {
     pwVal.classList.remove("is-ok", "is-warn", "is-bad");
     pwVal.classList.add(`is-${severity(pwPct, false)}`);
   }
-  setText("hud-power-hint", pw.total_w && pw.rated_w ? `${pwPct.toFixed(0)}% of ${pw.rated_w}W peak` : "of rated peak");
+  setText("hud-power-hint", pwPct != null ? `${pwPct.toFixed(0)}% of ${pw.rated_w}W peak` : "of rated peak");
 
   // Context Card
   const ctx = data.context || {};
-  setText("hud-ctx-pct", ctx.pct != null ? `${(ctx.pct * 100).toFixed(1)}%` : "--");
-  setText("hud-ctx-val", ctx.used_tokens != null ? fmtInt(ctx.used_tokens) : "--");
-  const ctxGauge = $("hud-ctx-gauge");
-  if (ctxGauge) ctxGauge.setAttribute("value", ctx.pct != null ? (ctx.pct * 100).toFixed(0) : "0");
+  // M81-T2 (audit-33 a33-36): context.pct is already a percentage (server.py multiplies by 100),
+  // so multiplying again rendered 7417.0% where the real figure was 74.2%. The full dashboard
+  // passes ctx.pct straight to setGauge; the HUD now matches it.
+  setText("hud-ctx-pct", ctx.pct != null ? `${ctx.pct.toFixed(1)}%` : "--");
+  // used/max are the payload's keys; used_tokens/max_tokens never existed, so this row was always "--".
+  setText("hud-ctx-val", ctx.used != null ? fmtInt(ctx.used) : "--");
+  setMeter("hud-ctx-gauge", ctx.pct);
   const ctxVal = $("hud-ctx-val");
   if (ctxVal && ctx.pct != null) {
     ctxVal.classList.remove("is-ok", "is-warn", "is-bad");
-    ctxVal.classList.add(`is-${severity(ctx.pct * 100, false)}`);
+    ctxVal.classList.add(`is-${severity(ctx.pct, false)}`);
   }
-  setText("hud-ctx-hint", ctx.used_tokens != null && ctx.max_tokens != null ? `${fmtInt(ctx.used_tokens)} / ${fmtInt(ctx.max_tokens)} max` : "used / max tokens");
+  setText("hud-ctx-hint", ctx.used != null && ctx.max != null ? `${fmtInt(ctx.used)} / ${fmtInt(ctx.max)} max` : "used / max tokens");
 
   // Cache & Spec Card
   const cache = data.cache || {};

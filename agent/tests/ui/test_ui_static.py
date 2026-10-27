@@ -19,8 +19,10 @@ import json
 import os
 import re
 import socket
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -121,9 +123,13 @@ def main():
     expect("unique-ids", not dupes, f"duplicate ids: {dupes[:12]}")
 
     # 7 — the real server serves the three files that make the contract (free port, own PID).
+    # LLM_MONITOR_DB keeps this run out of the production history: every /api/stats appends a
+    # poll row, and audit-33 a33-34 measured that as real pollution of telemetry.sqlite3.
     port = free_port()
+    test_db = os.path.join(tempfile.mkdtemp(prefix="m81-static-"), "telemetry-test.sqlite3")
     proc = subprocess.Popen([sys.executable, os.path.join(UI, "server.py"), str(port)],
-                            cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            env=dict(os.environ, LLM_MONITOR_DB=test_db))
     try:
         base = f"http://127.0.0.1:{port}"
         up = False
@@ -146,7 +152,38 @@ def main():
                         bad.append(f"{path} lacks {needle!r}")
                 except Exception as exc:
                     bad.append(f"{path}: {exc}")
+            # One stats call so the isolation check below has something to look for.
+            try:
+                urllib.request.urlopen(base + "/api/stats", timeout=10).read()
+            except Exception as exc:
+                bad.append(f"/api/stats: {exc}")
             expect("server-smoke", not bad, bad)
+
+            # 8 — the poll row landed in the test DB, not beside server.py (a33-34). If the env
+            # override is removed this file is never created, so the check can fail.
+            rows = -1
+            if os.path.exists(test_db):
+                con = sqlite3.connect(test_db)
+                try:
+                    rows = con.execute("SELECT count(*) FROM poll").fetchone()[0]
+                finally:
+                    con.close()
+            expect("telemetry-db-isolated", rows > 0,
+                   f"expected poll rows in the LLM_MONITOR_DB file, got {rows}")
+
+            # 9 — GPU name provenance (audit-33 a33-01). The engine's hardware_static.gpu_name is
+            # not a measurement: on this PC it names a card that was removed. The server must
+            # resolve the name through its own OS detection and never label the engine's value
+            # "measured".
+            srv_src = open(os.path.join(UI, "server.py"), encoding="utf8").read()
+            problems = []
+            if '"name_source": "measured"' in srv_src:
+                problems.append("gpu.name_source can still be 'measured'")
+            if 'HOST_GPU["name"]' not in srv_src:
+                problems.append("the gpu name is not resolved through the OS detection")
+            if '"name_conflict"' not in srv_src:
+                problems.append("no name_conflict key — an OS/engine disagreement would be hidden")
+            expect("gpu-name-provenance", not problems, problems)
     finally:
         proc.terminate()
         try:

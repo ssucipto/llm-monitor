@@ -7,7 +7,7 @@ project:
   version: 0.2.1
   started: 2026-10-07
   status: in_progress
-  current_milestone: M80
+  current_milestone: M81
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -202,6 +202,26 @@ milestones:
       answers the user's "ensure the save button works". Planned after audit-30 (10 findings F-30-01..10).
       Reconstructed 2026-10-26 after the accidental agent/** delete; notes text is a verbatim copy read
       from this file earlier that day.
+  - id: M81
+    name: Information Architecture + Measurement Correctness
+    priority: 1
+    file: agent/milestones/milestone-81-information-architecture-and-correctness.md
+    status: in_progress
+    progress: 30
+    started: "2026-10-26"
+    completed:
+    estimated_weeks: 1
+    tasks_completed: 2
+    tasks_total: 8
+    notes: |
+      Planned from audit-33 (35 findings, a33-01..a33-35) and amended by the audit-34 pre-impl pass
+      (8 findings G-34-01..08). Two halves: re-order the dashboard by category and importance with a
+      collapsible Requests panel, a fixed nav and a de-duplicated header; and make the numbers true —
+      the dashboard currently names a graphics card this PC does not have (stale Windows display-class
+      entry ahead of the live one), renders a null temperature as a definite 0%, has a permanently-zero
+      HUD power gauge, and labels session-cumulative ratios as window rates.
+      Lifts the M79/M80 "zero /api changes" rule deliberately: payload keys are additive only.
+      Version goes 0.2.1 -> 0.3.0 on implementation.
 
 active_handoff:
   path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
@@ -533,13 +553,85 @@ tasks:
       actual_hours: null
       file: agent/tasks/milestone-80-layout-engine-and-verification/task-80-t5-records.md
       estimated_hours: 1
+  milestone_81:
+    - id: task-81-t1
+      name: Host hardware detection with honest provenance
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t1-hardware-detection.md
+      estimated_hours: 2
+    - id: task-81-t2
+      name: Null-safe and source-safe rendering
+      priority: 1
+      status: completed
+      started: 2026-10-26
+      completed_date: 2026-10-26
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t2-honest-rendering.md
+      estimated_hours: 2
+    - id: task-81-t3
+      name: Telemetry maths — window-correct means, bounded outliers, first unit tests
+      priority: 1
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t3-telemetry-maths.md
+      estimated_hours: 4
+    - id: task-81-t4
+      name: Chart axes, scales and range labelling
+      priority: 2
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t4-chart-readability.md
+      estimated_hours: 3
+    - id: task-81-t5
+      name: History chart and scrubber
+      priority: 2
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t5-history-chart.md
+      estimated_hours: 3
+    - id: task-81-t6
+      name: Block order, collapsible Requests, nav, Detail re-categorisation
+      priority: 1
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t6-information-architecture.md
+      estimated_hours: 3
+    - id: task-81-t7
+      name: Header redesign
+      priority: 2
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t7-header.md
+      estimated_hours: 2
+    - id: task-81-t8
+      name: Verification suite hardening + records
+      priority: 1
+      status: pending
+      started: 2026-10-26
+      completed_date:
+      actual_hours: null
+      file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t8-verification.md
+      estimated_hours: 4
 
-# Documentation tracking
 documentation:
   design_documents: 0
-  milestone_documents: 9
+  milestone_documents: 10
   pattern_documents: 0
-  task_documents: 26
+  task_documents: 34
   last_updated: 2026-10-26
 
 # Overall progress metrics
@@ -552,6 +644,21 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-26
+    description: |
+      Audit-33 (visual presentation + measurement correctness, 36 findings) and the M81 plan
+      (milestone + 8 tasks), amended by the audit-34 pre-impl pass. Then implemented T1, T2 and
+      T8-step-1: the GPU is now named from the OS registry instead of the engine's stale display-
+      class entry, null readings no longer render as 0%, the HUD power and context cards work,
+      and the UI suites stopped writing synthetic polls into production telemetry.sqlite3.
+    items:
+      - "✅ a33-01 closed: detect_host_hardware() (stdlib winreg, 1.3 ms, once at import) names the RX 7900 XTX; live /api/stats shows name_source os and name_conflict 'AMD Radeon RX 6800 XT'"
+      - "✅ a33-02/a33-03/a33-04/a33-05/a33-07/a33-36 closed in the front end; three new browser checks, each mutation-proven (null-gauge-not-zero, gauge-clears-on-real-reading, hud-context-scale)"
+      - "✅ a33-34 closed: LLM_MONITOR_DB override; production poll rows 20,357 before and after a full suite run (delta 0), and the mutation run independently re-showed +2 without it"
+      - "✅ a32-01 closed with CI evidence: Actions run 40304874790 logs 'ok test_ui_browser.py: 10/10', no NOTRUN skip"
+      - "❌ unverified: that the striped no-data track is what Chrome visually paints (getComputedStyle cannot observe meter pseudo-elements). Needs one human look."
+      - "📋 gates: acp.ci.sh --full 10/10 PASS, [tests/ui] PASS (browser 13 / static 9), run-e2e-tests.sh 4 passed, acp-validate PASS at 0.2.1"
+      - "⚠️ :8090 still serves the pre-fix code — gpu.name there reads RX 6800 XT / name_source measured. The supervisor owns that process; a restart is needed before the fix is visible."
   - date: 2026-10-26
     description: |
       M80 shipped and then audited (audit-32, 12 findings; review-014 diff-style). Recovery first: an
@@ -902,9 +1009,11 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
+  - "M81 (in_progress, planned not yet coded): implement task-81-t1..t8 in dependency order t1 -> t2 -> t3 -> t8-step-1 -> t4 -> t5 -> t6 -> t7 -> t8-rest; audit-34 G-34-01 must land with t6 or a green browser check fails"
+  - "a33-01: the dashboard names an RX 6800 XT on a PC with an RX 7900 XTX — stdlib winreg detection measured at 1.3 ms, closes it (M81-T1)"
+  - "a33-34: the browser suite writes synthetic polls into production telemetry.sqlite3 (proven: 20,280 -> 20,282 rows); add LLM_MONITOR_DB before writing value-dependent checks"
   - Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in
-  - "a32-01: read one GitHub Actions run log and confirm 'ok test_ui_browser.py: 10/10' rather than a NOTRUN skip, so the functional gates are known to execute in CI"
-  - "a32-02: replace the browser suite's fixed sleeps with a settle helper if a false failure is ever observed"
+  - "a32-02: replace the browser suite's fixed sleeps with a settle helper (scheduled into M81-T8)"
   - Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature
 
 # General notes and observations

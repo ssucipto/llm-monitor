@@ -177,6 +177,9 @@ def main():
         server = subprocess.Popen(
             [sys.executable, os.path.join(UI, "server.py"), str(srv)],
             cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            # audit-33 a33-34: this is the production server, and without an override every
+            # /api/stats the page requests appends a poll row to the real telemetry.sqlite3.
+            env=dict(os.environ, LLM_MONITOR_DB=os.path.join(profile, "telemetry-test.sqlite3")),
         )
         base = f"http://127.0.0.1:{srv}"
         up = False
@@ -525,6 +528,137 @@ def main():
             f"reload did not apply the saved detail order:\\n  saved={expected.get('detail')}\\n  dom  ={got['detail']}"
         )
         print("PASS reload-restores-order")
+
+        # 11. null-gauge-not-zero — audit-33 a33-02: setGauge used to coerce a missing reading
+        #     to 0, so the GPU Temp row showed a definite "0%" on a driver that exposes no
+        #     temperature counter at all. A null must render as "--" with an empty (indeterminate)
+        #     meter, never as a number.
+        #     The fixture is injected in the page (addScriptToEvaluateOnNewDocument runs before
+        #     app.js), so the check does not depend on what the live engine happens to report.
+        ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            // The flag is runtime-flippable so one document can show both states: a null poll
+            // followed by a measured one. That is what makes gauge-clears-on-real-reading failable.
+            window.__m81_null = true;
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              // Decide BEFORE consuming the body: returning a plain object here would break the
+              // app's res.json() and no poll would render at all.
+              if (!String(u).includes('api/stats') || !window.__m81_null) return res;
+              return res.json().then((j) => {
+                if (j.gpu) j.gpu.temp_c = null;
+                if (j.hardware) j.hardware.cpu_pct = null;
+                // audit-33 a33-36: the HUD multiplied an already-percentage value by 100.
+                // Pin it so the check catches a re-scaling in either place.
+                if (j.context) { j.context.pct = 74.16954; j.context.used = 194431; j.context.max = 262144; }
+                return new Response(JSON.stringify(j), {headers: {'content-type': 'application/json'}});
+              });
+            });
+          })();"""})
+        js(ws, "window.__m81_pre_reload = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh2 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_reload, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh2 = True
+                break
+            time.sleep(0.25)
+        assert fresh2, "never observed a fresh document after installing the null fixture"
+        # Wait for an actual render rather than a wall-clock guess: the app marks each poll.
+        rendered = False
+        gauges = None
+        for _ in range(40):
+            gauges = js(ws, """(() => {
+              const t = document.getElementById('gpu-temp');
+              const m = document.getElementById('gpu-temp-gauge');
+              const c = document.getElementById('hw-cpu');
+              const cm = document.getElementById('hw-cpu-gauge');
+              const hc = document.getElementById('hud-ctx-pct');
+              const hv = document.getElementById('hud-ctx-val');
+              if (!t || !m) return null;
+              // Proves the striped "no data" track is applied, not just the class name.
+              // Asserted on the ELEMENT because Chrome's getComputedStyle reports 'none' for a
+              // meter pseudo-element's own background, so the ::-webkit-meter-bar rule (the one
+              // Chrome paints) is not observable this way. That makes this assertion a guard for
+              // the bar rule and a proof for the element rule — recorded as such in task-81-t8.
+              let stripe = '';
+              try { stripe = getComputedStyle(m).backgroundImage || ''; } catch (e) {}
+              return {temp: t.textContent, tempVal: m.getAttribute('value'),
+                      cls: m.getAttribute('class') || '', stripe,
+                      cpu: c ? c.textContent : null, cpuVal: cm ? cm.getAttribute('value') : null,
+                      hudCtx: hc ? hc.textContent : null, hudCtxVal: hv ? hv.textContent : null};
+            })()""")
+            # The element ships as "--", so a single match is not proof the fixture landed:
+            # require the meter to be indeterminate, which only the null path can produce.
+            if gauges and gauges["temp"] == "--" and gauges["tempVal"] in ("", None):
+                rendered = True
+                break
+            time.sleep(0.25)
+        assert gauges, "#gpu-temp / #gpu-temp-gauge missing"
+        assert rendered, f"the null fixture never reached the Temp row, it reads {gauges['temp']!r}"
+        assert gauges["tempVal"] in ("", None), (
+            f"a null reading sized the meter to {gauges['tempVal']!r}; an empty value is the "
+            f"indeterminate state (audit-33 a33-02)"
+        )
+        assert "is-none" in gauges["cls"], (
+            f"the null meter lacks the is-none class (class={gauges['cls']!r})"
+        )
+        # An empty <meter> value falls back to the minimum per HTML, so without the striped track
+        # a null reading still paints as an empty bar — visually identical to a real 0.
+        assert "linear-gradient" in gauges["stripe"], (
+            f"the striped no-data track is not applied to the meter (backgroundImage="
+            f"{gauges['stripe'][:60]!r})"
+        )
+        if gauges["cpu"] is not None:
+            assert gauges["cpu"] == "--" and gauges["cpuVal"] in ("", None), (
+                f"null cpu_pct rendered as {gauges['cpu']!r}/{gauges['cpuVal']!r}"
+            )
+        print("PASS null-gauge-not-zero")
+
+        # 12. hud-context-scale — audit-33 a33-36: context.pct is already a percentage, so the
+        #     HUD's extra *100 rendered 7417.0% for a real 74.2%, and the token rows read keys
+        #     the payload never sends so they were always "--".
+        assert gauges["hudCtx"] == "74.2%", (
+            f"HUD context reads {gauges['hudCtx']!r}, expected '74.2%' for a pinned pct of "
+            f"74.16954 (audit-33 a33-36 double scaling)"
+        )
+        assert gauges["hudCtxVal"] == "194,431" or gauges["hudCtxVal"] == "194431", (
+            f"HUD context tokens reads {gauges['hudCtxVal']!r}; the payload sends used/max, "
+            f"not used_tokens/max_tokens"
+        )
+        print("PASS hud-context-scale")
+
+        # 13. gauge-clears-on-real-reading — the is-none track must toggle back off in the SAME
+        #     document. A gauge that stayed striped after one null poll would hide every later
+        #     measurement, and a check that reloaded instead would pass vacuously (a fresh
+        #     document never had the class added).
+        striped = js(ws, """(() => {
+          const cm = document.getElementById('hw-cpu-gauge');
+          return cm ? (cm.getAttribute('class') || '') : null;
+        })()""")
+        assert striped is not None and "is-none" in striped, (
+            f"precondition: the CPU gauge should still be striped from the null poll (class={striped!r})"
+        )
+        js(ws, "window.__m81_null = false")   # next poll carries the engine's real cpu_pct
+        live = None
+        for _ in range(40):
+            live = js(ws, """(() => {
+              const cm = document.getElementById('hw-cpu-gauge');
+              const c = document.getElementById('hw-cpu');
+              if (!cm || !c) return null;
+              return {val: cm.getAttribute('value'), cls: cm.getAttribute('class') || '', text: c.textContent};
+            })()""")
+            if live and live["val"] not in ("", None) and live["text"] != "--":
+                break
+            time.sleep(0.25)
+        assert live and live["val"] not in ("", None), (
+            f"no live CPU reading reached the gauge after un-pinning the fixture ({live!r})"
+        )
+        assert "is-none" not in live["cls"], (
+            f"the no-data track stayed on a measured value (class={live['cls']!r}, value={live['val']!r})"
+        )
+        print("PASS gauge-clears-on-real-reading")
         return 0
     finally:
         for p in (proc, server):

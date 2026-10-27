@@ -65,7 +65,10 @@ HTTP_TIMEOUT = 3.0
 # no matter which working directory the process was started from. A relative path
 # silently resolves against the process cwd, which is how a server started elsewhere
 # ends up with sqlite unable to open the file (telemetry disabled, empty trends).
-DB_PATH = str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
+# LLM_MONITOR_DB exists for the tests (audit-33 a33-34): the browser suite starts this
+# real server, and without an override every /api/stats it requests appends a poll row
+# to the production history — measured 2026-10-26 as 20,280 -> 20,282 rows for one request.
+DB_PATH = os.environ.get("LLM_MONITOR_DB") or str(Path(__file__).resolve().with_name("telemetry.sqlite3"))
 
 # M78 usage ledger (numbers only; README "Usage ledger"): its own SQLite file beside server.py and the two sources it reads.
 # The LLM_MONITOR_* overrides exist for the tests (tests/usage/test_usage_api.py builds synthetic sources).
@@ -131,6 +134,146 @@ VRAM_TOTAL_MIB = 24576
 # can never disagree. Prefill is dense GEMM (compute-bound, hottest); decode streams
 # weights from VRAM (bandwidth-bound, well under peak on RDNA3); queued waits on the CPU.
 GPU_ACTIVITY = {"reading": 1.0, "generating": 0.65, "processing": 0.65, "queued": 0.1}
+
+# ---------- Host hardware detection (M81-T1, audit-33 a33-01) ----------
+# The engine names our GPU for us, and on this PC it is wrong: it indexes the Windows
+# display device class in class order, and a leftover driver entry for a card that was
+# removed sorts ahead of the installed one. Measured here on 2026-10-26:
+#   engine hardware_static  -> "AMD Radeon RX 6800 XT", gpu_vram_total_mib 16368
+#   Windows PnP (live)      -> "AMD Radeon RX 7900 XTX", DEV_744C
+# The discriminator is the PCI instance's ConfigFlags: the stale entry carries 32
+# (not currently installed), the live one carries 0. Enumerating the instances and
+# joining them to the class subkeys through the instance's Driver value gives the
+# installed card plus its real 64-bit VRAM size, with stdlib only.
+#
+# Cost measured on this host: 1.3 ms, so it runs once at import and is cached. Never
+# call it per poll. WMI is not in the standard library, and WMI's AdapterRAM is a
+# UInt32 cap (~4 GB on a 24 GB card), so the registry's qwMemorySize is the only
+# trustworthy size available here.
+DISPLAY_CLASS_GUID = "{4d36e968-e325-11ce-bfc1-08002be10318}"
+
+
+def _display_adapters():
+    """This machine's display adapters from the registry: [{name, vram_mib, index, present}].
+
+    Returns [] off Windows or when nothing can be read; a caller must treat an empty list as
+    "no OS opinion", never as "no GPU".
+    """
+    if os.name != "nt":
+        return []
+    try:
+        import winreg
+    except ImportError:
+        return []
+
+    def val(key, name):
+        try:
+            return winreg.QueryValueEx(key, name)[0]
+        except OSError:
+            return None
+
+    # 1. Which class subkeys belong to a PCI device that is actually present.
+    installed = {}
+    try:
+        pci = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Enum\\PCI")
+    except OSError:
+        return []
+    try:
+        for i in range(winreg.QueryInfoKey(pci)[0]):
+            dev_id = winreg.EnumKey(pci, i)
+            try:
+                dev_key = winreg.OpenKey(pci, dev_id)
+            except OSError:
+                continue
+            try:
+                for j in range(winreg.QueryInfoKey(dev_key)[0]):
+                    inst_name = winreg.EnumKey(dev_key, j)
+                    try:
+                        inst = winreg.OpenKey(dev_key, inst_name)
+                    except OSError:
+                        continue
+                    driver = val(inst, "Driver")
+                    flags = val(inst, "ConfigFlags") or 0
+                    winreg.CloseKey(inst)
+                    if not isinstance(driver, str):
+                        continue
+                    head, _, sub = driver.partition("\\")
+                    if head.lower() != DISPLAY_CLASS_GUID.lower() or not sub.isdigit():
+                        continue
+                    # 0x20 = the flag device tooling uses for "not currently present";
+                    # 0x02 = disabled in Device Manager. Either way it is not our GPU.
+                    if sub not in installed:
+                        installed[sub] = (flags & (0x20 | 0x02)) == 0
+            finally:
+                winreg.CloseKey(dev_key)
+    finally:
+        winreg.CloseKey(pci)
+
+    # 2. Read the name and the 64-bit VRAM size off those subkeys.
+    out = []
+    try:
+        root = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            "SYSTEM\\CurrentControlSet\\Control\\Class\\" + DISPLAY_CLASS_GUID,
+        )
+    except OSError:
+        return []
+    try:
+        for i in range(winreg.QueryInfoKey(root)[0]):
+            sub = winreg.EnumKey(root, i)
+            if not sub.isdigit():
+                continue
+            try:
+                key = winreg.OpenKey(root, sub)
+            except OSError:
+                continue
+            name = val(key, "DriverDesc")
+            mem = val(key, "HardwareInformation.qwMemorySize")
+            winreg.CloseKey(key)
+            if not isinstance(name, str) or not name.strip():
+                continue
+            out.append({
+                "index": sub,
+                "name": name.strip(),
+                "present": installed.get(sub, True),
+                "vram_mib": int(mem) // (1024 * 1024) if isinstance(mem, int) else None,
+            })
+    finally:
+        winreg.CloseKey(root)
+    return out
+
+
+def detect_host_hardware():
+    """The GPU this machine actually has, resolved once at import.
+
+    Filters the not-installed adapters out, then applies the same 2 GiB floor Strata's own
+    helper uses so an APU's integrated Radeon cannot outrank a real card. Returns a dict:
+      {"name", "vram_mib", "source": "os"|"unavailable", "adapters": [...], "stale": [...]}
+    `stale` keeps the adapters that were filtered out, so a disagreement with the engine can
+    be shown rather than hidden.
+    """
+    adapters = _display_adapters()
+    live = [a for a in adapters if a["present"]]
+    stale = [a for a in adapters if not a["present"]]
+    # An integrated GPU (512 MiB on a modern APU) is not the card an LLM runs on; keep it
+    # only when nothing bigger exists. Untested on this PC (the 5600X has no iGPU).
+    big = [a for a in live if (a["vram_mib"] or 0) >= 2048]
+    chosen = big or live
+    if not chosen:
+        return {"name": None, "vram_mib": None, "source": "unavailable",
+                "adapters": adapters, "stale": stale}
+    return {
+        "name": chosen[0]["name"],
+        # A model split across several cards is not what this reports; the engine's own
+        # gpu_count stays authoritative for how many cards HIP loaded.
+        "vram_mib": chosen[0]["vram_mib"],
+        "source": "os",
+        "adapters": chosen,
+        "stale": stale,
+    }
+
+
+HOST_GPU = detect_host_hardware()
 
 
 def _get_json(path):
@@ -491,6 +634,10 @@ def gather_power(metrics, live):
         "gpu_measured_w": measured,
         "gpu_limit_w": limit,
         "peak_w": peak,
+        # Alias of peak_w (M81-T2, audit-33 a33-03): the Compact HUD power gauge reads
+        # power.rated_w, which build_stats never emitted, so that gauge sat at 0 and its hint
+        # always fell back to "of rated peak". peak_w stays the canonical key; read that one.
+        "rated_w": peak,
         "pct_of_peak": round(total / peak * 100, 1) if total and peak else None,
         "source": source,
         "model": POWER_MODEL,
@@ -1433,9 +1580,13 @@ def build_stats():
     vram_derived = hw.get("gpu_mem_used") is None and vram_free is not None
     gpu_mem_used = hw.get("gpu_mem_used")
     gpu_mem_total = hw.get("gpu_mem_total")
+    # The card's real size, in trust order: what the OS registry reports (64-bit, live adapter),
+    # then the engine's figure (wrong on a PC with a stale class entry — see HOST_GPU), then the
+    # rated constant. WMI's AdapterRAM is never used: it is a UInt32 cap (~4 GB on a 24 GB card).
+    vram_total_mib = HOST_GPU["vram_mib"] or static.get("gpu_vram_total_mib") or VRAM_TOTAL_MIB
     if vram_derived:
-        gpu_mem_used = max(0, VRAM_TOTAL_MIB - int(vram_free))
-        gpu_mem_total = VRAM_TOTAL_MIB
+        gpu_mem_used = max(0, vram_total_mib - int(vram_free))
+        gpu_mem_total = vram_total_mib
     gpu = {
         # Utilisation has no counter on this driver, so the modelled activity from the
         # power model fills the gauge — labelled modelled so it reads as an estimate.
@@ -1459,13 +1610,22 @@ def build_stats():
         "pcie_gen": hw.get("gpu_pcie_gen"),
         "pcie_gen_max": hw.get("gpu_pcie_gen_max"),
         "pcie_width": hw.get("gpu_pcie_width"),
-        "name": static.get("gpu_name") or (POWER_MODEL["gpu_name"] if static.get("gpu_count") else None),
+        # M81-T1 (audit-33 a33-01): the OS wins over the engine. The engine's name comes from
+        # indexing the display device class in class order, which on a PC with a leftover driver
+        # entry for a removed card names the wrong adapter (here: an RX 6800 XT ahead of the
+        # installed RX 7900 XTX). "measured" is dropped for this field — nothing measured it.
+        "name": HOST_GPU["name"] or static.get("gpu_name")
+                or (POWER_MODEL["gpu_name"] if static.get("gpu_count") else None),
         "count": static.get("gpu_count"),
-        # The engine leaves gpu_name null on this driver (psutil has no GPU name on
-        # Windows), but the machine is fixed, so fall back to the rated card so the
-        # panel can name what it is modelling rather than printing "1 GPU(s)".
-        "name_source": "measured" if static.get("gpu_name") else (
-            "rated" if static.get("gpu_count") else None),
+        "name_source": HOST_GPU["source"] if HOST_GPU["name"] else (
+            "engine" if static.get("gpu_name") else ("rated" if static.get("gpu_count") else None)),
+        # A disagreement between the OS and the engine is information, not noise: show both.
+        "name_conflict": (static.get("gpu_name")
+                          if HOST_GPU["name"] and static.get("gpu_name")
+                          and static.get("gpu_name") != HOST_GPU["name"] else None),
+        "vram_total_mib_source": "os" if HOST_GPU["vram_mib"] else (
+            "engine" if static.get("gpu_vram_total_mib") else (
+                "rated" if vram_derived else None)),
         # True when the panel has any gpu_* series to draw, including the VRAM series
         # derived from the engine's live vram_free_mib.
         "history_available": any(k in gpu_hist for k in (
@@ -1525,7 +1685,11 @@ def build_stats():
             "gpu_pcie_gen": hw.get("gpu_pcie_gen"),
             "gpu_pcie_gen_max": hw.get("gpu_pcie_gen_max"),
             "gpu_pcie_width": hw.get("gpu_pcie_width"),
-            "gpu_name": static.get("gpu_name"),
+            # M81-T1 (a33-06): this used to pass the engine's raw value with no fallback, which is
+            # how the Hardware panel could print "1 GPU(s)" and now how it would print the wrong
+            # card. Same resolution order as the gpu object, so the two panels can never disagree.
+            "gpu_name": gpu["name"],
+            "gpu_name_source": gpu["name_source"],
             "gpu_count": static.get("gpu_count"),
             "cpu_name": static.get("cpu_name"),
             "cores": static.get("cores"),
