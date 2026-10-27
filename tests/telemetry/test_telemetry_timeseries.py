@@ -79,6 +79,21 @@ expect("the observed buckets report their real sample counts",
 expect("the payload states how many buckets the range has",
        ts["n_buckets"] == len(ts["buckets"]) == 30, ts.get("n_buckets"))
 
+# M81-review S6: the gap branch of the day-range builder omitted two keys its sibling
+# always sets, so a consumer only survived by using .get(). Every bucket must carry the
+# same key set regardless of whether it was observed.
+gap_keys = None
+for rng in ("7d", "30d", "90d"):
+    for b in server.db_timeseries(con, rng)["buckets"]:
+        if not b["samples"]:
+            gap_keys = sorted(b)
+            break
+    if gap_keys:
+        break
+expect("a day-range gap bucket carries the same keys as an observed one",
+       gap_keys is not None and "prefill_bounded" in gap_keys and "prefill_note" in gap_keys,
+       gap_keys)
+
 # ---------- a33-19: the chart path bounds impossible prefill like every other path ----------
 con = fresh()
 rows = [row(NOW - 200 + i * 40, tok_s=40.0, reqs=1 + i, prompt=1000 + i * 100,

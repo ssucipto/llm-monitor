@@ -153,6 +153,21 @@ rec = server.db_analysis(con)["recent"]
 expect("prefill_weighted stays None when the rows predate the prompt_ms column",
        rec["prefill_weighted"] is None, rec["prefill_weighted"])
 
+# M81-review S4: during the prompt_ms rollout a window mixes NULL and non-NULL rows.
+# cumulative_delta skips NULLs, so an all-rows numerator over a non-NULL-only denominator
+# charged tokens to time that never read them. The two rows without prompt_ms read 2000
+# tokens that the bounded rows never account for.
+con = fresh()
+insert(con, [row(NOW - 200, reqs=1, prompt=1000, reused=0, output=10, busy=1),
+             row(NOW - 150, reqs=2, prompt=2000, reused=0, output=20, busy=1),
+             row(NOW - 100, reqs=3, prompt=3000, reused=0, output=30, busy=1, prompt_ms=1000),
+             row(NOW - 50, reqs=4, prompt=4000, reused=0, output=40, busy=1, prompt_ms=2000)])
+rec = server.db_analysis(con)["recent"]
+# honest: the two rows that carry prompt_ms read 1000 tokens in 1000 ms -> 1000 tok/s.
+# the old split-row-set maths reported 3000 tok/s from the same window.
+expect("prefill_weighted uses one row set for both sides of the division (1000, not 3000)",
+       abs(rec["prefill_weighted"] - 1000.0) < 0.01, rec["prefill_weighted"])
+
 # ---------- a33-10: impossible prefill readings are bounded and say so ----------
 con = fresh()
 rows = [row(NOW - 200 + i * 50, reqs=1 + i, prompt=1000 + i * 100, reused=0, output=100 + i * 50,
@@ -262,6 +277,11 @@ expect("a single-row hour still gets a baseline from before the span (requests d
        h["requests"] == 5, h["requests"])
 expect("that baseline's span supports a rate (310 s, above the floor)",
        h["span_s"] == 310.0 and h["req_per_min"] is not None, (h["span_s"], h["req_per_min"]))
+# M81-review S5: db_analysis rounds this figure and db_hour_aggregates did not, so the
+# same quantity reached the payload at two different precisions. 50/310 is not exact in
+# two decimals, which is what makes this assertion able to fail.
+expect("the hour path rounds tok_s_weighted like db_analysis does (0.16)",
+       h["tok_s_weighted"] == 0.16, (h["tok_s_weighted"], h["output_tokens"], h["span_s"]))
 # With no baseline at all, one row spans zero seconds: no rate is computable, and the
 # old 1e-9 sentinel used to divide by it anyway.
 con = fresh()

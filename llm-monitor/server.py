@@ -153,6 +153,15 @@ PREFILL_CEILING_TOK_S = 5000.0
 # dashboard's REFRESH_MS (app.js:12), which is how often a poll row is written.
 SPAN_FLOOR_S = 5.0
 
+# M81-review (S3). day_aggregates carries the last row before the day as its delta
+# baseline, which fixed audit-34 G-34-03 (movement across the day boundary landing in
+# no day). Unbounded, it over-corrects: after a multi-day outage the whole gap's counter
+# movement is charged to ONE day (probe: rows at DAY-2d and DAY+1h gave that day 3
+# requests and 1000 prompt tokens it never served). A baseline older than this is not
+# this day's context, so the day falls back to "no baseline", which is the pre-T3
+# behaviour for that row and reports only the day's own movement.
+DAY_BASELINE_MAX_AGE_S = 86400
+
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
 # used, so the front end never presents a modelled number as a measurement.
@@ -905,6 +914,27 @@ def bounded_prefill(vals):
     return sum(kept) / len(kept), max(kept), bounded
 
 
+def weighted_prefill_rate(rows, prompt_idx, reused_idx, ms_idx):
+    """Prompt tokens that were NOT cache hits, per second of prompt-processing time.
+
+    M81-review (S4): numerator and denominator MUST be summed over the same row set.
+    cumulative_delta skips a NULL counter, so when the prompt_ms column is still being
+    rolled out (rows written before it exists are NULL) an all-rows numerator divided
+    by a non-NULL-only denominator inflated the rate — probe: 300 tok/s reported where
+    the honest figure over the shared row set is 150. Selecting the rows that carry
+    prompt_ms first makes both sides describe the same span.
+    """
+    sub = [r for r in rows if r[ms_idx] is not None]
+    if len(sub) < 2:
+        return None
+    ms_delta = cumulative_delta(sub, ms_idx)
+    if not ms_delta:
+        return None
+    prompt = cumulative_delta(sub, prompt_idx) or 0
+    reused = cumulative_delta(sub, reused_idx) or 0
+    return round(max(0.0, prompt - reused) / ms_delta * 1000, 2)
+
+
 def published_day_prefill(mean, maximum):
     """(mean, max, note) for a prefill aggregate already frozen in the day table.
 
@@ -924,7 +954,6 @@ def published_day_prefill(mean, maximum):
     """
     if mean is not None and maximum is None:
         return None, None, "pre-bound record"
-        return None, None, "pre-bound record"
     return mean, maximum, None
 
 
@@ -942,12 +971,14 @@ def day_aggregates(con, lo, hi):
     measured with rows (DAY-300, reqs=5) (DAY+600, 8) (DAY+4000, 12), the old code
     reported 4 for the day when the true movement is 7. The baseline row is NOT
     counted in polls/span/idle, which describe the day itself.
+
+    The baseline must be recent (DAY_BASELINE_MAX_AGE_S): see S3 in the M81 review.
     """
     base = con.execute(
         "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused,"
         " output_tokens, power_w, busy, drafts_offered, drafts_accepted"
-        " FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1",
-        (lo,)).fetchone()
+        " FROM poll WHERE t < ? AND t >= ? ORDER BY t DESC LIMIT 1",
+        (lo, lo - DAY_BASELINE_MAX_AGE_S)).fetchone()
     rows = con.execute(
         "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens,"
         " reused, output_tokens, power_w, busy, drafts_offered, drafts_accepted"
@@ -1125,12 +1156,11 @@ def db_hour_aggregates(con, lo, hi):
         # M81-T3 (a33-09/a33-11): a rate over the span, not a mean of instantaneous
         # per-poll rates. tok_s_mean weights every idle poll equally with every
         # busy one, so a long idle stretch drags the figure toward zero.
-        "tok_s_weighted": (output_delta / span) if (rate_ok and output_delta) else None,
+        "tok_s_weighted": round((output_delta / span), 2) if (rate_ok and output_delta) else None,
         # Same rule as db_analysis: prompt_ms is a cumulative counter, so a span whose
-        # rows predate the column has no computable prefill rate.
-        "prefill_weighted": (
-            round(max(0.0, prompt_delta - reused_delta) / ms_delta * 1000, 2)
-            if (rate_ok and (ms_delta := cumulative_delta(all_rows, 13))) else None),
+        # rows predate the column has no computable prefill rate. M81-review (S4): the
+        # helper keeps numerator and denominator on the same row set.
+        "prefill_weighted": weighted_prefill_rate(all_rows, 6, 7, 13) if rate_ok else None,
         "power_w_mean": (sum(power_vals) / len(power_vals)) if power_vals else None,
         "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
         "idle_pct": round(100 * sum(1 for r in rows if not r[10]) / len(rows), 1),
@@ -1354,6 +1384,10 @@ def db_timeseries(con, range_str="1h"):
                     "tok_s_max": None,
                     "prefill_mean": None,
                     "prefill_max": None,
+                    # M81-review (S6): the sibling branch always carries these, so a gap
+                    # bucket must too or consumers depend on .get() to survive.
+                    "prefill_bounded": False,
+                    "prefill_note": None,
                 })
     else:
         return None
@@ -1644,9 +1678,8 @@ def db_analysis(con, window_s=DB_WINDOW_S):
             "tok_s_weighted": round(output_delta / span, 2) if (rate_ok and output_delta) else None,
             # prompt_ms is a cumulative counter (new column); rows written before it
             # existed are NULL, so this stays None rather than inventing a rate.
-            "prefill_weighted": (
-                round(max(0.0, prompt_delta - reused_delta) / ms_delta * 1000, 2)
-                if (rate_ok and (ms_delta := cumulative_delta(window, 14))) else None),
+            # M81-review (S4): one row set for both sides of the division.
+            "prefill_weighted": weighted_prefill_rate(window, 7, 8, 14) if rate_ok else None,
             "prefill_bounded": prefill_bounded,
             "busy_polls": busy_polls,
             "window_s": int(window_s),

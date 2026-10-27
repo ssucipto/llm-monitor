@@ -114,6 +114,26 @@ agg = server.day_aggregates(con, DAY, DAY + 86400)
 expect("with no baseline at all, the day reports its own movement (5)",
        agg["requests"] == 5, agg["requests"])
 
+# M81-review S3: the G-34-03 fix carried ANY earlier row as the baseline, so after an
+# outage a whole gap's counter movement was charged to one day. Two days of inactivity
+# followed by one busy day must not give that day the outage's tokens.
+con = fresh()
+insert(con, [row(DAY - 2 * 86400, reqs=3, prompt=1000, reused=0, output=0),
+             row(DAY + 600, reqs=5, prompt=1600, reused=0, output=10, busy=1),
+             row(DAY + 4000, reqs=8, prompt=2400, reused=0, output=20, busy=1)])
+agg = server.day_aggregates(con, DAY, DAY + 86400)
+expect("a baseline older than a day is not this day's context (3 requests, not 5)",
+       agg["requests"] == 3, agg["requests"])
+expect("the same outage does not charge two days of prompt tokens to one day (800, not 1400)",
+       agg["prompt_tokens"] == 800, agg.get("prompt_tokens"))
+# A baseline inside the window still works — the bound must not undo G-34-03.
+con = fresh()
+insert(con, [row(DAY - 7200, reqs=3, prompt=1000, reused=0, output=0),
+             row(DAY + 600, reqs=5, prompt=1600, reused=0, output=10, busy=1)])
+agg = server.day_aggregates(con, DAY, DAY + 86400)
+expect("a baseline two hours old is still used (2 requests attributed across the boundary)",
+       agg["requests"] == 2, agg["requests"])
+
 # ---------- a33-10: the rollup bounds impossible prefill too ----------
 con = fresh()
 rows = [row(DAY + i * 60, tok_s=40.0, prefill=p, reqs=1 + i, prompt=1000 + i * 100,
