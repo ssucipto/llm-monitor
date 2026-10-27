@@ -207,11 +207,11 @@ milestones:
     priority: 1
     file: agent/milestones/milestone-81-information-architecture-and-correctness.md
     status: in_progress
-    progress: 54
+    progress: 62
     started: "2026-10-26"
     completed:
     estimated_weeks: 1
-    tasks_completed: 5
+    tasks_completed: 6
     tasks_total: 8
     notes: |
       Planned from audit-33 (35 findings, a33-01..a33-35) and amended by the audit-34 pre-impl pass
@@ -602,9 +602,9 @@ tasks:
     - id: task-81-t6
       name: Block order, collapsible Requests, nav, Detail re-categorisation
       priority: 1
-      status: pending
+      status: completed
       started: 2026-10-26
-      completed_date:
+      completed_date: 2026-10-27
       actual_hours: null
       file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t6-information-architecture.md
       estimated_hours: 3
@@ -644,6 +644,28 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-27
+    description: |
+      M81-T6 — the dashboard now leads with what the model is doing. The default tile order is
+      engine performance (live, throughput, context, cache, speculative, telemetry), then activity
+      (charts, requests, history, usage), then hardware (gpu, power, hardware), with engine config,
+      engine switch and system log kept as a collapsed Reference region. Cache and speculative decode
+      moved out of that region into the main grid because they are engine readings. The Requests
+      table folds in place inside its own panel. The nav is rebuilt as four labelled groups covering
+      all 16 panels, including the Usage ledger it used to omit. A saved layout from before this
+      release is replaced by the new defaults and the page says so, with Dismiss and Reset beside it.
+    items:
+      - "✅ a33-29 closed: DEFAULT_ORDER.tiles = live, throughput, context, cache, spec, analysis, charts, requests, gpu, power, hardware, usage, history; the <section> blocks physically moved in index.html so the pre-JS fallback and the drag baseline match"
+      - "✅ a33-30 closed: #requests stays a <section class=panel> (id + drag contract intact) and its count + table move under an inner <details class=panel__fold open>; the existing ResizeObserver -> rAF pass re-spans on toggle, verified rather than assumed"
+      - "✅ a33-31 closed: nav rebuilt as Engine performance / Activity / Hardware / Reference covering all 16 panels with #usage no longer missing; links into the collapsed region are marked; new static check toc-covers-panels (static 11 -> 12) fails on any dead link or unreachable panel"
+      - "✅ a33-32 closed per the audit-33 decision: persistOrder writes v: ORDER_VERSION (2); an older or version-less save gets the defaults, a visible note beside Save/Reset, and is re-saved at v 2. Reset clears the note. Bumping ORDER_KEY was rejected — it discards the user's order silently"
+      - "✅ audit-34 G-34-01 closed in the same commit as the DOM move: detail-packing tiles >= 4 became >= 2 (cache/spec moved out, #log is hidden=until-found so only 2 are measurable); cols >= 2 re-measured, unchanged"
+      - "✅ audit-34 G-34-02 checked: #detail is itself a grid item, so the tiles list holds 13 panels + #detail; new checks read containers via ORDER_SIG, never .tiles > .panel across both grids"
+      - "🧪 browser suite 21 -> 23 (requests-collapsible, layout-version-migration); expected.txt browser 23 / static 12"
+      - "🧪 seven mutations proven: fold class removed, fold ships closed, summary emptied, version gate replaced with if(true), note call removed, order permuted with all 13 ids kept (only the importance assertion can fail)"
+      - "🔁 one check rewritten after it failed on correct code: a table's getBoundingClientRect is not a valid observable for a closed <details> — Chrome hides the body with content-visibility on ::details-content while descendants keep their boxes. The fold's own height is the observable"
+      - "🧪 gates at this tree: [tests/ui] PASS (browser 23 / static 12) · tests/telemetry 35+22+25 rc_all=0 · tests/usage 5+33 rc_all=0 · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS 6/6"
+      - "⚠️ :8090 still runs the pre-T3/T4 server; front-end files are served from disk so this task is visible on reload, the T3/T4 server.py changes are not"
   - date: 2026-10-27
     description: |
       M81-T5 — the History panel is readable. The 100x30 requests-per-day squiggle is replaced by a

@@ -61,24 +61,39 @@
     </div>
   </header>
 
+  <!-- M81-T6 (a33-31): the nav used to list six panels that live inside the collapsed Detail
+       region and omit #usage entirely. It now names every panel, grouped by what the user reads
+       first, in the new default order. Static markup (not JS-generated) so it works before app.js
+       runs; the toc-covers-panels static check fails if a panel ever loses its link. -->
   <nav class="toc" aria-label="Jump to a section">
-    <ol>
-      <li><a href="#engine">Engine</a></li>
+    <ul class="toc__group">
+      <li class="toc__heading">Engine performance</li>
       <li><a href="#live">Live inference</a></li>
-      <li><a href="#context">Context</a></li>
       <li><a href="#throughput">Throughput</a></li>
-      <li><a href="#power">Power</a></li>
-      <li><a href="#gpu">GPU</a></li>
-      <li><a href="#hardware">Hardware</a></li>
+      <li><a href="#context">Context</a></li>
       <li><a href="#cache">Cache</a></li>
       <li><a href="#spec">Speculative</a></li>
-      <li><a href="#requests">Requests</a></li>
       <li><a href="#analysis">Telemetry</a></li>
+    </ul>
+    <ul class="toc__group">
+      <li class="toc__heading">Activity</li>
       <li><a href="#charts">Performance charts</a></li>
+      <li><a href="#requests">Requests</a></li>
       <li><a href="#history">History</a></li>
-      <li><a href="#switch">Switch</a></li>
-      <li><a href="#log">System log</a></li>
-    </ol>
+      <li><a href="#usage">Usage ledger</a></li>
+    </ul>
+    <ul class="toc__group">
+      <li class="toc__heading">Hardware</li>
+      <li><a href="#gpu">GPU</a></li>
+      <li><a href="#power">Power</a></li>
+      <li><a href="#hardware">Hardware</a></li>
+    </ul>
+    <ul class="toc__group">
+      <li class="toc__heading">Reference</li>
+      <li><a class="toc__link--detail" href="#engine">Engine</a></li>
+      <li><a class="toc__link--detail" href="#switch">Switch</a></li>
+      <li><a class="toc__link--detail" href="#log">System log</a></li>
+    </ul>
   </nav>
 
   <main id="main" class="layout">
@@ -96,30 +111,6 @@
         <div class="fact"><dt>Elapsed</dt><dd id="live-elapsed">--</dd></div>
         <div class="fact"><dt>Queued</dt><dd id="live-queued">--</dd></div>
         <div class="fact"><dt>Max tokens</dt><dd id="live-max">--</dd></div>
-      </dl>
-    </section>
-
-    <section class="panel usage" id="usage" aria-labelledby="usage-h">
-      <h2 id="usage-h">Usage ledger</h2>
-      <p class="live__state" id="usage-note">orchestrator (Claude Code) and local executor (Hermes) tokens, numbers only</p>
-      <dl class="live__facts">
-        <div class="fact"><dt>Today, orchestrator</dt><dd id="usage-day-orch">--</dd></div>
-        <div class="fact"><dt>Today, executor</dt><dd id="usage-day-exec">--</dd></div>
-        <div class="fact"><dt>7 days, orchestrator</dt><dd id="usage-week-orch">--</dd></div>
-        <div class="fact"><dt>7 days, executor</dt><dd id="usage-week-exec">--</dd></div>
-        <div class="fact"><dt>Sources</dt><dd id="usage-sources">--</dd></div>
-      </dl>
-    </section>
-
-    <section class="panel context" id="context" aria-labelledby="context-h">
-      <h2 id="context-h">Context window</h2>
-      <data class="context__pct" id="ctx-pct" value="0">--</data>
-      <meter class="context__gauge" id="ctx-gauge" min="0" max="100" low="60" high="85" optimum="10" value="0">--</meter>
-      <p class="context__hint" id="ctx-hint">used / max tokens</p>
-      <dl class="context__facts">
-        <div class="fact"><dt>Slots</dt><dd id="ctx-slots">--</dd></div>
-        <div class="fact"><dt>KV resident</dt><dd id="ctx-kv-resident">--</dd></div>
-        <div class="fact"><dt>Max context</dt><dd id="ctx-max">--</dd></div>
       </dl>
     </section>
 
@@ -171,95 +162,44 @@
       </figure>
     </section>
 
-    <section class="panel power" id="power" aria-labelledby="power-h">
-      <h2 id="power-h">Power</h2>
-      <data class="power__value" id="power-total" value="0">--</data>
-      <meter class="power__gauge" id="power-gauge" min="0" max="100" low="50" high="80" optimum="10" value="0">--</meter>
-      <p class="power__hint" id="power-hint">of rated peak</p>
-      <dl class="power__facts">
-        <div class="fact"><dt>GPU</dt><dd id="power-gpu">--</dd></div>
-        <div class="fact"><dt>CPU</dt><dd id="power-cpu">--</dd></div>
-        <div class="fact"><dt>Peak</dt><dd id="power-peak">--</dd></div>
-        <div class="fact"><dt>Source</dt><dd id="power-source">--</dd></div>
+    <section class="panel context" id="context" aria-labelledby="context-h">
+      <h2 id="context-h">Context window</h2>
+      <data class="context__pct" id="ctx-pct" value="0">--</data>
+      <meter class="context__gauge" id="ctx-gauge" min="0" max="100" low="60" high="85" optimum="10" value="0">--</meter>
+      <p class="context__hint" id="ctx-hint">used / max tokens</p>
+      <dl class="context__facts">
+        <div class="fact"><dt>Slots</dt><dd id="ctx-slots">--</dd></div>
+        <div class="fact"><dt>KV resident</dt><dd id="ctx-kv-resident">--</dd></div>
+        <div class="fact"><dt>Max context</dt><dd id="ctx-max">--</dd></div>
       </dl>
-      <figure class="spark spark--power">
-        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Power draw over recent history">
-          <polygon class="spark__area" id="pw-area" points="" fill="url(#spark-fill)" />
-          <polyline class="spark__line" id="pw-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
-          <circle class="spark__head" id="pw-head" r="1.4" cx="0" cy="30" fill="currentColor" />
-        </svg>
-        <figcaption class="spark__caption" id="pw-caption">watts, recent history</figcaption>
-      </figure>
     </section>
 
-    <section class="panel gpu" id="gpu" aria-labelledby="gpu-h">
-      <h2 id="gpu-h">GPU</h2>
-      <p class="gpu__state" id="gpu-state">no counters</p>
-      <dl class="gpu__metrics">
-        <div class="hw" data-hw="gpu">
-          <dt><abbr title="GPU utilisation">Util</abbr></dt>
-          <dd>
-            <data class="hw__value" id="gpu-util" value="0">--</data>
-            <meter class="hw__gauge" id="gpu-util-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
-          </dd>
-        </div>
-        <div class="hw" data-hw="gpumem">
-          <dt><abbr title="GPU memory in use">VRAM</abbr></dt>
-          <dd>
-            <data class="hw__value" id="gpu-mem" value="0">--</data>
-            <meter class="hw__gauge" id="gpu-mem-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
-            <p class="hw__hint" id="gpu-mem-hint">used / total</p>
-          </dd>
-        </div>
-        <div class="hw" data-hw="temp">
-          <dt><abbr title="GPU temperature">Temp</abbr></dt>
-          <dd>
-            <data class="hw__value" id="gpu-temp" value="0">--</data>
-            <meter class="hw__gauge" id="gpu-temp-gauge" min="0" max="100" low="75" high="90" optimum="20" value="0">--</meter>
-          </dd>
-        </div>
+    <section class="panel cache" id="cache" aria-labelledby="cache-h">
+      <h2 id="cache-h">Cache</h2>
+      <data class="cache__hit" id="cache-hit" value="0">--</data>
+      <meter class="cache__gauge" id="cache-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
+      <p class="cache__hint" id="cache-hint">prompt-token reuse</p>
+      <dl class="cache__facts">
+        <div class="fact"><dt>KV type</dt><dd id="cache-kv">--</dd></div>
+        <div class="fact"><dt>Expert slots</dt><dd id="cache-expert">--</dd></div>
+        <div class="fact"><dt>Expert cache</dt><dd id="cache-expert-mib">--</dd></div>
+        <div class="fact"><dt>Reused</dt><dd id="cache-reused">--</dd></div>
+        <div class="fact"><dt>Conv cache</dt><dd id="cache-conv">--</dd></div>
+        <div class="fact"><dt>Park/restore</dt><dd id="cache-parks">--</dd></div>
+        <div class="fact"><dt>Evictions</dt><dd id="cache-evictions">--</dd></div>
       </dl>
-      <dl class="gpu__facts">
-        <div class="fact"><dt>Power</dt><dd id="gpu-power">--</dd></div>
-        <div class="fact"><dt>PCIe RX</dt><dd id="gpu-pcie">--</dd></div>
-        <div class="fact"><dt>Device</dt><dd id="gpu-name">--</dd></div>
-      </dl>
-      <figure class="spark spark--gpu">
-        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="GPU utilisation over recent history">
-          <polygon class="spark__area" id="gpu-area" points="" fill="url(#spark-fill)" />
-          <polyline class="spark__line" id="gpu-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
-          <circle class="spark__head" id="gpu-head" r="1.4" cx="0" cy="30" fill="currentColor" />
-        </svg>
-        <figcaption class="spark__caption" id="gpu-caption">gpu utilisation, recent history</figcaption>
-      </figure>
     </section>
 
-
-
-
-
-    <section class="panel requests tile--wide" id="requests" aria-labelledby="requests-h">
-      <h2 id="requests-h">Requests</h2>
-      <p class="requests__count" id="requests-count">--</p>
-      <table class="request-table">
-        <caption class="request-table__caption" id="request-caption">Recent generations, newest first</caption>
-        <thead>
-          <tr>
-            <th scope="col">Time</th>
-            <th scope="col">Dur</th>
-            <th scope="col">Finish</th>
-            <th scope="col">Total</th>
-            <th scope="col">Prompt</th>
-            <th scope="col">Read</th>
-            <th scope="col">Re</th>
-            <th scope="col">Out</th>
-            <th scope="col">tok/s</th>
-            <th scope="col">Hit</th>
-            <th scope="col">Draft</th>
-          </tr>
-        </thead>
-        <tbody id="request-tbody"></tbody>
-      </table>
+    <section class="panel spec" id="spec" aria-labelledby="spec-h">
+      <h2 id="spec-h">Speculative decode</h2>
+      <data class="spec__accept" id="spec-accept" value="0">--</data>
+      <meter class="spec__gauge" id="spec-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
+      <p class="spec__hint" id="spec-hint">draft accept rate</p>
+      <dl class="spec__facts">
+        <div class="fact"><dt>Drafts</dt><dd id="spec-drafts">--</dd></div>
+        <div class="fact"><dt>MTP / lookup</dt><dd id="spec-mtp">--</dd></div>
+        <div class="fact"><dt>Min accept p</dt><dd id="spec-min-p">--</dd></div>
+      </dl>
     </section>
 
     <section class="panel analysis" id="analysis" aria-labelledby="analysis-h">
@@ -367,6 +307,138 @@
       </div>
     </section>
 
+    <section class="panel requests tile--wide" id="requests" aria-labelledby="requests-h">
+      <h2 id="requests-h">Requests</h2>
+      <!-- M81-T6 (a33-30): the table is the tallest thing on the page and is usually read once.
+           It folds in place; the panel element itself stays a <section> so the id contract and the
+           drag/persistence order keep holding. -->
+      <details class="panel__fold" open>
+        <summary class="panel__fold-summary">Recent generations</summary>
+        <p class="requests__count" id="requests-count">--</p>
+        <table class="request-table">
+          <caption class="request-table__caption" id="request-caption">Recent generations, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Dur</th>
+              <th scope="col">Finish</th>
+              <th scope="col">Total</th>
+              <th scope="col">Prompt</th>
+              <th scope="col">Read</th>
+              <th scope="col">Re</th>
+              <th scope="col">Out</th>
+              <th scope="col">tok/s</th>
+              <th scope="col">Hit</th>
+              <th scope="col">Draft</th>
+            </tr>
+          </thead>
+          <tbody id="request-tbody"></tbody>
+        </table>
+      </details>
+    </section>
+
+    <section class="panel gpu" id="gpu" aria-labelledby="gpu-h">
+      <h2 id="gpu-h">GPU</h2>
+      <p class="gpu__state" id="gpu-state">no counters</p>
+      <dl class="gpu__metrics">
+        <div class="hw" data-hw="gpu">
+          <dt><abbr title="GPU utilisation">Util</abbr></dt>
+          <dd>
+            <data class="hw__value" id="gpu-util" value="0">--</data>
+            <meter class="hw__gauge" id="gpu-util-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
+          </dd>
+        </div>
+        <div class="hw" data-hw="gpumem">
+          <dt><abbr title="GPU memory in use">VRAM</abbr></dt>
+          <dd>
+            <data class="hw__value" id="gpu-mem" value="0">--</data>
+            <meter class="hw__gauge" id="gpu-mem-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
+            <p class="hw__hint" id="gpu-mem-hint">used / total</p>
+          </dd>
+        </div>
+        <div class="hw" data-hw="temp">
+          <dt><abbr title="GPU temperature">Temp</abbr></dt>
+          <dd>
+            <data class="hw__value" id="gpu-temp" value="0">--</data>
+            <meter class="hw__gauge" id="gpu-temp-gauge" min="0" max="100" low="75" high="90" optimum="20" value="0">--</meter>
+          </dd>
+        </div>
+      </dl>
+      <dl class="gpu__facts">
+        <div class="fact"><dt>Power</dt><dd id="gpu-power">--</dd></div>
+        <div class="fact"><dt>PCIe RX</dt><dd id="gpu-pcie">--</dd></div>
+        <div class="fact"><dt>Device</dt><dd id="gpu-name">--</dd></div>
+      </dl>
+      <figure class="spark spark--gpu">
+        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="GPU utilisation over recent history">
+          <polygon class="spark__area" id="gpu-area" points="" fill="url(#spark-fill)" />
+          <polyline class="spark__line" id="gpu-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          <circle class="spark__head" id="gpu-head" r="1.4" cx="0" cy="30" fill="currentColor" />
+        </svg>
+        <figcaption class="spark__caption" id="gpu-caption">gpu utilisation, recent history</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel power" id="power" aria-labelledby="power-h">
+      <h2 id="power-h">Power</h2>
+      <data class="power__value" id="power-total" value="0">--</data>
+      <meter class="power__gauge" id="power-gauge" min="0" max="100" low="50" high="80" optimum="10" value="0">--</meter>
+      <p class="power__hint" id="power-hint">of rated peak</p>
+      <dl class="power__facts">
+        <div class="fact"><dt>GPU</dt><dd id="power-gpu">--</dd></div>
+        <div class="fact"><dt>CPU</dt><dd id="power-cpu">--</dd></div>
+        <div class="fact"><dt>Peak</dt><dd id="power-peak">--</dd></div>
+        <div class="fact"><dt>Source</dt><dd id="power-source">--</dd></div>
+      </dl>
+      <figure class="spark spark--power">
+        <svg viewBox="0 0 100 30" width="100" height="30" role="img" aria-label="Power draw over recent history">
+          <polygon class="spark__area" id="pw-area" points="" fill="url(#spark-fill)" />
+          <polyline class="spark__line" id="pw-spark" pathLength="1" points="" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" />
+          <circle class="spark__head" id="pw-head" r="1.4" cx="0" cy="30" fill="currentColor" />
+        </svg>
+        <figcaption class="spark__caption" id="pw-caption">watts, recent history</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel hardware" id="hardware" aria-labelledby="hardware-h">
+      <h2 id="hardware-h">Hardware</h2>
+      <dl class="hardware__metrics">
+        <div class="hw" data-hw="cpu">
+          <dt><abbr title="CPU utilisation">CPU</abbr></dt>
+          <dd>
+            <data class="hw__value" id="hw-cpu" value="0">--</data>
+            <meter class="hw__gauge" id="hw-cpu-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
+          </dd>
+        </div>
+        <div class="hw" data-hw="ram">
+          <dt><abbr title="Resident memory">RAM</abbr></dt>
+          <dd>
+            <data class="hw__value" id="hw-ram" value="0">--</data>
+            <meter class="hw__gauge" id="hw-ram-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
+            <p class="hw__hint" id="hw-ram-hint">used / total</p>
+          </dd>
+        </div>
+      </dl>
+      <dl class="hardware__facts">
+        <div class="fact"><dt>VRAM free</dt><dd id="hw-vram">--</dd></div>
+        <div class="fact"><dt>Disk R/W</dt><dd id="hw-disk">--</dd></div>
+        <div class="fact"><dt>GPU</dt><dd id="hw-gpu">--</dd></div>
+        <div class="fact"><dt>CPU</dt><dd id="hw-cpu-name">--</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel usage" id="usage" aria-labelledby="usage-h">
+      <h2 id="usage-h">Usage ledger</h2>
+      <p class="live__state" id="usage-note">orchestrator (Claude Code) and local executor (Hermes) tokens, numbers only</p>
+      <dl class="live__facts">
+        <div class="fact"><dt>Today, orchestrator</dt><dd id="usage-day-orch">--</dd></div>
+        <div class="fact"><dt>Today, executor</dt><dd id="usage-day-exec">--</dd></div>
+        <div class="fact"><dt>7 days, orchestrator</dt><dd id="usage-week-orch">--</dd></div>
+        <div class="fact"><dt>7 days, executor</dt><dd id="usage-week-exec">--</dd></div>
+        <div class="fact"><dt>Sources</dt><dd id="usage-sources">--</dd></div>
+      </dl>
+    </section>
+
     <section class="panel history tile--wide" id="history" aria-labelledby="history-h">
       <h2 id="history-h">History</h2>
       <p class="hist__window" id="hist-window">awaiting history</p>
@@ -426,7 +498,7 @@
     </section>
 
     <details class="detail" id="detail">
-      <summary class="detail__summary">Detail — engine, hardware, cache, speculative, switch, log</summary>
+      <summary class="detail__summary">Reference — engine config, engine switch, system log</summary>
       <div class="tiles tiles--detail">
 
     <section class="panel engine" id="engine" aria-labelledby="engine-h">
@@ -448,61 +520,6 @@
         <div class="fact"><dt>Elastic VRAM</dt><dd id="cfg-elastic">--</dd></div>
         <div class="fact"><dt>Conv-cache slots</dt><dd id="cfg-conv-slots">--</dd></div>
         <div class="fact"><dt>Min free</dt><dd id="cfg-min-free">--</dd></div>
-      </dl>
-    </section>
-
-    <section class="panel hardware" id="hardware" aria-labelledby="hardware-h">
-      <h2 id="hardware-h">Hardware</h2>
-      <dl class="hardware__metrics">
-        <div class="hw" data-hw="cpu">
-          <dt><abbr title="CPU utilisation">CPU</abbr></dt>
-          <dd>
-            <data class="hw__value" id="hw-cpu" value="0">--</data>
-            <meter class="hw__gauge" id="hw-cpu-gauge" min="0" max="100" low="70" high="90" optimum="20" value="0">--</meter>
-          </dd>
-        </div>
-        <div class="hw" data-hw="ram">
-          <dt><abbr title="Resident memory">RAM</abbr></dt>
-          <dd>
-            <data class="hw__value" id="hw-ram" value="0">--</data>
-            <meter class="hw__gauge" id="hw-ram-gauge" min="0" max="100" low="70" high="90" optimum="10" value="0">--</meter>
-            <p class="hw__hint" id="hw-ram-hint">used / total</p>
-          </dd>
-        </div>
-      </dl>
-      <dl class="hardware__facts">
-        <div class="fact"><dt>VRAM free</dt><dd id="hw-vram">--</dd></div>
-        <div class="fact"><dt>Disk R/W</dt><dd id="hw-disk">--</dd></div>
-        <div class="fact"><dt>GPU</dt><dd id="hw-gpu">--</dd></div>
-        <div class="fact"><dt>CPU</dt><dd id="hw-cpu-name">--</dd></div>
-      </dl>
-    </section>
-
-    <section class="panel cache" id="cache" aria-labelledby="cache-h">
-      <h2 id="cache-h">Cache</h2>
-      <data class="cache__hit" id="cache-hit" value="0">--</data>
-      <meter class="cache__gauge" id="cache-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
-      <p class="cache__hint" id="cache-hint">prompt-token reuse</p>
-      <dl class="cache__facts">
-        <div class="fact"><dt>KV type</dt><dd id="cache-kv">--</dd></div>
-        <div class="fact"><dt>Expert slots</dt><dd id="cache-expert">--</dd></div>
-        <div class="fact"><dt>Expert cache</dt><dd id="cache-expert-mib">--</dd></div>
-        <div class="fact"><dt>Reused</dt><dd id="cache-reused">--</dd></div>
-        <div class="fact"><dt>Conv cache</dt><dd id="cache-conv">--</dd></div>
-        <div class="fact"><dt>Park/restore</dt><dd id="cache-parks">--</dd></div>
-        <div class="fact"><dt>Evictions</dt><dd id="cache-evictions">--</dd></div>
-      </dl>
-    </section>
-
-    <section class="panel spec" id="spec" aria-labelledby="spec-h">
-      <h2 id="spec-h">Speculative decode</h2>
-      <data class="spec__accept" id="spec-accept" value="0">--</data>
-      <meter class="spec__gauge" id="spec-gauge" min="0" max="100" low="40" high="70" optimum="90" value="0">--</meter>
-      <p class="spec__hint" id="spec-hint">draft accept rate</p>
-      <dl class="spec__facts">
-        <div class="fact"><dt>Drafts</dt><dd id="spec-drafts">--</dd></div>
-        <div class="fact"><dt>MTP / lookup</dt><dd id="spec-mtp">--</dd></div>
-        <div class="fact"><dt>Min accept p</dt><dd id="spec-min-p">--</dd></div>
       </dl>
     </section>
 
@@ -684,6 +701,11 @@
 
   <footer class="footer">
     <p class="footer__hint">Drag any panel by its heading to place it anywhere; the latest positions are remembered automatically. <button class="footer__save" id="layout-save">Save layout</button> <button class="footer__reset" id="layout-reset">Reset layout</button></p>
+    <!-- M81-T6 (a33-32): replacing a stale saved layout is a visible event, not a silent one. -->
+    <p class="footer__note" id="layout-note" role="status" hidden>
+      <span id="layout-note-text">Your saved panel layout predates this release, so the new default arrangement was applied.</span>
+      <button class="footer__note-close" id="layout-note-close" type="button" aria-label="Dismiss the layout note">Dismiss</button>
+    </p>
     <p class="endpoints__status" id="endpoints-status">endpoints — health -- · metrics -- · slots -- · models -- · status --</p>
     <p>Reads the live engine on <code>http://127.0.0.1:8080</code> (<code>/health</code>, <code>/metrics</code>,
       <code>/status</code>, <code>/slots</code>, <code>/props</code>, <code>/v1/models</code>) plus the Hermes workspace state files and log tails.

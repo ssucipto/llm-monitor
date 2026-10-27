@@ -814,6 +814,51 @@ carryovers:
     fix_applied_date: 2026-10-27
     verified_in_audit: null
     notes: "M81-T5. Rows are relabelled 'Today vs Yesterday (UTC)', 'This week vs Last week (UTC)' and 'This month vs Last month (UTC)', and a one-line note (.history-table__note, #hist-table-note) states that the periods are UTC-day aligned - the buckets are UTC epoch days (server.py _iso_day) while other timestamps render local (fmtSince -> toLocaleString, a33-15). 'Last request' and 'This hour' are deliberately NOT tagged UTC: they are not UTC-day buckets, so labelling them UTC would be a new lie. The row structure (volume and rate in one row) is kept; the fix is that each row now names its window"
+  - id: a33-29
+    audit: 33
+    finding: "default order does not reflect importance: hardware (gpu, power) sits above the request stream and the analysis, and the Usage ledger sits above Requests"
+    location: llm-monitor/app.js:167
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T6. DEFAULT_ORDER.tiles is now live, throughput, context, cache, spec, analysis, charts, requests, gpu, power, hardware, usage, history - engine performance first, activity second, hardware third, reference material last (audit-33's recorded grouping). Cache and speculative decode moved out of the collapsed region into the main grid because they are engine readings; hardware moved the other way. The <section> blocks physically moved in index.html too, so the pre-JS fallback order and the drag baseline match the JS default. Proven by layout-version-migration, which reads DEFAULT_ORDER out of the shipped app.js and asserts the live DOM matches it element for element, then asserts tiles[:5] is the engine-performance group. Mutation-proven by permuting BOTH the JS list and the markup (keeping all 13 ids so static check 4 stays green): 'the default order does not lead with engine performance'"
+  - id: a33-30
+    audit: 33
+    finding: "Requests is not collapsible: index.html:241-263 is a plain <section> and the only <details> in the document is #detail"
+    location: llm-monitor/index.html:241
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T6 (collapse INSIDE the panel, as audit-33 decided). #requests stays <section class=\"panel requests tile--wide\"> so static check 4 still counts 16 panels and ORDER_SIG still sees the same element; its count + table moved under an inner <details class=\"panel__fold\" open> whose summary mirrors .detail__summary (rotating chevron) so one affordance is learned. The masonry pass needed no new code: layoutTiles already gives a zero-height child gridRowEnd:auto and the ResizeObserver on children re-spans on toggle - verified, not assumed. Proven by requests-collapsible, which clicks the real summary, waits for the rAF layout pass, then asserts the fold collapses to under 40px, the panel loses >40px, and the row span still brackets the new height within gap + 2 units. Mutation-proven by removing the panel__fold class ('no details.panel__fold inside #requests'), shipping the fold closed ('does not ship open with its contents painted') and emptying the summary. Note: a table's getBoundingClientRect is NOT a valid observable for a closed <details> - Chrome hides the body via content-visibility on ::details-content while descendants keep their boxes, so the first draft of this check failed on correct code"
+  - id: a33-31
+    audit: 33
+    finding: "the nav (.toc) does not match the sections: it lists six panels that live inside the collapsed #detail and omits #usage, so 6 of 15 anchors need two clicks and one panel is unreachable"
+    location: llm-monitor/index.html:64
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T6. The nav is rebuilt as four labelled groups in the new default order - Engine performance (live, throughput, context, cache, spec, analysis), Activity (charts, requests, history, usage), Hardware (gpu, power, hardware), Reference (engine, switch, log) - so all 16 panels are reachable and #usage is no longer missing. The three links that point inside the collapsed region carry .toc__link--detail with a trailing ellipsis, so the two-click cost is visible rather than feeling like a dead link. Kept as static markup (not JS-generated) so it works before app.js runs; drift is prevented by a new static check toc-covers-panels (12th static check), which fails on any nav link that is not a panel and on any panel with no nav link. wireDetail's beforematch list was narrowed to the three panels that still live in the region, so a find-in-page hit on cache or spec no longer opens Reference for an unrelated match"
+  - id: a33-32
+    audit: 33
+    finding: "re-ordering DEFAULT_ORDER collides with saved layouts: restoreOrder honours localStorage['llm-monitor-order'], so new defaults never reach an existing user"
+    location: llm-monitor/app.js:243
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T6, following the decision recorded in audit-33: version the save, re-arrange once, keep Reset. persistOrder now writes v: ORDER_VERSION (2). restoreOrder honours a save whose v matches exactly; a save with an older or missing v gets DEFAULT_ORDER plus a visible note (#layout-note, role=status, beside Save/Reset with a Dismiss button) and is immediately re-saved at the current version. Pre-M79 {masonry, band} saves arrive version-less and take the same path. Reset also clears the note, since it is the action the note points at. Rejected (as in the audit): bumping ORDER_KEY, which discards the user's order with no notice. Proven by layout-version-migration: it plants a deliberately reversed version-less save, reloads, asserts the DOM matches the new defaults rather than the planted order, asserts the note is visible and mentions the layout, and asserts the re-saved payload carries v: 2 and the default tiles. Mutation-proven by replacing the version gate with 'if (true)' ('a stale saved layout was honoured instead of the new defaults') and by removing the noteLayoutReplaced call ('the replaced layout was not announced')"
+  - id: g34-01
+    audit: 34
+    finding: "the M81 plan breaks detail-packing, a currently-passing browser check: test_ui_browser asserts dgeo['tiles'] >= 4 while the Detail region shrinks to engine/switch/log, of which #log is hidden='until-found' (zero height, skipped), leaving only 2 measurable tiles"
+    location: agent/tests/ui/test_ui_browser.py:468
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T6, landed in the same commit as the DOM move as the audit required. The assertion is now >= 2 with a comment naming why two is correct (cache and spec are engine readings and moved to the main grid; #log is intentionally collapsed). The cols >= 2 assertion was re-measured rather than assumed: at 1240px the region holds engine + switch as measurable tiles and they pack in separate columns, so it passes unchanged. G-34-02 was checked at the same time: #detail is itself a grid item inside .tiles, so the new tiles list legitimately carries 13 panels plus #detail; the save-button check survives because it compares sorted container-scoped lists, and the new layout-version-migration check reads containers directly via ORDER_SIG rather than counting .tiles > .panel across both grids"
   - id: a33-35
     audit: 33
     finding: "browser checks read whatever engine is live on :8080, so any assertion about values rather than structure is inherently flaky"

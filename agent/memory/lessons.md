@@ -40,6 +40,18 @@
 
 - date: 2026-10-27
   task_type: testing
+  mistake: "Wrote a browser assertion for a collapsible <details> as 'the table must have zero height when the fold is closed'. It failed on correct code: Chrome hides a closed details body with content-visibility on the ::details-content pseudo-element, so descendant elements keep their layout boxes and still report a rect."
+  correction: "For a collapsed <details>, assert on the fold element's own height (it collapses to its summary line) or on getComputedStyle(details, '::details-content').contentVisibility — never on a descendant's getBoundingClientRect. Verify which mechanism the browser actually uses by printing diagnostics (contentVisibility, ::details-content display, offsetParent) instead of guessing at the CSS. Also: when a change shrinks a region, re-measure every count/geometry assertion over that region in the SAME commit; a currently-green check is not a safe carryover."
+  priority: high
+
+- date: 2026-10-27
+  task_type: testing
+  mistake: "Tried to read an app.js constant from CDP with Runtime.evaluate('DEFAULT_ORDER.tiles'). app.js is loaded as <script type=module>, so its top-level consts are module-scoped and unreachable; the expression returned undefined and the assertion would have compared against nothing."
+  correction: "Do not reach for a module's internals to state an expectation. Parse the shipped source in the test (re over 'const DEFAULT_ORDER = {...}') and assert the live DOM against what the FILE says — that is both possible and stronger, because it also catches markup drift. Related: after re-ordering DOM blocks by hand or script, add a check that the initial markup order equals the JS default order; otherwise the pre-JS fallback silently diverges from the arranged page."
+  priority: normal
+
+- date: 2026-10-27
+  task_type: testing
   mistake: "Wrote an assertion as `assert (A if cond else B), msg` where `cond` could never be true, so only one branch ever ran; and in the same check I read a DOM readout AFTER a later input event, so it compared the wrong state. The check reported PASS while asserting almost nothing."
   correction: "Never encode an either/or inside a single assert — write one assert per claim. If a fallback regex is needed, put it in its own assert with its own message. When a check drives several inputs (End, ArrowLeft, Home), capture every observable at the moment it is supposed to be true, not at the end of the sequence. Cross-asserting two independent readouts (aria-valuetext vs the visible line) is what makes 'the wrong value reached the UI' detectable; asserting each against a regex alone lets both be wrong together."
   priority: high

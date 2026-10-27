@@ -18,6 +18,7 @@ Checks
   9 gpu-provenance     gpu.name_source is never "measured"; name_conflict exists
  10 no-empty-prior-pct no hardcoded +100% out of an empty prior period (a33-16)
  11 fallback-shape   the offline fallback builds buckets with the same keys the API emits
+ 12 toc-covers-panels every panel is reachable from the nav, and no nav link is dead (a33-31)
 """
 import json
 import os
@@ -219,6 +220,24 @@ def main():
             proc.wait(timeout=10)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+    # 12 — M81-T6 (a33-31): the nav used to omit #usage and point six links into a collapsed
+    # region. Every panel must be reachable from it, and no link may be dead. Read straight off
+    # the markup, so it does not depend on the server having come up.
+    nav = re.search(r'<nav class="toc"[\s\S]*?</nav>', html)
+    problems = []
+    if not nav:
+        problems.append("no .toc nav element")
+    else:
+        hrefs = re.findall(r'href="#([^"]+)"', nav.group(0))
+        panels = re.findall(r'<section class="panel[^"]*" id="([^"]+)"', html)
+        dead = sorted({h for h in hrefs if h not in panels})
+        unreachable = sorted(set(panels) - set(hrefs))
+        if dead:
+            problems.append(f"nav links to non-panels: {dead}")
+        if unreachable:
+            problems.append(f"panels unreachable from the nav: {unreachable}")
+    expect("toc-covers-panels", not problems, problems)
 
     if fails:
         print(f"[tests/ui static] FAIL {len(fails)}: {fails}")

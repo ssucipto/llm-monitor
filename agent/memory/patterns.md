@@ -113,3 +113,29 @@
     throughput.mean_window/peak_window; tests/telemetry/ asserts each rule.
   applies_to: any poll-based telemetry that stores cumulative counters alongside
     per-poll snapshots and publishes means to a UI
+
+- date: 2026-10-27
+  name: versioned-default-state-migration
+  kind: design-pattern
+  problem: |
+    A product ships a default arrangement (panel order, layout, column set) that
+    users can override, and the override is persisted in localStorage. Changing
+    DEFAULT_ORDER then does nothing for existing users: restoreOrder honours the
+    save, so the change is invisible to exactly the people who asked for it.
+    Bumping the storage key fixes it but destroys their order with no notice.
+  solution: |
+    Version the saved state. persistOrder writes v: ORDER_VERSION; restore honours
+    a save whose v matches EXACTLY and replaces anything else with the defaults,
+    re-saving immediately at the current version. The replacement must be announced
+    in the same place the user can undo it (a note beside Save/Reset, with Dismiss),
+    and Reset clears the note. Legacy shapes migrate by arriving version-less. Never
+    discard a current-version save.
+  example: |
+    llm-monitor/app.js: ORDER_VERSION, persistOrder(), restoreOrder(),
+    noteLayoutReplaced() + #layout-note; test_ui_browser.py
+    layout-version-migration plants a reversed version-less save and asserts the DOM
+    matches the defaults, the note is visible, and the payload is re-saved at v2.
+  applies_to: any persisted user arrangement that the product later re-prioritises
+  guards:
+    - assert the initial markup order equals the JS default order (pre-JS fallback drift)
+    - when a region shrinks, re-measure its count/geometry assertions in the same commit

@@ -465,7 +465,11 @@ def main():
           return {bad, loose, tiles, cols: xs.size || Math.min(tmpl, tiles)};
         })()""")
         assert dgeo, "no .tiles--detail container"
-        assert dgeo["tiles"] >= 4, f"expected the Detail region to show several panels, got {dgeo['tiles']}"
+        # M81-T6 re-categorised the region: cache and speculative decode are engine readings and
+        # moved to the main grid, hardware joined them. Only engine/switch/log remain, and #log is
+        # hidden="until-found" (zero height, skipped above), so TWO measurable tiles is correct.
+        # audit-34 G-34-01: this assertion had to change in the same commit as the DOM move.
+        assert dgeo["tiles"] >= 2, f"expected the Detail region to show its panels, got {dgeo['tiles']}"
         assert not dgeo["bad"], f"Detail tiles without a sufficient row span: {dgeo['bad'][:6]}"
         assert not dgeo["loose"], f"Detail tiles with slack in their row span: {dgeo['loose'][:6]}"
         assert dgeo["cols"] >= 2, (
@@ -998,6 +1002,175 @@ def main():
             f"aria and the visible readout name different days ({kb!r})"
         )
         print("PASS history-scrub-keyboard")
+
+        # 22. requests-collapsible (a33-30) — the request table is the tallest block on the page and
+        #     is usually read once. It must fold in place, and the masonry pass must re-span after
+        #     the fold changes size. Asserted on the panel's own height plus its row span, because a
+        #     fold that leaves a full-height hole in the grid is the failure mode this task risks.
+        # The before/after snapshots are separate evaluations with a wait between them: the span is
+        # written by a ResizeObserver -> requestAnimationFrame pass, so reading it in the same tick
+        # as the click would report the stale value (and would pass when the re-span is broken).
+        fold0 = js(ws, """(() => {
+          const p = document.getElementById('requests');
+          if (!p) return null;
+          const d = p.querySelector('details.panel__fold');
+          const sum = d && d.querySelector('summary');
+          const table = p.querySelector('table.request-table');
+          return {isSection: p.tagName === 'SECTION' && p.classList.contains('panel'),
+                  panelIsDetails: p.tagName === 'DETAILS',
+                  hasFold: !!d, open: !!(d && d.open),
+                  summary: sum ? sum.textContent.trim() : null,
+                  contentShown: !!(d && getComputedStyle(d, '::details-content').contentVisibility === 'visible'),
+                  foldH: d.getBoundingClientRect().height,
+                  h: p.getBoundingClientRect().height};
+        })()""")
+        assert fold0, "no #requests panel"
+        assert fold0["isSection"], "#requests must stay a <section class=panel> (id + drag contract)"
+        assert not fold0["panelIsDetails"], "#requests itself became a <details>, which breaks static check 4"
+        assert fold0["hasFold"], "no details.panel__fold inside #requests (a33-30)"
+        assert fold0["summary"], f"the fold has no summary text ({fold0['summary']!r})"
+        assert fold0["open"] and fold0["contentShown"], (
+            f"the Requests fold does not ship open with its contents painted ({fold0!r})"
+        )
+        js(ws, "(() => { const s = document.querySelector('#requests details.panel__fold summary'); if (s) s.click(); })()")
+        time.sleep(0.8)
+        fold1 = js(ws, """(() => {
+          const p = document.getElementById('requests');
+          const d = p && p.querySelector('details.panel__fold');
+          const cs = getComputedStyle(document.querySelector('.tiles'));
+          const unit = parseFloat(cs.gridAutoRows) || 4;
+          const gap = parseFloat(cs.columnGap) || 0;
+          const m = /span\\s+(\\d+)/.exec(getComputedStyle(p).gridRowEnd);
+          return {open: !!(d && d.open),
+                  contentShown: !!(d && getComputedStyle(d, '::details-content').contentVisibility === 'visible'),
+                  foldH: d.getBoundingClientRect().height,
+                  h: p.getBoundingClientRect().height,
+                  span: m ? parseInt(m[1], 10) : null, unit, gap};
+        })()""")
+        assert not fold1["open"], "clicking the summary did not close the fold"
+        # Chrome hides a closed <details> body with content-visibility on the ::details-content
+        # pseudo, while the descendants keep their layout boxes — so a table rect is NOT a valid
+        # observable here. The fold's own height is: it collapses to just its summary line.
+        assert not fold1["contentShown"], (
+            f"the fold's contents are still painted while closed ({fold1!r})"
+        )
+        assert fold0["foldH"] - fold1["foldH"] > 40, (
+            f"the fold itself did not collapse: {fold0['foldH']:.0f} -> {fold1['foldH']:.0f}"
+        )
+        assert fold1["foldH"] < 40, (
+            f"the closed fold is {fold1['foldH']:.0f}px tall, more than its summary line"
+        )
+        shrink = fold0["h"] - fold1["h"]
+        assert shrink > 40, (
+            f"closing the Requests fold only removed {round(shrink)}px "
+            f"({fold0['h']:.0f} -> {fold1['h']:.0f})"
+        )
+        # The row span must follow the new height: a stale span leaves a full-height blank in the
+        # grid, which is exactly the complaint this milestone is about.
+        assert fold1["span"] is not None, "#requests lost its row span after the toggle"
+        allotted = fold1["span"] * fold1["unit"]
+        assert allotted >= fold1["h"] - 1, (
+            f"row span too small after the fold closed: {fold1['span']} x {fold1['unit']} < "
+            f"{fold1['h']:.0f}"
+        )
+        # Same tolerance the detail-packing check uses for a stale/oversized span.
+        slack = allotted - fold1["h"]
+        assert slack <= fold1["gap"] + 2 * fold1["unit"], (
+            f"row span left {round(slack)}px of slack below the collapsed Requests panel "
+            f"(span={fold1['span']}, height={fold1['h']:.0f})"
+        )
+        # Re-open so later checks (and the user) see the table as shipped.
+        js(ws, "(() => { const s = document.querySelector('#requests details.panel__fold summary'); if (s) s.click(); })()")
+        time.sleep(0.5)
+        print("PASS requests-collapsible")
+
+        # 23. layout-version-migration (a33-32) — the default arrangement is the point of M81, and a
+        #     saved layout from the old arrangement would silently hide it. A save carrying the
+        #     current version must be honoured exactly; a stale or version-less save must be replaced
+        #     by the new defaults AND announced. Reversed stale order is used deliberately: if the
+        #     version gate is removed, the DOM comes out reversed and this fails.
+        # app.js is a <script type="module">, so its consts are module-scoped and NOT reachable from
+        # Runtime.evaluate. The expected order is therefore read from the shipped source, which is
+        # also the stronger assertion: it compares the live DOM against what the file says.
+        js_src = open(os.path.join(UI, "app.js"), encoding="utf8").read()
+        mm = re.search(r'const ORDER_VERSION = (\d+);', js_src)
+        assert mm, "ORDER_VERSION not found in app.js"
+        order_version = int(mm.group(1))
+        dm = re.search(r'const DEFAULT_ORDER = \{(.*?)\n\};', js_src, re.S)
+        assert dm, "DEFAULT_ORDER block not found in app.js"
+        want = {}
+        for name in ("tiles", "detail"):
+            lm = re.search(rf'{name}: \[(.*?)\]', dm.group(1), re.S)
+            assert lm, f"DEFAULT_ORDER.{name} missing"
+            want[name] = re.findall(r'"([^"]+)"', lm.group(1))
+        # #detail is itself a grid item inside .tiles (and persistOrder records it in the tiles
+        # list), so the expected tiles order is the 13 panels plus the region at the end.
+        expected_tiles = want["tiles"] + ["detail"]
+        js(ws, "window.__m81_pre_reset_nav = 1")
+        ws.call("Page.navigate", {"url": base + "/?reset=1"})
+        fresh3 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_reset_nav, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh3 = True
+                break
+            time.sleep(0.25)
+        assert fresh3, "never observed a fresh document after navigating with ?reset=1"
+        time.sleep(2.0)
+        markup = js(ws, ORDER_SIG)
+        # The initial DOM order is the pre-JS fallback; if it drifts from DEFAULT_ORDER, a user with
+        # JS disabled or a slow load sees a different dashboard than everyone else.
+        assert markup["tiles"] == expected_tiles, (
+            f"index.html markup order != DEFAULT_ORDER.tiles:\n  markup={markup['tiles']}\n  js    ={expected_tiles}"
+        )
+        assert markup["detail"] == want["detail"], (
+            f"index.html markup order != DEFAULT_ORDER.detail:\n  markup={markup['detail']}\n  js    ={want['detail']}"
+        )
+        # Engine performance must lead the first row, not GPU/power (a33-29).
+        assert want["tiles"][:5] == ["live", "throughput", "context", "cache", "spec"], (
+            f"the default order does not lead with engine performance: {want['tiles'][:6]}"
+        )
+        stale = {"tiles": list(reversed(want["tiles"])), "detail": list(want["detail"])}
+        js(ws, "localStorage.setItem('llm-monitor-order', %s)" % json.dumps(json.dumps(stale)))
+        assert json.loads(js(ws, "localStorage.getItem('llm-monitor-order')"))["tiles"][0] == "history", (
+            "could not plant a stale (version-less) saved layout"
+        )
+        js(ws, "window.__m81_pre_migrate = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh4 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_migrate, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh4 = True
+                break
+            time.sleep(0.25)
+        assert fresh4, "never observed a fresh document after planting a stale layout"
+        time.sleep(2.0)
+        migrated = js(ws, ORDER_SIG)
+        assert migrated["tiles"] == expected_tiles, (
+            f"a stale saved layout was honoured instead of the new defaults:\n  "
+            f"stale={stale['tiles']}\n  dom ={migrated['tiles']}"
+        )
+        note = js(ws, """(() => { const n = document.getElementById('layout-note');
+          return n ? {hidden: n.hidden, text: (document.getElementById('layout-note-text') || {}).textContent || ''} : null; })()""")
+        assert note and not note["hidden"], (
+            f"the replaced layout was not announced (#layout-note = {note!r}) — a silent change "
+            f"to someone's saved arrangement is the failure a33-32 warns about"
+        )
+        assert re.search(r"layout", note["text"], re.I), f"the note says nothing about layout: {note['text']!r}"
+        repersisted = json.loads(js(ws, "localStorage.getItem('llm-monitor-order')"))
+        assert repersisted.get("v") == order_version, (
+            f"the migrated layout was not re-saved at the current version ({repersisted.get('v')!r})"
+        )
+        assert repersisted.get("tiles") == expected_tiles, (
+            f"re-saved tiles != defaults:\n  saved={repersisted.get('tiles')}\n  want ={expected_tiles}"
+        )
+        # The note must be dismissible and Reset must clear it (it points the user at that button).
+        click_id("layout-note-close")
+        assert js(ws, "document.getElementById('layout-note').hidden") is True, (
+            "Dismiss did not hide the layout note"
+        )
+        print("PASS layout-version-migration")
         return 0
     finally:
         for p in (proc, server):

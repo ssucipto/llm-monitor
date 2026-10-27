@@ -5,6 +5,28 @@
 - date: 2026-10-27
   executor: zed
   branch: main
+  tasks: [task-81-t6]
+  done:
+    - "a33-29 DEFAULT_ORDER.tiles = live, throughput, context, cache, spec, analysis, charts, requests, gpu, power, hardware, usage, history; the <section> blocks physically moved in index.html so the pre-JS fallback matches the JS default"
+    - "cache + spec moved out of the collapsed region into the main grid (engine readings); hardware moved in; region relabelled 'Reference - engine config, engine switch, system log'"
+    - "a33-30 #requests stays a <section class=panel> and its count + table fold under an inner <details class=panel__fold open>; the existing ResizeObserver -> rAF pass re-spans on toggle (verified, not assumed)"
+    - "a33-31 nav rebuilt as four labelled groups covering all 16 panels incl. #usage; links into the collapsed region marked; new static check toc-covers-panels (static 11 -> 12)"
+    - "a33-32 per the audit-33 decision: persistOrder writes v: ORDER_VERSION (2); an older/version-less save gets the defaults + a visible note beside Save/Reset and is re-saved at v2; Reset clears the note; bumping ORDER_KEY rejected as silent data loss"
+    - "audit-34 G-34-01 landed in the same commit as the DOM move: detail-packing tiles >= 4 -> >= 2, with cols >= 2 re-measured rather than assumed; G-34-02 verified (#detail is a grid item, so tiles = 13 panels + detail)"
+    - "wireDetail's beforematch list narrowed to engine/switch/log so a find-in-page hit on cache or spec no longer opens Reference for an unrelated match"
+    - "browser suite 21 -> 23 (requests-collapsible, layout-version-migration); seven mutations proven"
+    - "records: a33-29/30/31/32 + g34-01 added as fixed carryovers, progress.yaml M81 6/8"
+  deferred:
+    - "M81 T7 header redesign, T8 steps 2-6 -> those tasks"
+    - "a33-37 System log panel tails only Hermes llama.cpp logs while Strata's own log is never read -> needs its own task"
+    - "a33-35 LLM_MONITOR_FIXTURE -> task-81-t8 step 2; a32-02 fixed sleeps -> task-81-t8 step 3"
+    - "the striped no-data meter track still needs one human eyeball (Chrome pseudo-element paint is unobservable from CDP)"
+    - ":8090 restart -> front-end files are served from disk so T5/T6 are visible on reload; the T3/T4 server.py changes are not"
+  key_fact: "A closed <details> body is hidden by content-visibility on ::details-content, so its descendants keep their layout boxes — asserting on a table's getBoundingClientRect inside a fold fails on CORRECT code. The fold element's own height is the observable. And when a change shrinks a region, every count assertion over that region must be re-measured in the same commit (audit-34 G-34-01), not carried forward."
+
+- date: 2026-10-27
+  executor: zed
+  branch: main
   tasks: [task-81-t5]
   done:
     - "a33-23 History sparkline (100x30, no axis) replaced by #hist-bars: 4 gridlines, unit-bearing axis title + unit suffix on the top gridline label, x ticks at stride round(N/6) with the last day always labelled, rect.hist-bar[data-day]; old sparkline <figure> hidden not deleted so its ids stay in the DOM"

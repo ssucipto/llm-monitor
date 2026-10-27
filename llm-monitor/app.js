@@ -164,9 +164,18 @@ function setMeter(gaugeId, pct) {
 // Old two-container saves ({masonry:[...], band:[...]}) migrate to the single
 // list (masonry first, then band), so pre-M79 layouts survive the switch.
 const ORDER_KEY = "llm-monitor-order";
+// M81-T6 (a33-32): the arrangement is now part of the product, so a saved layout has to know
+// which arrangement it was made under. A save carrying the current version is honoured exactly;
+// an older or version-less save is replaced by the new defaults and the page says so (#layout-note).
+// Rejected: bumping ORDER_KEY outright, which would throw away their order with no notice at all.
+const ORDER_VERSION = 2;
 const DEFAULT_ORDER = {
-  tiles: ["live", "throughput", "context", "gpu", "power", "usage", "requests", "analysis", "charts", "history"],
-  detail: ["engine", "hardware", "cache", "spec", "switch", "log"],
+  // Engine performance first — what the model is doing right now, then what it has done, then
+  // the hardware it is doing it on. Cache and speculative decode are engine readings, so they
+  // moved up from the collapsed region; engine config, switch and log are reference material.
+  tiles: ["live", "throughput", "context", "cache", "spec", "analysis", "charts",
+          "requests", "gpu", "power", "hardware", "usage", "history"],
+  detail: ["engine", "switch", "log"],
 };
 let drag = null;
 let container = null;      // primary .tiles
@@ -213,10 +222,20 @@ function queueLayout() {
 }
 
 function persistOrder() {
-  const order = {};
+  const order = { v: ORDER_VERSION };
   if (container) order.tiles = [...container.children].filter((el) => el !== slotEl).map((el) => el.id);
   if (detailContainer) order.detail = [...detailContainer.children].filter((el) => el !== slotEl).map((el) => el.id);
   localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+}
+
+// The one visible half of the migration: a replaced layout must never look like the user's own
+// order broke itself. The note sits beside Save/Reset so the way back is right next to the news.
+function noteLayoutReplaced(reason) {
+  const note = $("layout-note");
+  if (!note) return;
+  const text = $("layout-note-text");
+  if (text && reason) text.textContent = reason;
+  note.hidden = false;
 }
 
 function applyOrder(order) {
@@ -251,7 +270,20 @@ function restoreOrder() {
   } catch (err) {
     saved = null;
   }
-  if (saved) applyOrder(saved);
+  if (!saved) return;
+  if (saved.v === ORDER_VERSION) {
+    applyOrder(saved);
+    return;
+  }
+  // Pre-M79 saves ({masonry, band}) and pre-M81 saves (no v) both land here. They were made
+  // under an arrangement this release changed, so they get the new defaults plus a notice —
+  // silently keeping a stale order would make the change invisible to the person who asked for it.
+  applyOrder(DEFAULT_ORDER);
+  noteLayoutReplaced(
+    "Your saved panel layout predates this release, so the new default arrangement was applied. " +
+    "Drag panels to arrange them, then Save layout to keep your own order."
+  );
+  persistOrder();
 }
 
 function hitContainer(x, y) {
@@ -901,7 +933,9 @@ function wireLogReveal() {
 function wireDetail() {
   const detail = $("detail");
   if (!detail) return;
-  for (const id of ["engine", "hardware", "cache", "spec", "switch", "log"]) {
+  // M81-T6: only the Reference panels live in this region now. Attaching these to a panel that
+  // moved into the main grid would open the region for an unrelated find-in-page hit.
+  for (const id of ["engine", "switch", "log"]) {
     const el = $(id);
     if (el) el.addEventListener("beforematch", () => { detail.open = true; });
   }
@@ -1908,8 +1942,12 @@ function wireLayoutButtons() {
     reset.addEventListener("click", () => {
       localStorage.removeItem(ORDER_KEY);
       applyOrder(DEFAULT_ORDER);
+      const note = $("layout-note");
+      if (note) note.hidden = true; // Reset is the fix the note points at; stop repeating it.
     });
   }
+  const close = $("layout-note-close");
+  if (close) close.addEventListener("click", () => ($("layout-note").hidden = true));
 }
 
 async function refresh() {
