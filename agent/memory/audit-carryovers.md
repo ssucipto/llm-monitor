@@ -859,6 +859,33 @@ carryovers:
     fix_applied_date: 2026-10-27
     verified_in_audit: null
     notes: "M81-T6, landed in the same commit as the DOM move as the audit required. The assertion is now >= 2 with a comment naming why two is correct (cache and spec are engine readings and moved to the main grid; #log is intentionally collapsed). The cols >= 2 assertion was re-measured rather than assumed: at 1240px the region holds engine + switch as measurable tiles and they pack in separate columns, so it passes unchanged. G-34-02 was checked at the same time: #detail is itself a grid item inside .tiles, so the new tiles list legitimately carries 13 panels plus #detail; the save-button check survives because it compares sorted container-scoped lists, and the new layout-version-migration check reads containers directly via ORDER_SIG rather than counting .tiles > .panel across both grids"
+  - id: a33-26
+    audit: 33
+    finding: "the header prints decode tok/s twice"
+    location: llm-monitor/index.html:49
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T7. .topbar__meta is now only the liveness cluster; the visible decode figure is #hero-tok in the KPI strip. #top-tok stays in the DOM, hidden and still updated, because its id is part of the app.js contract (static check 2) - deleting it would be a silent hole for any consumer. Guarded structurally rather than by id: the new static check header-unique-units collects the unit labels of every VISIBLE header cell and fails if any label appears twice, so any future pair of header cells that claim the same thing fails whatever they are called. Mutation-proven by un-hiding the duplicate cell (header cells share a unit label: [decode tok/s], plus 2 visible header cells label decode tok/s)"
+  - id: a33-27
+    audit: 33
+    finding: "the header gauge is labelled prefill but the strip's hero is decode; the gauge has no in-view label and its ceiling is a hardcoded 2000 tok/s this engine never approaches"
+    location: llm-monitor/app.js:1007
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T7. The prefill figure (#top-prefill) moved into the KPI strip next to #top-gauge-ceiling, which prints gauge to N in view, and the gauge's own aria-label now carries reading plus scale (prefill speed gauge - 345 of 1,250 tok/s). The ceiling comes from prefillCeiling(history.prefill) = max(600, 1.25 x p95) with a 20% hysteresis so the scale does not jitter every poll; it is computed from the series the server already bounds at PREFILL_CEILING_TOK_S (T3 / a33-10), so an impossible sample can never set the scale. The scale text is its own cell (.kpi__unit--scale) because the Compact HUD hides the bar and must hide the scale with it. On live readings (p50 ~345, p90 ~1,093) a 345 tok/s poll now fills ~28% of the bar where the old 2000 ceiling pinned it at 17%. Proven by header-liveness, which pins history.prefill to a series whose p95 is 1,000 and asserts the scale reads 1,250, that 2,000 appears nowhere, and that the fill width is 27.6%. Mutation-proven three ways: no-scale-label (stop writing the text) fails both header-liveness and the new static check gauge-scale-labelled; hard-ceiling (restore ceiling = 2000) fails gauge-scale-labelled; static-scale (ignore the series in prefillCeiling) fails header-liveness with gauge to 600"
+  - id: a33-28
+    audit: 33
+    finding: "no uptime / engine-liveness affordance in the header; the badge only says whether this tab polled"
+    location: llm-monitor/index.html:45
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T7. #top-liveness prints up <duration> updated <age>. Uptime comes from totals.since and an unparseable stamp prints --, never a NaN duration (asserted by flipping the fixture to a non-timestamp). The age is measured client-side from the last SUCCESSFUL poll (lastPollOkAtMs, set in refresh()), not from page load, and is re-ticked every second alongside the clock so it stays honest between polls - a server-side poll age would be meaningless because the poll is the request. #top-build adds engine.build_info (Strata 0.1.47) to the identity cluster, where it previously only appeared inside the collapsed Reference region. Proven by header-liveness: a session started 3h 12m ago must read 3h 11m/3h 12m, the age must be under two minutes (an element never written stays --, one fed the wrong stamp reads like an uptime), and the build string must match the fixture. Mutation-proven by deleting the renderLiveness call (engine uptime reads -- for a session that started 3h 12m ago)"
   - id: a33-35
     audit: 33
     finding: "browser checks read whatever engine is live on :8080, so any assertion about values rather than structure is inherently flaky"

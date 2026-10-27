@@ -27,6 +27,9 @@
       <span class="brand__mark" id="top-mark" aria-hidden="true"></span>
       <strong class="brand__engine" id="top-engine">--</strong>
       <span class="brand__model" id="top-model">--</span>
+      <!-- M81-T7 (a33-28): the build string was only readable inside the collapsed Reference
+           region, so the header named the engine without saying which build is answering. -->
+      <span class="brand__build" id="top-build">--</span>
     </p>
     <nav class="view-tabs" role="tablist" aria-label="Dashboard views">
       <button class="view-tab is-active" id="tab-full" role="tab" aria-selected="true" aria-controls="view-full" data-view="full" type="button">
@@ -42,11 +45,21 @@
         <span class="view-tab__label">Pop-out</span>
       </button>
     </nav>
+    <!-- M81-T7 (a33-26/27/28): the meta cluster is now the "is this alive" cluster — clock, live
+         badge, engine uptime and the age of the numbers on screen. The two speed figures that used
+         to sit here moved out: prefill into the KPI strip (where the gauge's scale is printed next
+         to it) and decode was already in the strip, so the header no longer prints the same number
+         twice. #top-tok stays in the DOM, hidden and still updated, because its id is a contract. -->
     <p class="topbar__meta">
       <time class="clock" id="clock">--:--:--</time>
       <span class="refresh-badge" id="refresh-badge" role="status">Booting</span>
-      <span class="topbar__prefill"><data class="topbar__value" id="top-prefill" value="0">--</data><span class="topbar__unit">prefill tok/s</span></span>
-      <span class="topbar__tok"><data class="topbar__value" id="top-tok" value="0">--</data><span class="topbar__unit">decode tok/s</span></span>
+      <span class="topbar__liveness" id="top-liveness">
+        <span class="topbar__liveness-label">up</span>
+        <span class="topbar__value topbar__value--soft" id="top-uptime">--</span>
+        <span class="topbar__liveness-label">updated</span>
+        <span class="topbar__value topbar__value--soft" id="top-age">--</span>
+      </span>
+      <span class="topbar__tok" hidden><data class="topbar__value" id="top-tok" value="0">--</data><span class="topbar__unit">decode tok/s</span></span>
     </p>
     <div class="topbar__gauge" id="top-gauge" role="img" aria-label="prefill speed gauge">
       <span class="topbar__gauge__fill" id="top-gauge-fill"></span>
@@ -54,7 +67,8 @@
     </div>
     <div class="kpi-strip" role="group" aria-label="At a glance">
       <div class="kpi"><data class="kpi__value" id="hero-tok" value="0">--</data><span class="kpi__unit">decode tok/s</span></div>
-      <div class="kpi"><span class="kpi__state" id="hero-state">idle</span><span class="kpi__unit">model state</span></div>
+      <div class="kpi"><data class="kpi__value" id="top-prefill" value="0">--</data><span class="kpi__unit" id="top-gauge-scale">prefill tok/s</span><span class="kpi__unit kpi__unit--scale" id="top-gauge-ceiling">gauge to --</span></div>
+      <div class="kpi"><span class="kpi__orb" id="hero-orb" aria-hidden="true"></span><span class="kpi__state" id="hero-state">idle</span><span class="kpi__unit">model state</span></div>
       <div class="kpi"><data class="kpi__value" id="hero-power" value="0">--</data><span class="kpi__unit">watts</span></div>
       <div class="kpi"><data class="kpi__value" id="hero-ctx" value="0">--</data><span class="kpi__unit">% context</span></div>
       <div class="kpi"><data class="kpi__value" id="hero-hit" value="0">--</data><span class="kpi__unit">% cache hit</span></div>

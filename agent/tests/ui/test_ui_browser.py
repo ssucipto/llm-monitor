@@ -1171,6 +1171,99 @@ def main():
             "Dismiss did not hide the layout note"
         )
         print("PASS layout-version-migration")
+
+        # 24. header-liveness (a33-27/28) — the header said nothing about how long the engine has
+        #     been up, how old the numbers on screen are, or which build is answering, and the gauge
+        #     scale was a hardcoded 2000 tok/s this engine never approaches. Everything is pinned by
+        #     a fixture so the check tests the render path instead of whatever the live engine
+        #     happens to report at the moment the suite runs.
+        ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            window.__m81_bad_since = false;
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              if (!String(u).includes('api/stats')) return res;
+              return res.json().then((j) => {
+                // 3h 12m of engine uptime, or an unparseable stamp for the second half of the
+                // check: an unparseable `since` must print "--", never a bogus duration.
+                if (j.totals) j.totals.since = window.__m81_bad_since
+                  ? 'not a timestamp' : (Date.now() / 1000 - 11520);
+                if (j.engine) j.engine.build_info = 'Strata 9.9.99-test';
+                // A prefill series whose p95 is 1,000 tok/s. The gauge scale must follow it
+                // (1.25x = 1,250), which the old hardcoded 2000 could never produce.
+                if (j.history) j.history.prefill = [120, 300, 450, 640, 800, 900, 1000, 1050];
+                if (j.throughput) j.throughput.prefill = 345;
+                return new Response(JSON.stringify(j), {headers: {'content-type': 'application/json'}});
+              });
+            });
+          })();"""})
+        js(ws, "window.__m81_pre_liveness = 1")
+        ws.call("Page.navigate", {"url": base + "/?liveness=1"})
+        fresh5 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_liveness, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh5 = True
+                break
+            time.sleep(0.25)
+        assert fresh5, "never observed a fresh document after installing the liveness fixture"
+        head = None
+        for _ in range(40):
+            head = js(ws, """(() => {
+              const up = document.getElementById('top-uptime');
+              const age = document.getElementById('top-age');
+              const scale = document.getElementById('top-gauge-ceiling');
+              const g = document.getElementById('top-gauge');
+              const fill = document.getElementById('top-gauge-fill');
+              if (!up || !age || !scale || !g) return null;
+              return {up: up.textContent, age: age.textContent, scale: scale.textContent,
+                      aria: g.getAttribute('aria-label') || '', now: g.getAttribute('aria-valuenow'),
+                      w: fill ? fill.style.width : null,
+                      build: (document.getElementById('top-build') || {}).textContent};
+            })()""")
+            if head and head["up"] != "--":
+                break
+            time.sleep(0.25)
+        assert head, "a header liveness element is missing (#top-uptime/#top-age/#top-gauge-scale)"
+        assert re.fullmatch(r"3h 1[12]m", head["up"]), (
+            f"engine uptime reads {head['up']!r} for a session that started 3h 12m ago"
+        )
+        # The age must be seconds-to-minutes old, not the same order as the uptime: an element that
+        # was never written stays "--", and one fed the wrong stamp reads like an uptime.
+        age = re.fullmatch(r"(\d+)(s|m)", head["age"] or "")
+        assert age, f"last-poll age reads {head['age']!r}; expected a few seconds"
+        assert (int(age.group(1)) * (60 if age.group(2) == "m" else 1)) < 120, (
+            f"the last-poll age is {head['age']!r}, too old to be the current poll"
+        )
+        assert head["build"] == "Strata 9.9.99-test", (
+            f"the header build string reads {head['build']!r}"
+        )
+        assert re.search(r"gauge to 1,?250", head["scale"] or ""), (
+            f"the gauge scale is not derived from the series ({head['scale']!r}); it must follow "
+            f"the pinned p95 of 1,000 tok/s, not a hardcoded constant"
+        )
+        assert "2,000" not in (head["scale"] or "") and "2000" not in (head["scale"] or ""), (
+            f"the gauge still prints the old hardcoded 2000 tok/s ceiling ({head['scale']!r})"
+        )
+        assert "1,250" in head["aria"] and "345" in head["aria"], (
+            f"the gauge's accessible label does not name the reading and its scale: {head['aria']!r}"
+        )
+        # 345 of a 1,250 ceiling is ~28% — visible movement, where the old scale pinned it at 17%.
+        assert head["w"] and abs(float(head["w"].rstrip("%")) - 27.6) < 1.0, (
+            f"the gauge fill is {head['w']!r} for 345 tok/s against a 1,250 ceiling"
+        )
+        # An unparseable `since` must degrade to "--", never to a NaN duration.
+        js(ws, "window.__m81_bad_since = true")
+        honest = None
+        for _ in range(40):
+            honest = js(ws, "(document.getElementById('top-uptime') || {}).textContent")
+            if honest == "--":
+                break
+            time.sleep(0.25)
+        assert honest == "--", (
+            f"an unparseable totals.since printed {honest!r}; it must print '--'"
+        )
+        print("PASS header-liveness")
         return 0
     finally:
         for p in (proc, server):

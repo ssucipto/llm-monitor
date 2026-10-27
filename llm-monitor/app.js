@@ -950,6 +950,40 @@ function wireDetail() {
   }
 }
 
+// ---------- Header liveness (M81-T7 / a33-28) ----------
+// The badge only ever said whether *this tab* managed to poll. Nothing said how long the
+// engine has been up or how old the numbers on screen are, which is what a reader actually
+// wants when a figure looks wrong. Both are rendered here and re-ticked every second with
+// the clock, so the age stays honest between polls.
+let lastPollOkAtMs = 0;
+
+function fmtDuration(ms) {
+  if (!(ms >= 0)) return "--";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ${String(m % 60).padStart(2, "0")}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+function renderLiveness(totals) {
+  if (totals && totals.since != null) {
+    const since = Number(totals.since);
+    const startedAt = Number.isFinite(since) ? (since < 1e12 ? since * 1000 : since) : NaN;
+    // Never print a bogus duration: an unparseable `since` prints "--".
+    setText("top-uptime", Number.isFinite(startedAt) ? fmtDuration(Date.now() - startedAt) : "--");
+  } else {
+    setText("top-uptime", "--");
+  }
+  tickAge();
+}
+
+function tickAge() {
+  setText("top-age", lastPollOkAtMs ? fmtDuration(Date.now() - lastPollOkAtMs) : "--");
+}
+
 // ---------- Clock ----------
 function tickClock() {
   const now = new Date();
@@ -965,6 +999,7 @@ function tickClock() {
     hudClock.textContent = timeStr;
     hudClock.setAttribute("datetime", isoStr);
   }
+  tickAge();
 }
 
 // ---------- Live refresh ----------
@@ -990,6 +1025,16 @@ function renderHero(throughput, power, context, cache, status) {
   setText("hero-tok", tok != null ? `${tok.toFixed(1)}` : "--");
   const state = status && status.state;
   setText("hero-state", stateName(state));
+  // M81-T7: the state cell gets the same orb the HUD uses, so the header reads its
+  // state at a glance instead of only as a word.
+  const orb = $("hero-orb");
+  if (orb) {
+    orb.className = "kpi__orb";
+    if (state === "reading") orb.classList.add("is-reading");
+    else if (state === "generating" || state === "processing") orb.classList.add("is-generating");
+    else if (status && status.ok === false) orb.classList.add("is-down");
+    else orb.classList.add("is-idle");
+  }
   setText("hero-power", power && power.total_w != null ? `${power.total_w}` : "--");
   // Two decimals: the gauge rounds to whole percents, but the headline reading
   // should not hide a 0.4-point change in a 200k-token window.
@@ -1002,14 +1047,43 @@ function renderHero(throughput, power, context, cache, status) {
 // given a sliding knob). setPrefillGauge drives both the fill width and the knob
 // position; a CSS transition on each eases them together so the meter rises and
 // falls in realtime as the prefill rate changes. The reduced-motion block snaps it.
-// Ceiling is the rated prefill envelope for this model class on this GPU; only
-// extreme tiny-span outliers peg it.
-function setPrefillGauge(val, ceiling = 2000) {
+//
+// M81-T7 (a33-27): the ceiling used to be a hardcoded 2000 tok/s. Live readings on this
+// engine sit at p50 ~345 / p90 ~1,093, so the bar was pinned near zero and read as "nothing
+// happening", while one bad sample still pegged it at 100%. The ceiling now tracks the
+// recent peak of the published series. history.prefill is already bounded server-side at
+// PREFILL_CEILING_TOK_S (M81-T3 / a33-10), so an impossible outlier can never set the scale.
+const PREFILL_CEILING_MIN = 600;
+let prefillCeilingValue = PREFILL_CEILING_MIN;
+
+function prefillCeiling(samples) {
+  const vals = (samples || []).filter((v) => v != null && v > 0).sort((a, b) => a - b);
+  if (vals.length >= 5) {
+    const p95 = vals[Math.min(vals.length - 1, Math.floor(0.95 * (vals.length - 1)))];
+    const want = Math.max(PREFILL_CEILING_MIN, Math.ceil(p95 * 1.25));
+    // Hysteresis: re-deriving the scale every poll would make bar movements meaningless,
+    // so only adopt a ceiling that shifts the scale by more than 20%.
+    if (Math.abs(want - prefillCeilingValue) / prefillCeilingValue > 0.2) {
+      prefillCeilingValue = want;
+    }
+  }
+  return prefillCeilingValue;
+}
+
+function setPrefillGauge(val, ceiling = PREFILL_CEILING_MIN) {
   const gauge = $("top-gauge");
   if (!gauge) return;
+  // A null reading leaves the bar empty (a fill bar has no way to express "unknown"
+  // except by claiming nothing, so it claims nothing) and says so in the label.
   const pct = val == null ? 0 : Math.max(0, Math.min(1, val / ceiling));
   const width = `${(pct * 100).toFixed(1)}%`;
   gauge.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+  gauge.setAttribute(
+    "aria-label",
+    val == null
+      ? `prefill speed gauge — no reading, scale to ${fmtInt(ceiling)} tok/s`
+      : `prefill speed gauge — ${val.toFixed(0)} of ${fmtInt(ceiling)} tok/s`,
+  );
   const fill = $("top-gauge-fill");
   if (fill) fill.style.width = width;
   const knob = $("top-gauge-knob");
@@ -1028,10 +1102,18 @@ function stateName(state) {
 
 // The prefill speed meter lives in the sticky top bar (not the hero) so it stays
 // pinned at the top while the page scrolls. renderTopbar takes throughput too.
-function renderTopbar(engine, throughput) {
+//
+// M81-T7 (a33-26/27/28): the header used to print throughput.now twice (once here as
+// "decode tok/s", once in the KPI strip) and the gauge had no visible label. The decode
+// figure now lives only in the strip; #top-tok stays updated but hidden, so the id contract
+// and any consumer of it survive. The prefill figure moved into the strip next to the text
+// that names the gauge's scale.
+function renderTopbar(engine, throughput, history) {
   const pre = throughput && throughput.prefill;
+  const ceiling = prefillCeiling(history && history.prefill);
   setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
-  setPrefillGauge(pre);
+  setPrefillGauge(pre, ceiling);
+  setText("top-gauge-ceiling", `gauge to ${fmtInt(ceiling)}`);
   const tok = throughput && throughput.now;
   setText("top-tok", tok != null ? `${tok.toFixed(1)}` : "--");
   const host = $("top-identity");
@@ -1040,6 +1122,7 @@ function renderTopbar(engine, throughput) {
   const mark = $("top-mark");
   const engineEl = $("top-engine");
   const modelEl = $("top-model");
+  setText("top-build", engine.build_info || "--");
   const known = svc === "strata" || svc === "vulkan";
   if (mark) {
     mark.innerHTML = brandMark(svc, engine.port_open);
@@ -1954,6 +2037,9 @@ async function refresh() {
   let data;
   try {
     data = await fetchStats();
+    // M81-T7: the age of the numbers on screen is measured from when a poll last
+    // succeeded, not from when the page loaded.
+    lastPollOkAtMs = Date.now();
     setBadge(false);
   } catch (err) {
     // No backend reachable — keep the last rendered state and flag the badge so
@@ -1983,7 +2069,8 @@ async function refresh() {
   renderLog(data.log);
   renderEndpoints(data.endpoints);
   renderHero(data.throughput, data.power, data.context, data.cache, data.status);
-  renderTopbar(data.engine, data.throughput);
+  renderTopbar(data.engine, data.throughput, data.history);
+  renderLiveness(data.totals);
   renderHistory(data.periods, data.daily, data.requests);
   renderHud(data);
 

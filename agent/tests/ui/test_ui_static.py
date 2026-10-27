@@ -19,6 +19,8 @@ Checks
  10 no-empty-prior-pct no hardcoded +100% out of an empty prior period (a33-16)
  11 fallback-shape   the offline fallback builds buckets with the same keys the API emits
  12 toc-covers-panels every panel is reachable from the nav, and no nav link is dead (a33-31)
+ 13 header-unique-units no two visible header cells print the same unit label (a33-26)
+ 14 gauge-scale-labelled the prefill gauge's scale is named in markup and driven from data (a33-27)
 """
 import json
 import os
@@ -238,6 +240,46 @@ def main():
         if unreachable:
             problems.append(f"panels unreachable from the nav: {unreachable}")
     expect("toc-covers-panels", not problems, problems)
+
+    # 13 — M81-T7 (a33-26): the header used to render throughput.now twice, both cells labelled
+    # "decode tok/s". Asserting on the unit LABELS rather than on ids is what makes this catch the
+    # class of bug: any future pair of header cells that claim the same thing fails, whatever they
+    # are called. Hidden cells (#top-tok) are excluded — it stays in the DOM for the id contract.
+    header = re.search(r'<header class="topbar">([\s\S]*?)</header>', html)
+    problems = []
+    if not header:
+        problems.append("no <header class=\"topbar\"> block")
+    else:
+        block = header.group(1)
+        # Drop one-line hidden subtrees so a kept-but-hidden cell cannot count as visible.
+        visible = re.sub(r'<span[^>]*\bhidden\b[^>]*>[\s\S]*?</span>', "", block)
+        units = [u.strip() for u in
+                 re.findall(r'class="(?:kpi__unit|topbar__unit)"[^>]*>([^<]*)<', visible)]
+        dupes = sorted({u for u in units if units.count(u) > 1})
+        if dupes:
+            problems.append(f"header cells share a unit label: {dupes}")
+        for speed in ("decode tok/s", "prefill tok/s"):
+            n = sum(1 for u in units if u.startswith(speed))
+            if n != 1:
+                problems.append(f"{n} visible header cells label {speed!r}; the header must carry it once")
+    expect("header-unique-units", not problems, problems)
+
+    # 14 — M81-T7 (a33-27): the gauge had only an aria-label, so a sighted user could not tell what
+    # the bar measured or where its end was, and the end was a hardcoded 2000 tok/s that this
+    # engine's ~150-400 tok/s prefill never reached. The scale must be named in markup, written by
+    # app.js from data, and never pinned at the old constant. It is a separate cell from the unit
+    # label because the Compact HUD hides the gauge bar and must hide the scale with it.
+    problems = []
+    if not re.search(r'id="top-gauge-ceiling"', html):
+        problems.append("index.html has no #top-gauge-ceiling element")
+    if re.search(r'setText\("top-gauge-ceiling"', js) is None:
+        problems.append("app.js never writes the gauge scale ceiling")
+    if re.search(r'aria-label="prefill speed gauge"', html) is None:
+        problems.append("#top-gauge lost its aria-label")
+    hardcoded = [ln.strip() for ln in js.splitlines() if re.search(r'ceiling\s*=\s*2000\b', ln)]
+    if hardcoded:
+        problems.append(f"the gauge ceiling is hardcoded again: {hardcoded[:2]}")
+    expect("gauge-scale-labelled", not problems, problems)
 
     if fails:
         print(f"[tests/ui static] FAIL {len(fails)}: {fails}")

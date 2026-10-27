@@ -207,6 +207,14 @@ body {
   letter-spacing: .02em;
 }
 
+/* M81-T7 (a33-28): which build is answering. Kept quiet so the engine name stays the
+ * headline of the identity cluster. */
+.brand__build {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
 .clock {
   color: var(--text-dim);
   font-size: 0.9rem;
@@ -327,16 +335,9 @@ body {
 /* The hero band became the KPI strip in the sticky header (M79-T2); its rules
  * live under .kpi-strip below. */
 
-/* The prefill speed meter lives in the sticky top bar so it stays pinned at the
- * top while the page scrolls. A custom bar (the native <meter> cannot be gradient-lit),
- * eased by a CSS transition on width; the reduced-motion block snaps it instead. */
-.topbar__prefill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
+/* M81-T7 (a33-26): the prefill figure moved into the KPI strip, where the gauge's scale is
+ * printed beside it, so there is no .topbar__prefill cell any more. .topbar__tok stays: its
+ * element ships hidden but still updated, because the id is part of the app.js contract. */
 .topbar__tok {
   display: inline-flex;
   align-items: center;
@@ -349,6 +350,27 @@ body {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+/* The liveness figures are context, not measurements — they must not compete with the
+ * speed numbers for attention, so they stay at body size instead of the accent colour. */
+.topbar__value--soft {
+  font-size: var(--fs-base);
+  color: var(--text);
+}
+
+.topbar__liveness {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.topbar__liveness-label {
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
 }
 
 .topbar__unit {
@@ -422,6 +444,13 @@ body {
   gap: 6px;
 }
 
+/* M81-T7: aligned cells with a quiet separator, so the strip reads as one instrument
+ * rather than a sentence. */
+.kpi + .kpi {
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+
 .kpi__value {
   font-size: var(--fs-lg);
   font-weight: 700;
@@ -434,9 +463,38 @@ body {
   color: var(--ok);
 }
 
+/* M81-T7: the same orb treatment the HUD uses, so the header's state is readable at a
+ * glance. Colours mirror .hud-status-orb so the two can never disagree about meaning. */
+.kpi__orb {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.kpi__orb.is-idle { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+
+.kpi__orb.is-generating,
+.kpi__orb.is-reading {
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.kpi__orb.is-down { background: var(--down); box-shadow: 0 0 6px var(--down); }
+
 .kpi__unit {
   font-size: var(--fs-micro);
   color: var(--text-dim);
+}
+
+/* M81-T7 (a33-27): the gauge's scale, printed where the prefill figure is so the full-width
+ * bar at the bottom of the header is readable without a screen reader. It is its own cell
+ * because the Compact HUD hides the bar and must hide the scale with it. */
+.kpi__unit--scale {
+  opacity: .7;
 }
 
 /* M80-T1 (audit-30 F-30-01..03): masonry on a CSS grid. auto-fill keeps the
@@ -2051,7 +2109,8 @@ body::before {
 /* Standalone Desktop Overlay View Mode */
 body[data-view="compact"] .toc,
 body[data-view="compact"] .footer,
-body[data-view="compact"] .topbar__gauge {
+body[data-view="compact"] .topbar__gauge,
+body[data-view="compact"] .kpi__unit--scale {
   display: none !important;
 }
 
@@ -2079,6 +2138,14 @@ body[data-view="compact"] .topbar__meta {
   }
   .topbar__meta {
     order: 2;
+  }
+  /* M81-T7: the identity cluster carries a build string now, so on a wrapped bar it
+   * has to sit with the brand rather than between the meta and KPI rows. */
+  .topbar__identity {
+    order: 1;
+  }
+  .kpi + .kpi {
+    padding-left: var(--sp-2);
   }
   .kpi__value {
     font-size: var(--fs-base);

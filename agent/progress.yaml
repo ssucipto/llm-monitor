@@ -207,11 +207,11 @@ milestones:
     priority: 1
     file: agent/milestones/milestone-81-information-architecture-and-correctness.md
     status: in_progress
-    progress: 62
+    progress: 70
     started: "2026-10-26"
     completed:
     estimated_weeks: 1
-    tasks_completed: 6
+    tasks_completed: 7
     tasks_total: 8
     notes: |
       Planned from audit-33 (35 findings, a33-01..a33-35) and amended by the audit-34 pre-impl pass
