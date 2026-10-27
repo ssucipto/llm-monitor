@@ -20,6 +20,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import struct
@@ -1479,7 +1480,10 @@ def main():
             if engine.get("build_info") != "Strata 9.9.99-fixture":
                 problems.append(f"engine.build_info is {engine.get('build_info')!r}")
             eps = fx.get("endpoints") or {}
-            missing_eps = sorted(k for k, v in eps.items() if k != "status" and not v)
+            # Every endpoint the payload reports on must be answered by the fixture, with no
+            # exception carved out: an unanswered endpoint means the check is partly observing
+            # the live engine after all.
+            missing_eps = sorted(k for k, v in eps.items() if not v)
             if missing_eps:
                 problems.append(f"the fixture does not answer for: {missing_eps}")
             assert not problems, "fixture answers did not reach the payload:\n  " + "\n  ".join(problems)
@@ -1558,6 +1562,13 @@ def main():
         try:
             if ws:
                 ws.sock.close()
+        except OSError:
+            pass
+        # The browser profile and the test telemetry DBs all live under this directory, so one
+        # recursive removal is the whole cleanup. Best-effort: a locked Chrome profile file must
+        # not turn a passing run into a failing one.
+        try:
+            shutil.rmtree(profile, ignore_errors=True)
         except OSError:
             pass
 

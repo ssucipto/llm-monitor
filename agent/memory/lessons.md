@@ -109,3 +109,9 @@
   mistake: "Wrote a static check meant to prove 'no fixed sleep sits between a viewport change and its settle' with a 5-line look-ahead window, and it failed on CORRECT code: at test_ui_browser.py:342 an override is legitimately followed by settle_usage() before settle_spans(). The window encoded an assumption about the ORDER of settles instead of the rule being asserted."
   correction: "When a check asserts 'X happens before Y', widen the window to allow any intervening legitimate step and forbid only the specific bad pattern (a bare time.sleep), rather than requiring Y to be the next call. Then prove it both ways: inject the old sleep pattern (must fail) and remove a settle helper or an app.js observable (must fail)."
   priority: normal
+
+- date: 2026-10-27
+  task_type: testing
+  mistake: "Wrote the fixture endpoint assertion as `if k != 'status' and not v` — an exception carved out of my own new check so it would pass against a fixture that did not answer /status. The check went green while quietly covering less than it claimed."
+  correction: "Never special-case a member out of a completeness assertion to make it pass. Fix the fixture so the rule holds for every member, and prove the assertion failable by renaming one key (static: 'fixture is missing endpoints: [/status]'; browser: 'the fixture does not answer for: [status]'). Audit your own new checks the same way: mkdtemp dirs need removal in a finally, and any check that starts the real server must pass LLM_MONITOR_DB even when the run is expected to abort at startup."
+  priority: high

@@ -16,6 +16,8 @@
     - "isolation re-proven with the finished suite: production telemetry.sqlite3 poll 20,289 / day 20 before, after run 1 and after run 2 (delta 0 both times), identical pass counts across runs (browser 25/25, static 16/16)"
     - "expected.txt browser 24 -> 25, static 14 -> 16; nine mutation probes run this session and each produced a targeted failure, all reverted"
     - "records: M81 8/8 completed, version 0.2.1 -> 0.3.0 in progress.yaml and CHANGELOG.md together, task-81-t8 + milestone doc closed, a33-35 and a32-02 added as fixed carryovers with receipts"
+    - "follow-up audit of T8's own work found three defects and all were fixed: an exception carved out of the new endpoint assertion (k != 'status'), mkdtemp dirs never removed by either suite (490 accumulated in %TEMP%), and check 15 starting the real server without LLM_MONITOR_DB so a regressed fixture guard would have written production poll rows"
+    - "README.md gained a Test overrides table; LLM_MONITOR_DB / LLM_MONITOR_FIXTURE had never been documented"
   deferred:
     - "a33-37 Strata/llama log tailing -> needs its own task (still pending)"
     - "the striped no-data meter track still needs one human eyeball (Chrome pseudo-element paint is unobservable from CDP)"

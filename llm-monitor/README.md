@@ -259,6 +259,24 @@ All sources are at the top of `server.py`:
 To monitor a different machine or port, change those constants. The front end
 stays unchanged because the response shape is the contract.
 
+### Test overrides (environment)
+
+The suites in `agent/tests/ui/` and `tests/` start this same `server.py`, so its files
+and its upstream are overridable by environment variable (one more, `LLM_MONITOR_EXECUTOR_MODELS`,
+is documented under **Usage ledger**). They exist for tests; leave them unset
+to run the dashboard normally.
+
+| Variable | Replaces |
+| --- | --- |
+| `LLM_MONITOR_DB` | `telemetry.sqlite3`. Without it every `/api/stats` a test page requests appends a poll row to the real history (measured: 20,280 → 20,282 rows for one request). |
+| `LLM_MONITOR_USAGE_DB` | `usage.sqlite3` |
+| `LLM_MONITOR_CLAUDE_ROOT` / `LLM_MONITOR_HERMES_DB` | the two ledger sources |
+| `LLM_MONITOR_FIXTURE` | the live engine on `ENGINE_URL`. Points at a JSON object of `{endpoint path: response}` — see `agent/tests/ui/fixtures/engine.json`. Only the engine's HTTP answers are replaced; workspace state files, log tails and our own SQLite history stay real. A path the fixture does not list reads as "endpoint unreachable", so a fixture may be partial. An unreadable fixture **stops startup** rather than falling back to the live engine, because testing the live engine by accident is the defect this exists to remove. |
+
+Run them with `py -3.12 agent/tests/ui/run-tests.py` (browser + static),
+`py -3.12 tests/telemetry/run-tests.py` and `py -3.12 tests/usage/run-tests.py`;
+CI runs all three (`usage-tests.yml`).
+
 ## Animation
 
 Same motion system as the homelab template, reused here: tweened gauge numbers,

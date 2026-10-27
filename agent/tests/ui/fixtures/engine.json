@@ -42,6 +42,16 @@
   "/slots": [
     {"id": 0, "state": "idle", "is_processing": false, "n_ctx": 262144}
   ],
+  "/status": {
+    "busy": true,
+    "queued": 0,
+    "phase": "decoding",
+    "prompt_tokens": 4000,
+    "generated": 250,
+    "max_tokens": 2048,
+    "reasoning_recoveries": 0,
+    "thinking_budget": 2048
+  },
   "/metrics": {
     "time": 1793101200.0,
     "requests_kept": 3,

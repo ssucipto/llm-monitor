@@ -27,6 +27,7 @@ Checks
 import json
 import os
 import re
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -135,7 +136,8 @@ def main():
     # LLM_MONITOR_DB keeps this run out of the production history: every /api/stats appends a
     # poll row, and audit-33 a33-34 measured that as real pollution of telemetry.sqlite3.
     port = free_port()
-    test_db = os.path.join(tempfile.mkdtemp(prefix="m81-static-"), "telemetry-test.sqlite3")
+    static_tmp = tempfile.mkdtemp(prefix="m81-static-")
+    test_db = os.path.join(static_tmp, "telemetry-test.sqlite3")
     proc = subprocess.Popen([sys.executable, os.path.join(UI, "server.py"), str(port)],
                             cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                             env=dict(os.environ, LLM_MONITOR_DB=test_db))
@@ -304,7 +306,7 @@ def main():
     except Exception as exc:
         problems.append(f"fixtures/engine.json unreadable: {exc}")
     if isinstance(doc, dict):
-        need = ("/health", "/metrics", "/props", "/slots", "/v1/models")
+        need = ("/health", "/metrics", "/props", "/slots", "/v1/models", "/status")
         absent = [p for p in need if p not in doc]
         if absent:
             problems.append(f"fixture is missing endpoints: {absent}")
@@ -320,7 +322,12 @@ def main():
         bad_proc = subprocess.run(
             [sys.executable, os.path.join(UI, "server.py"), str(free_port())],
             cwd=UI, capture_output=True, text=True, timeout=30,
-            env=dict(os.environ, LLM_MONITOR_FIXTURE=os.path.join(HERE, "fixtures", "nope.json")),
+            # LLM_MONITOR_DB is passed even though this run is expected to die at startup: if the
+            # fixture guard ever regresses, this check must not be the thing that writes poll rows
+            # into the production history.
+            env=dict(os.environ,
+                     LLM_MONITOR_FIXTURE=os.path.join(HERE, "fixtures", "nope.json"),
+                     LLM_MONITOR_DB=os.path.join(static_tmp, "bad-fixture.sqlite3")),
         )
         if bad_proc.returncode == 0:
             problems.append("a missing fixture file did not stop the server")
@@ -363,6 +370,10 @@ def main():
         if stamp not in read("app.js"):
             problems.append(f"app.js no longer exposes the {stamp} observable the suite waits on")
     expect("geometry-read-settled", not problems, problems)
+
+    # Cleanup last: check 15 also writes under static_tmp, so removing it with the server above
+    # would take that path away. Best-effort, since a passing run must not fail on a locked file.
+    shutil.rmtree(static_tmp, ignore_errors=True)
 
     if fails:
         print(f"[tests/ui static] FAIL {len(fails)}: {fails}")
