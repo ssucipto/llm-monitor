@@ -79,3 +79,37 @@
     llm-monitor/service-supervisor.ps1 (LlmMonitorJob, Write-State, Test-StopRequested);
     restart-llm-monitor.ps1 (stop request first); gate-service.ps1 G3/G6 (state attestation).
   applies_to: any Windows supervisor run from Task Scheduler, especially S4U or SYSTEM tasks
+
+- date: 2026-10-27
+  name: window-correct-rate-and-honest-bound
+  kind: telemetry-aggregation-pattern
+  problem: |
+    A dashboard shows rates whose labels lie. Poll columns hold session-CUMULATIVE
+    ratios (hit_pct, accept_pct); averaging them per poll and printing them under a
+    "last 60 min" label reports a session figure, and the error varies per snapshot
+    so no constant can correct it. Means of instantaneous per-poll rates are dragged
+    by idle polls. A rate reconstructed from a token count divided by a timestamp
+    from a different request boundary produces physically impossible values (1.9M
+    tok/s on a card that decodes at 40), and a max(1e-9, span) sentinel makes the
+    zero-span guard unreachable while duplicate timestamps already exist in the DB.
+  solution: |
+    Three rules, each with its own test:
+    1. Window ratio from counters, never from ratios: delta(numerator)/delta(denominator)
+       over the span, using a reset-aware segment sum (cumulative_delta) and carrying
+       the row just before the span as the delta baseline only.
+    2. Rate = movement / span, not a mean of per-poll rates (tok_s_weighted,
+       prefill_weighted from a cumulative prompt_ms column). If the column does not
+       exist for those rows, publish None rather than guessing.
+    3. Bound on PUBLISHED paths only, derive the ceiling from the observed
+       distribution (find the natural break, state the % excluded in a comment), set a
+       *_bounded flag, and print "· bounded" next to the number. Raw samples stay in
+       the DB so an export is still re-derivable. Replace sentinel spans with a floor
+       tied to the sampling cadence and return None for any rate it rejects.
+    Label every window server-side (mean_window, peak_window) and print it inline so a
+    number cannot detach from its meaning.
+  example: |
+    llm-monitor/server.py: PREFILL_CEILING_TOK_S, SPAN_FLOOR_S, window_pct(),
+    bounded_prefill(), the baseline-carry in day_aggregates/db_hour_aggregates,
+    throughput.mean_window/peak_window; tests/telemetry/ asserts each rule.
+  applies_to: any poll-based telemetry that stores cumulative counters alongside
+    per-poll snapshots and publishes means to a UI

@@ -2,6 +2,31 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-10-27
+  executor: zed
+  branch: main
+  tasks: [task-81-t3]
+  done:
+    - "a33-08 hit/accept rates are now the span's own ratios (window_pct over cumulative counters) in db_analysis, db_hour_aggregates and day_aggregates; legacy *_pct_mean keys kept so /api/stats stays additive"
+    - "a33-09 every published rate carries its window label (mean_window session, peak_window last 60 min) printed inline by app.js"
+    - "a33-10 PREFILL_CEILING_TOK_S 5000 from 20,165 live samples; bounded_prefill in all three aggregate paths + sparkline holes + '· bounded' tag; raw samples stay in the DB so /api/export is still honest"
+    - "a33-11 tok_s_weighted and prefill_weighted (new additive prompt_ms poll column) replace unweighted means of instantaneous rates"
+    - "a33-13 day_aggregates ghost-idle suppression; a33-14 SPAN_FLOOR_S 5.0 replaces the 1e-9 sentinel and makes the dead span guard live"
+    - "a33-16 +100%-from-empty-prior fixed in THREE sites, not the two the audit listed (History table + both Compact HUD trend rows), guarded by a new static check no-empty-prior-percent"
+    - "a33-17 first unit tests for db_analysis / day_aggregates / db_hour_aggregates: tests/telemetry (35 + 22 assertions) wired into usage-tests.yml and run-e2e-tests.sh"
+    - "found and fixed a defect the audit never saw: db_hour_aggregates published prefill_weighted as a permanent None stub because its SELECT omitted prompt_ms"
+    - "nine mutations proven across the two suites (window ratio x2, prefill_weighted stub, span sentinel, day baseline, ghost-idle guard, day bound, hour bound, +100% literal)"
+    - "records: a33-08/09/10/11/13/14/16/17 closed with evidence, a33-37 recorded as a new pending carryover, progress.yaml M81 3/8"
+  deferred:
+    - "M81 T4 chart axes, T5 history chart + scrubber, T6 block order + collapsible Requests + Detail re-categorisation, T7 header, T8 steps 2-6 -> those tasks"
+    - "audit-34 G-34-01: test_ui_browser detail-packing asserts >=4 tiles; T6 shrinks the region to 3 and MUST update that assertion in the same commit"
+    - "a33-37 System log panel tails only Hermes llama.cpp logs while Strata's own log (6.2 MB, live today) is never read -> needs its own task"
+    - "a33-12 sample density depends on open tab count; the ThreadingHTTPServer write race that makes duplicate timestamps is NOT fixed (only its arithmetic consequence is)"
+    - "a33-32 saved-layout versioning decision -> must be surfaced to the user before T6 ships"
+    - "a32-02 fixed sleeps -> task-81-t8 step 3; a25-02 reboot test -> still user-gated"
+    - "restart of :8090 (PID 10496, older than these edits) -> supervisor owns it; its poll table has no prompt_ms column yet, so prefill_weighted is legitimately None there until it restarts"
+  key_fact: "A per-poll mean of a session-cumulative ratio is not a window rate — the error varies per snapshot, so it cannot be corrected with a constant. And an assertion that calls a pure helper instead of the code path under test is unfailable: 'bounded prefill in the hour path' only became mutation-provable once it asserted on db_hour_aggregates' own returned record."
+
 - date: 2026-10-26
   executor: zed
   branch: main

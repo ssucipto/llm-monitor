@@ -19,6 +19,8 @@ jobs:
           python-version: '3.12'
       - name: Usage suites, counts enforced
         run: python3 tests/usage/run-tests.py
+      - name: Telemetry maths suites, counts enforced (M81-T3)
+        run: python3 tests/telemetry/run-tests.py
       - name: UI static suites, counts enforced (M79-T8)
         run: python3 agent/tests/ui/run-tests.py
       - name: Shell scripts with LF line ends (this runner's checkout only)

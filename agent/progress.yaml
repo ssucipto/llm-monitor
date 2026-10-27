@@ -207,11 +207,11 @@ milestones:
     priority: 1
     file: agent/milestones/milestone-81-information-architecture-and-correctness.md
     status: in_progress
-    progress: 30
+    progress: 38
     started: "2026-10-26"
     completed:
     estimated_weeks: 1
-    tasks_completed: 2
+    tasks_completed: 3
     tasks_total: 8
     notes: |
       Planned from audit-33 (35 findings, a33-01..a33-35) and amended by the audit-34 pre-impl pass
@@ -575,9 +575,9 @@ tasks:
     - id: task-81-t3
       name: Telemetry maths — window-correct means, bounded outliers, first unit tests
       priority: 1
-      status: pending
+      status: completed
       started: 2026-10-26
-      completed_date:
+      completed_date: 2026-10-27
       actual_hours: null
       file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t3-telemetry-maths.md
       estimated_hours: 4
@@ -644,6 +644,27 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-27
+    description: |
+      M81-T3 — the Telemetry panel's rates now mean what their labels claim. Hit and accept rates
+      are computed as the window's own ratios instead of a per-poll mean of session-cumulative
+      figures; decode and prefill rates are weighted by what actually moved over the span;
+      physically impossible prefill samples are bounded on every published path and say so with a
+      "· bounded" tag; day rollups carry the previous day's last row as their delta baseline and
+      suppress ghost throughput; the 1e-9 span sentinel is gone. Added prompt_ms as an additive
+      poll column and shipped the first unit tests ever written for db_analysis / day_aggregates /
+      db_hour_aggregates (tests/telemetry, wired into CI).
+    items:
+      - "✅ a33-08 closed: hit_pct_window / accept_pct_window in db_analysis, db_hour_aggregates and day_aggregates. Live copy on spare port 8125: hit_pct_mean 94.17 vs hit_pct_window 99.01; accept 78.41 vs 80.49"
+      - "✅ a33-09/a33-11 closed: tok_s_weighted and prefill_weighted (new prompt_ms poll column) plus explicit labels — mean_window 'session', peak_window 'last 60 min'. Live: tok_s_mean 33.08 vs tok_s_weighted 21.37"
+      - "✅ a33-10 closed: PREFILL_CEILING_TOK_S 5000 derived from 20,165 live samples (p99 103,412; every sample above 3,000 came from a busy poll). Live prefill_max now 208.4 with prefill_bounded True and history.prefill_bounded_n 30/240; raw samples stay in the DB so /api/export is still honest"
+      - "✅ a33-13/a33-14 closed: day_aggregates carries the pre-span baseline row (requests 7, not 4) and nulls tok_s/prefill on a 0-request day; db_finalize_days freezes the quiet day too"
+      - "✅ a33-16 closed in all three sites: the History table and BOTH HUD trend rows print 'new (+N tok)' instead of +100% out of an empty prior. New static check no-empty-prior-percent greps for the literal and is mutation-proven"
+      - "✅ a33-17 closed: SPAN_FLOOR_S 5.0 tied to REFRESH_MS; the dead 'if span > 0' guard is live. Live req_per_min 3.2 / 1.68 with no 1e-9 division"
+      - "🆕 db_hour_aggregates published prefill_weighted as a permanent None stub; fixed to compute it (its SELECT was missing prompt_ms) and covered by new assertions"
+      - "🧪 tests/telemetry: test_telemetry_analysis.py 35 + test_telemetry_days.py 22, wired into .github/workflows/usage-tests.yml and run-e2e-tests.sh; four mutations proven to fail them (window ratio, prefill_weighted stub, span sentinel, day baseline)"
+      - "📋 gates at this tree: tests/telemetry 35+22 rc_all=0 · tests/usage 5+33 rc_all=0 · run-e2e-tests.sh 5 passed · [tests/ui] PASS (browser 13 / static 10) · acp.ci.sh --fast PASS 6/6 · acp-validate PASS at 0.2.1"
+      - "⚠️ :8090 still serves the pre-T3 server (PID 10496, started 06:55). Its poll table has no prompt_ms column yet, so prefill_weighted is legitimately None there until the supervisor restarts the process and rows accumulate. User action: Stop-ScheduledTask -TaskName LLMMonitor then Start-ScheduledTask -TaskName LLMMonitor"
   - date: 2026-10-26
     description: |
       Audit-33 (visual presentation + measurement correctness, 36 findings) and the M81 plan

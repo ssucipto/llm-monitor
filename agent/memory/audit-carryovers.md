@@ -648,19 +648,82 @@ carryovers:
     finding: "Telemetry hit-rate and accept-rate window means average session-cumulative ratios per poll, so the panel shows a session ratio under a window label"
     location: llm-monitor/server.py:1240
     severity: high
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-10-27
     verified_in_audit: null
-    notes: "Two snapshots of the same 60-min window: hit_pct_mean 95.77 vs true delta ratio 80.2, and 95.71 vs 89.1. Window-correct value is cumulative_delta(window,reused)/cumulative_delta(window,prompt). db_hour_aggregates:786 has the same shape but already carries the M75 ghost guard. Planned as M81-T3"
+    notes: "M81-T3. db_analysis, db_hour_aggregates and day_aggregates now publish hit_pct_window / accept_pct_window computed as the span's own delta ratio (window_pct over the cumulative reused/prompt and drafts_accepted/drafts_offered counters). The legacy *_pct_mean keys are still emitted so no consumer breaks; app.js reads the _window values with a fallback. Measured on a copy of production history over spare port 8125: hit_pct_mean 94.17 vs hit_pct_window 99.01, accept 78.41 vs 80.49 (the direction and size vary by snapshot, as the audit predicted). Mutation-proven twice: restoring the mean-of-cumulatives fails the analysis assertion (95.0 where 50.0 is expected) and the hour-path assertion; in the day path it fails hit_mean (95.0 vs 10%) and the frozen day row"
+  - id: a33-09
+    audit: 33
+    finding: "three different windows share two labels: Average tok/s is session, Peak tok/s is the last hour, and the sparkline caption's peak is ~2 minutes"
+    location: llm-monitor/server.py:1380
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. build_stats publishes throughput.mean_window ('session') and peak_window ('last N min', derived from the analysis window actually used), and app.js prints each inline next to its number, so a rate can no longer detach from its window. The sparkline keeps its own caption window (r3-01); the three windows are now visibly different instead of pretending to agree. Live: mean_window session / peak_window last 60 min"
   - id: a33-10
     audit: 33
     finding: "physically impossible prefill readings are stored and charted: poll rows hold 1,354,360 / 1,210,150 / 1,205,830 tok/s on a card that decodes at 35-70"
     location: llm-monitor/server.py:1400
     severity: high
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. PREFILL_CEILING_TOK_S = 5000 derived from 20,165 live samples (p50 345, p90 1,093, p99 103,412, max 1,905,830; all 1,114 samples above 3,000 came from busy polls; the natural break is 2,000-3,000 with only 65 rows, so 5,000 excludes 1,047 = 5.19%). bounded_prefill() applies to db_analysis, db_hour_aggregates and day_aggregates; build_stats picks prefill from an honesty-ordered candidate list (live -> last_req -> engine) where the first physically possible value wins, and published sparkline samples over the ceiling become holes with history.prefill_bounded + prefill_bounded_n. Every published aggregate carries a '· bounded' tag. Raw samples stay in the DB: /api/export still shows what the engine reported. Live after the fix: prefill_max 208.4 (was 173,582), prefill_bounded True, history 30 of 240 samples bounded. Mutation-proven: replacing bounded_prefill with a plain mean in day_aggregates yields prefill_mean 302,762.5 and fails two assertions; the same probe in db_hour_aggregates lets prefill_max 1,210,150 through"
+  - id: a33-11
+    audit: 33
+    finding: "idle staleness inflates every rate mean: throughput.now falls back to the last request's rate when idle, so one finished request is re-sampled once per poll"
+    location: llm-monitor/server.py:1382
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3 (part of the averaging fix). tok_s_weighted = output_delta / span and prefill_weighted = tokens read / prompt_ms delta are rates over the span, so idle polls stop dragging them; busy_polls and window_s are published alongside so the reader can see how much of the window was work. Live: tok_s_mean 33.08 vs tok_s_weighted 21.37 — the unweighted mean sat ~55% high. prefill_weighted needs the new prompt_ms poll column, so it is None for rows written before the migration rather than guessed"
+  - id: a33-13
+    audit: 33
+    finding: "day_aggregates never got M75's ghost-idle suppression, so a 0-request day rolled up a stale per-poll rate that then fed the week/month weighted means in db_periods"
+    location: llm-monitor/server.py:693
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. day_aggregates gates tok_s_mean, tok_s_max, prefill_mean and prefill_max on (requests > 0 or total_tokens > 0), mirroring db_analysis. db_finalize_days now freezes a quiet day with honest nulls, which changes what the week/month weighted means inherit. Mutation-proven: replacing the guard with `if True` fails 'a quiet day contributes no ghost tok/s to the month's weighted mean' (44.45 where None is expected)"
+  - id: a33-14
+    audit: 33
+    finding: "duplicate-timestamp rows already exist in the DB, and span = max(1e-9, last-first) lets a zero-length window divide by the sentinel; the 'if span > 0' guard in db_hour_aggregates was dead code"
+    location: llm-monitor/server.py:1212
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. SPAN_FLOOR_S = 5.0, tied to app.js REFRESH_MS, replaces the 1e-9 sentinel in db_analysis and db_hour_aggregates; req_per_min, tok_s_weighted and prefill_weighted are None when the span is under one sampling period, so the guard is live. Live DB: 20,119 rows / 20,101 distinct timestamps. Mutation-proven: restoring the sentinel plus the old `span > 0` guard makes req_per_min come back as 0.0 instead of None in both suites. The ThreadingHTTPServer write race that creates the duplicates is NOT fixed (a33-12 territory); this closes the arithmetic consequence"
+  - id: a33-16
+    audit: 33
+    finding: "+100% printed for an empty prior window is a fake percentage"
+    location: llm-monitor/app.js:1049
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. All three sites now print 'new (+N tok)' with the colour kept when the prior period is empty: the History comparison table, and BOTH Compact HUD trend rows (hour and today). The audit only listed app.js:1049-1052 and :1067-1069; the two HUD sites at what is now :1910 and :1929 were the same defect and are closed too. Guarded by a new static check no-empty-prior-percent that greps app.js for a hardcoded +100% literal, so the pattern cannot come back silently"
+  - id: a33-17
+    audit: 33
+    finding: "no unit tests cover db_analysis, day_aggregates or the hourly bridging invariant"
+    location: tests/
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-10-27
+    verified_in_audit: null
+    notes: "M81-T3. New tracked suite tests/telemetry (mirrors the tests/usage convention exactly: run-tests.py + expected.txt, one PASS line per assertion, count enforced): test_telemetry_analysis.py 35 and test_telemetry_days.py 22. In-memory/temp SQLite built by the real db_init() with synthetic poll rows — no engine, no production DB. Wired into .github/workflows/usage-tests.yml and run-e2e-tests.sh (now prints 5 e2e tests passed). The suite asserts the live poll schema equals what it inserts and db_record's column arity, so a migration cannot leave it testing a shape the server no longer writes"
+  - id: a33-37
+    audit: 33
+    finding: "the System log panel tails only Hermes llama.cpp logs while the engine actually running is Strata, so the panel shows nothing from the live engine"
+    location: llm-monitor/server.py:41
+    severity: medium
     status: pending
     fix_applied_date: null
     verified_in_audit: null
-    notes: "prefill_rate(last_req) divides a token count by a prompt_ms from a different request boundary, then every idle poll re-samples it. The live panel shows prefill_peak 173582 and the chart axis rescales to it. Must be bounded AND labelled, never silently dropped. Planned as M81-T3"
+    notes: "Recorded during M81-T3 work, not fixed. LOG_FILES lists watchdog.log / autostart.log / server.log.err, whose last writes are 2026-10-25 and 2026-10-09, while engine-active.txt says strata. The live engine log is C:\Project\Strata\strata-iq3_s.log: 6,196,001 bytes, refreshed the same day, containing 'conversation cache:' x8534, 'resident RAM:' x5360, 'KV streaming:' x5360, 'expert tiers:' x5360, 'decode expert cache hit rate:' x5355, 'lookup chain:' x5315, 'suffix drafts:' x4391, WARNING x5. Strata exposes no /log, /logs or /events (all 404), so tailing the file is the only route. Fix: include the active engine's log path per engine-active.txt alongside the launcher tails. Not planned into M81; needs its own task"
   - id: a33-34
     audit: 33
     finding: "the browser UI suite writes synthetic poll rows into the production telemetry.sqlite3 on every run"

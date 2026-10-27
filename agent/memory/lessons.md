@@ -38,6 +38,18 @@
   correction: "Test a checker against the exact incident it exists for, give each bad fixture exactly one expected failure, and keep fixtures independent of the live repo state (pass HEAD in)."
   priority: high
 
+- date: 2026-10-27
+  task_type: testing
+  mistake: "Wrote an assertion for 'the hourly path bounds impossible prefill readings' as server.bounded_prefill([300.0, 1_210_150.0])[1] == 300.0 — it tested the helper, not db_hour_aggregates. It passed green even with the bound removed from the hour path, because the helper was still correct."
+  correction: "An assertion about a code path must assert on that path's own returned record. For every 'X happens in function F' check, call F and inspect F's output; mutating F's body MUST turn the check red. Prove it by deleting the call inside F, not by testing F's helper in isolation. (Found here by actually running the mutation: prefill_max 1210150.0 sailed through.)"
+  priority: high
+
+- date: 2026-10-27
+  task_type: bug-fix-simple
+  mistake: "Replaced a key's value in a Python dict literal while the old line was still present, so the dict had the key twice and the LAST one won — the fix did nothing and only a test caught it. Later in the same task, a new aggregate key was added whose SELECT never fetched the column it needed, shipping a permanent None stub that looked implemented."
+  correction: "After any key-replacement edit in a dict literal, scan for duplicate keys with an AST walk (ast.Dict over the module, count Constant str keys) — py_compile and grep both miss it. When adding a computed key, add its source column to every SELECT that feeds it and assert the value is non-None in a fixture whose counters actually move; a None stub passes any 'is None or close' test."
+  priority: high
+
 - date: 2026-10-17
   task_type: bug-fix-simple
   mistake: "restart-llm-monitor.ps1 used foreach ($pid_ in Get-OurOwners) { Stop-Process -Id $pid_ } without parentheses; PowerShell ran the call as a bare statement and iterated an EMPTY stream, so no process was ever stopped."

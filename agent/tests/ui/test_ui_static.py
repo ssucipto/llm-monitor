@@ -14,6 +14,9 @@ Checks
   5 hud-ids            every hud-* id used by app.js exists; HUD subtree stays dense
   6 unique-ids         no duplicate id in index.html
   7 server-smoke       server.py serves index.html, app.js and style.css on a free port
+  8 db-isolation       the poll row lands in LLM_MONITOR_DB, not beside server.py
+  9 gpu-provenance     gpu.name_source is never "measured"; name_conflict exists
+ 10 no-empty-prior-pct no hardcoded +100% out of an empty prior period (a33-16)
 """
 import json
 import os
@@ -184,6 +187,13 @@ def main():
             if '"name_conflict"' not in srv_src:
                 problems.append("no name_conflict key — an OS/engine disagreement would be hidden")
             expect("gpu-name-provenance", not problems, problems)
+
+            # 10 — a33-16: a percentage computed out of an empty prior period is not a number.
+            # Every real delta in app.js goes through fmtDelta(); a hardcoded "+100%" literal can
+            # only be the old empty-prior shortcut, which claimed a 0 -> N change was 2x.
+            bad_pct = [ln.strip() for ln in js.splitlines() if '"+100%"' in ln or "'+100%'" in ln]
+            expect("no-empty-prior-percent", not bad_pct,
+                   f"hardcoded +100% out of an empty prior: {bad_pct[:4]}")
     finally:
         proc.terminate()
         try:

@@ -488,21 +488,26 @@ function renderThroughput(throughput, history, analysis, totals) {
     now.classList.remove("is-ok", "is-warn", "is-bad");
   }
   const mean = throughput && throughput.mean;
-  setText("thr-mean", mean != null ? `${mean.toFixed(1)} tok/s` : "--");
+  // M81-T3 (a33-09): the server names the window each figure covers, because
+  // Average tok/s is a session figure while Peak tok/s is the last hour. Printing
+  // the window inline stops two numbers reading as if they described the same span.
+  const meanWin = (throughput && throughput.mean_window) || "session";
+  setText("thr-mean", mean != null ? `${mean.toFixed(1)} tok/s \u00b7 ${meanWin}` : "--");
 
   const rec = analysis && analysis.recent;
   const peak = (throughput && throughput.peak) ?? (rec && rec.tok_s_max);
-  setText("thr-peak", peak != null ? `${peak.toFixed(1)} tok/s` : "--");
+  const peakWin = (throughput && throughput.peak_window) || (rec && rec.window_s ? `last ${Math.round(rec.window_s / 60)} min` : "");
+  setText("thr-peak", peak != null ? `${peak.toFixed(1)} tok/s${peakWin ? ` \u00b7 ${peakWin}` : ""}` : "--");
 
   const pre = throughput && throughput.prefill;
-  setText("thr-prefill", pre != null ? `${pre.toFixed(0)} tok/s` : "--");
+  setText("thr-prefill", pre != null ? `${pre.toFixed(0)} tok/s${throughput.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
 
   let preMean = throughput && (throughput.prefill_mean ?? throughput.recent_prefill_mean);
   if (preMean == null && rec && rec.prefill_mean != null) preMean = rec.prefill_mean;
   if (preMean == null && totals && totals.prompt_tokens && totals.prompt_ms && totals.prompt_ms > 0) {
     preMean = Math.max(0, totals.prompt_tokens - (totals.reused || 0)) / (totals.prompt_ms / 1000);
   }
-  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s` : "--");
+  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s${analysis?.recent?.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
 
   const prePeak = (throughput && throughput.prefill_peak) ?? (rec && rec.prefill_max);
   setText("thr-prefill-peak", prePeak != null ? `${prePeak.toFixed(0)} tok/s` : "--");
@@ -694,9 +699,14 @@ function renderAnalysis(analysis, telemetry, totals) {
   setText("an-window", `last ${Math.round((recent.span_s || 0) / 60)} min`);
   setText("an-requests", recent.requests != null ? `${fmtInt(recent.requests)} · ${recent.req_per_min}/min` : "--");
   setText("an-tok", recent.tok_s_mean != null ? `${recent.tok_s_mean.toFixed(1)} mean · ${(recent.tok_s_max ?? 0).toFixed(1)} peak` : "--");
-  setText("an-prefill", recent.prefill_mean != null ? `${recent.prefill_mean.toFixed(0)} tok/s` : "--");
-  setText("an-hit", recent.hit_pct_mean != null ? `${recent.hit_pct_mean.toFixed(0)}%` : "--");
-  setText("an-accept", recent.accept_pct_mean != null ? `${recent.accept_pct_mean.toFixed(0)}%` : "--");
+  setText("an-prefill", recent.prefill_mean != null ? `${recent.prefill_mean.toFixed(0)} tok/s${recent.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
+  // M81-T3 (a33-08): the window's OWN ratio, not a mean of session-cumulative per-poll
+  // ratios. hit_pct_mean answers "since the engine started", which is not what this
+  // panel's label claims; on this PC that was 65.96% shown against a true 88.19%.
+  const hitW = recent.hit_pct_window ?? recent.hit_pct_mean;
+  const accW = recent.accept_pct_window ?? recent.accept_pct_mean;
+  setText("an-hit", hitW != null ? `${hitW.toFixed(0)}%` : "--");
+  setText("an-accept", accW != null ? `${accW.toFixed(0)}%` : "--");
   setText("an-idle", recent.idle_pct != null ? `${recent.idle_pct.toFixed(0)}% idle` : "--");
   setText("an-energy", recent.energy_wh != null ? `${recent.energy_wh} Wh` : "--");
 
@@ -1106,10 +1116,13 @@ function renderHistory(periods, daily, requests) {
       if (cur && prev && cur.total_tokens != null && prev.total_tokens != null) {
         if (prev.total_tokens === 0) {
           if (cur.total_tokens > 0) {
-            tokenDelta = "+100%";
+            // M81-T3 (a33-16): a percentage out of an empty prior period is not a
+            // number — +100% implied the prior period was half this size. Say what
+            // actually happened instead.
+            tokenDelta = `new (+${fmtInt(cur.total_tokens)} tok)`;
             deltaClass = "is-warn";
           } else {
-            tokenDelta = "±0%";
+            tokenDelta = "\u00b10%";
           }
         } else {
           const d = ((cur.total_tokens - prev.total_tokens) / prev.total_tokens) * 100;
@@ -1124,7 +1137,8 @@ function renderHistory(periods, daily, requests) {
         if (prev && prev.requests != null && (cur.requests !== 1 || prev.requests !== 1)) {
           if (prev.requests === 0) {
             if (cur.requests > 0) {
-              reqDelta += ` (+100%)`;
+              // M81-T3 (a33-16): same reason as the token delta above.
+              reqDelta += ` (new, +${fmtInt(cur.requests)})`;
             }
           } else {
             const d = ((cur.requests - prev.requests) / prev.requests) * 100;
@@ -1893,7 +1907,9 @@ function renderHud(data) {
   setText("hud-trend-hour", curH ? `${fmtInt(curH.total_tokens)} tok · ${curH.requests ?? 0} req` : "--");
   if (curH && prevH && curH.total_tokens != null && prevH.total_tokens != null) {
     if (prevH.total_tokens === 0) {
-      const txt = curH.total_tokens > 0 ? "+100%" : "±0%";
+      // M81-T3 (a33-16): same rule as the History table — a percentage out of an
+      // empty prior period is not a number. State the absolute movement instead.
+      const txt = curH.total_tokens > 0 ? `new (+${fmtInt(curH.total_tokens)})` : "±0%";
       setText("hud-delta-hour", txt);
       const elH = $("hud-delta-hour");
       if (elH) elH.className = "hud-trend-delta " + (curH.total_tokens > 0 ? "is-warn" : "");
@@ -1912,7 +1928,8 @@ function renderHud(data) {
   setText("hud-trend-today", curD ? `${fmtInt(curD.total_tokens)} tok · ${curD.requests ?? 0} req` : "--");
   if (curD && prevD && curD.total_tokens != null && prevD.total_tokens != null) {
     if (prevD.total_tokens === 0) {
-      const txt = curD.total_tokens > 0 ? "+100%" : "±0%";
+      // M81-T3 (a33-16): see the hour row above.
+      const txt = curD.total_tokens > 0 ? `new (+${fmtInt(curD.total_tokens)})` : "±0%";
       setText("hud-delta-today", txt);
       const elD = $("hud-delta-today");
       if (elD) elD.className = "hud-trend-delta " + (curD.total_tokens > 0 ? "is-warn" : "");

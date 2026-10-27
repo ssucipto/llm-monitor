@@ -112,6 +112,24 @@ DB_PRUNE_EVERY = 500
 DB_WINDOW_S = 3600  # the two analysis windows (recent vs previous)
 DB_DAILY_MAX = 90   # finalized days kept in the rollup table (~3 months, pruned in telemetry)
 
+# M81-T3 (audit-33 a33-10). Physical ceiling for a prefill (prompt-read) rate.
+# Measured on this PC's live rows (20,165 non-null prefill samples, 2026-10-27):
+# p50 345 tok/s, p90 1,093, and the honest source agrees — a real request read
+# 5,941 tokens in 42,519.8 ms = 140 tok/s. The band above 2,000 holds only 65 of
+# 20,165 rows, then a long tail runs to 1,905,830 tok/s, which no card of this
+# class (decode 4-124 tok/s) can reach. The cause is prefill_rate(last_req)
+# dividing a token count by a prompt_ms from a different request boundary, then
+# re-sampling it every poll. Samples over this ceiling are excluded from every
+# aggregate and never stored, and the aggregate carries prefill_bounded so the
+# panel says so out loud rather than silently dropping them.
+PREFILL_CEILING_TOK_S = 5000.0
+
+# M81-T3 (audit-33 a33-17). A span shorter than one sampling period cannot
+# support a per-minute or per-second rate: the live DB already holds duplicate
+# timestamps (20,303 rows / 20,285 distinct), so last-first can be 0. Tied to the
+# dashboard's REFRESH_MS (app.js:12), which is how often a poll row is written.
+SPAN_FLOOR_S = 5.0
+
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
 # used, so the front end never presents a modelled number as a measurement.
@@ -668,7 +686,8 @@ def db_init():
             "reqs INTEGER, prompt_tokens INTEGER, reused INTEGER, output_tokens INTEGER,"
             "power_w REAL, power_src TEXT, gpu_util REAL, gpu_power REAL, busy INTEGER,"
             " vram_used REAL, vram_total REAL,"
-            " drafts_offered INTEGER, drafts_accepted INTEGER, pcie_share REAL)"
+            " drafts_offered INTEGER, drafts_accepted INTEGER, pcie_share REAL,"
+            " prompt_ms REAL)"
         )
     except sqlite3.OperationalError:
         pass  # the table survived from a previous run
@@ -679,7 +698,13 @@ def db_init():
     # add no extra engine request.
     for col, ctype in (("vram_used", "REAL"), ("vram_total", "REAL"),
                        ("drafts_offered", "INTEGER"), ("drafts_accepted", "INTEGER"),
-                       ("pcie_share", "REAL")):
+                       ("pcie_share", "REAL"),
+                       # M81-T3 (a33-11): the engine's cumulative prompt_ms, so a
+                       # window's prefill rate can be read/prompt_ms instead of an
+                       # unweighted mean of per-poll instantaneous rates. Rows from
+                       # before this column exist have NULL, which every reader here
+                       # treats as "no weighted figure", never as 0.
+                       ("prompt_ms", "REAL")):
         try:
             con.execute(f"ALTER TABLE poll ADD COLUMN {col} {ctype}")
         except sqlite3.OperationalError:
@@ -721,11 +746,17 @@ def db_record(con, stats):
     con.execute(
         "INSERT INTO poll (t, cpu, ram, tok_s, prefill, ctx_used, ctx_pct, hit_pct, accept_pct,"
         " reqs, prompt_tokens, reused, output_tokens, power_w, power_src, gpu_util, gpu_power, busy,"
-        " vram_used, vram_total, drafts_offered, drafts_accepted, pcie_share)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " vram_used, vram_total, drafts_offered, drafts_accepted, pcie_share, prompt_ms)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             now,
             hw.get("cpu_pct"), hw.get("ram_used"),
+            # The prefill sample is stored as build_stats produced it. Since M81-T3
+            # build_stats bounds it at the source, so new rows never hold an
+            # impossible rate; rows written before that fix keep their raw value on
+            # purpose (the DB stays the honest record and /api/export can still show
+            # what the engine really reported), which is why every aggregate here
+            # bounds defensively as well.
             thr.get("now"), thr.get("prefill"),
             ctx.get("used"), ctx.get("pct"),
             cache.get("hit_pct"), spec.get("accept_pct"),
@@ -736,6 +767,11 @@ def db_record(con, stats):
             gpu.get("mem_used"), gpu.get("mem_total"),
             totals.get("drafts_offered"), totals.get("drafts_accepted"),
             (last_req or {}).get("pcie_share"),
+            # M81-T3: the engine's cumulative prompt_ms (the denominator a window
+            # prefill rate needs) and a prefill sample that is bounded at the source,
+            # so an impossible reading never reaches the DB, the chart axis or any
+            # aggregate. thr["prefill_bounded"] says the bound fired this poll.
+            totals.get("prompt_ms"),
         ),
     )
     con.commit()
@@ -790,6 +826,44 @@ def cumulative_delta(rows, idx):
     return total
 
 
+def window_pct(rows, num_idx, den_idx):
+    """The span's OWN ratio, from two cumulative counters (M81-T3, a33-08).
+
+    The per-poll hit_pct / accept_pct columns store session-cumulative ratios
+    (server.py build_stats divides the engine's lifetime totals), so averaging
+    them per poll answers "what has this engine done since it started", not
+    "what did it do in this window". Measured 2026-10-27 over the last 60 min:
+    the per-poll mean showed 65.96 % while the window's own delta ratio is 88.19 %.
+    Both sides are cumulative counters, so their deltas give the window figure.
+    Returns None when the window moved no denominator (no prompt read, no drafts
+    offered) — an empty window has no rate, which is not the same as 0 %.
+    """
+    den = cumulative_delta(rows, den_idx)
+    if not den:
+        return None
+    num = cumulative_delta(rows, num_idx) or 0
+    return num / den * 100
+
+
+def bounded_prefill(vals):
+    """(mean, max, bounded) over prefill samples that are physically possible.
+
+    See PREFILL_CEILING_TOK_S for the measurement behind the ceiling. The flag is
+    returned so every consumer can label the number rather than quietly showing a
+    filtered mean (a33-10: stored rows reach 1,905,830 tok/s on a card that
+    decodes at 4-124). Never silently drops data: the caller must print the tag.
+    """
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return None, None, False
+    kept = [v for v in vals if v <= PREFILL_CEILING_TOK_S]
+    bounded = len(kept) != len(vals)
+    if not kept:
+        # Every sample was impossible: report nothing rather than a fake number.
+        return None, None, True
+    return sum(kept) / len(kept), max(kept), bounded
+
+
 def day_aggregates(con, lo, hi):
     """Summarise one [lo, hi) span of poll rows (a UTC day slice).
 
@@ -797,22 +871,37 @@ def day_aggregates(con, lo, hi):
     counter resets (see cumulative_delta); the per-poll columns give means/max
     directly. Also returns 24 hourly request counts so the day scrubber can
     draw a day's activity without keeping per-hour rows.
+
+    M81-T3 (audit-34 G-34-03): the row just before `lo` is carried in as a delta
+    baseline only, the same trick db_hour_aggregates already uses. Without it the
+    first hour of a day has no baseline and its movement lands in no day at all —
+    measured with rows (DAY-300, reqs=5) (DAY+600, 8) (DAY+4000, 12), the old code
+    reported 4 for the day when the true movement is 7. The baseline row is NOT
+    counted in polls/span/idle, which describe the day itself.
     """
+    base = con.execute(
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused,"
+        " output_tokens, power_w, busy, drafts_offered, drafts_accepted"
+        " FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1",
+        (lo,)).fetchone()
     rows = con.execute(
         "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens,"
-        " reused, output_tokens, power_w, busy FROM poll WHERE t >= ? AND t < ?",
+        " reused, output_tokens, power_w, busy, drafts_offered, drafts_accepted"
+        " FROM poll WHERE t >= ? AND t < ? ORDER BY t",
         (lo, hi)).fetchall()
-    if len(rows) < 2:
+    if not rows:
         return None
+    # Delta maths sees the carried baseline; per-poll stats see only the day's rows.
+    span_rows = ([base] if base else []) + rows
 
     def avg(i):
         vals = [r[i] for r in rows if r[i] is not None]
         return sum(vals) / len(vals) if vals else None
 
     power_vals = [r[9] for r in rows if r[9] is not None]
-    span = max(1e-9, rows[-1][0] - rows[0][0])
+    span = rows[-1][0] - rows[0][0]
     hours = []
-    prev_seg_last = None
+    prev_seg_last = base
     for h in range(24):
         h_lo = lo + h * 3600
         h_hi = h_lo + 3600
@@ -820,28 +909,48 @@ def day_aggregates(con, lo, hi):
         if not seg:
             hours.append(0)
             continue
-        if prev_seg_last:
-            seg_with_base = [prev_seg_last] + seg
-            hours.append(cumulative_delta(seg_with_base, 5))
-        else:
-            hours.append(cumulative_delta(seg, 5) if len(seg) >= 2 else 0)
+        # With a baseline the segment can be one row; without one it needs two.
+        seg = ([prev_seg_last] + seg) if prev_seg_last else seg
+        hours.append(cumulative_delta(seg, 5))
         prev_seg_last = seg[-1]
-    prompt_tok = cumulative_delta(rows, 6)
-    reused_tok = cumulative_delta(rows, 7)
-    output_tok = cumulative_delta(rows, 8)
+    prompt_tok = cumulative_delta(span_rows, 6)
+    reused_tok = cumulative_delta(span_rows, 7)
+    output_tok = cumulative_delta(span_rows, 8)
+    req_delta = cumulative_delta(span_rows, 5)
+    tot_tok = (prompt_tok or 0) + (output_tok or 0)
+
+    # Ghost-idle suppression (M81-T3, a33-13): db_analysis has had this since M75,
+    # day_aggregates never did, so a 0-request day rolled up a stale per-poll rate
+    # that then fed the week/month weighted means in db_periods.
+    if req_delta > 0 or tot_tok > 0:
+        tok_s_mean = avg(1)
+        tok_s_max = max((r[1] for r in rows if r[1] is not None), default=None)
+        prefill_mean, prefill_max, prefill_bounded = bounded_prefill([r[2] for r in rows])
+    else:
+        tok_s_mean = None
+        tok_s_max = None
+        prefill_mean = None
+        prefill_max = None
+        prefill_bounded = False
     return {
         "polls": len(rows),
         "span_s": round(span, 1),
-        "requests": cumulative_delta(rows, 5),
-        "total_tokens": (prompt_tok or 0) + (output_tok or 0),
+        "requests": req_delta,
+        "total_tokens": tot_tok,
         "prompt_tokens": prompt_tok,
         "reused": reused_tok,
         "output_tokens": output_tok,
-        "tok_s_mean": avg(1),
-        "tok_s_max": max((r[1] for r in rows if r[1] is not None), default=None),
-        "prefill_mean": avg(2),
-        "hit_mean": avg(3),
-        "accept_mean": avg(4),
+        "tok_s_mean": tok_s_mean,
+        "tok_s_max": tok_s_max,
+        "prefill_mean": prefill_mean,
+        "prefill_max": prefill_max,
+        "prefill_bounded": prefill_bounded,
+        # M81-T3 (a33-08): the day's OWN ratio, not a mean of session-cumulative
+        # per-poll ratios. Old rollup rows keep whatever was written at the time;
+        # only days finalised from now on carry the window figure. accept uses the
+        # draft counters (a7-05), which is what an accept rate is actually made of.
+        "hit_mean": window_pct(span_rows, 7, 6),
+        "accept_mean": window_pct(span_rows, 12, 11),
         "power_mean": avg(9),
         "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
         "idle_pct": round(100 * sum(1 for r in rows if not r[10]) / len(rows), 1),
@@ -886,17 +995,23 @@ def _iso_day(d):
 
 def db_hour_aggregates(con, lo, hi):
     """Summarise poll rows in [lo, hi) anchored to the preceding boundary row."""
+    # prompt_ms (index 13) is only read by prefill_weighted; rows written before the
+    # column exists come back NULL, which keeps that figure None rather than guessed.
     base = con.execute(
-        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy "
-        "FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1", (lo,)).fetchone()
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy, "
+        "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1", (lo,)).fetchone()
     rows = con.execute(
-        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy "
-        "FROM poll WHERE t >= ? AND t < ? ORDER BY t", (lo, hi)).fetchall()
+        "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy, "
+        "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t >= ? AND t < ? ORDER BY t", (lo, hi)).fetchall()
     if not rows:
         return None
     all_rows = ([base] + rows) if base else rows
     first, last = (all_rows[0], all_rows[-1]) if all_rows else (rows[0], rows[-1])
-    span = max(1e-9, last[0] - first[0])
+    # M81-T3 (a33-17): the old max(1e-9, ...) sentinel made the "if span > 0" guard
+    # below unreachable and let a duplicate-timestamp span divide by 1e-9. A span
+    # under one sampling period cannot support a rate at all.
+    span = last[0] - first[0]
+    rate_ok = span >= SPAN_FLOOR_S
     req_delta = cumulative_delta(all_rows, 5) if all_rows else 0
     prompt_delta = cumulative_delta(all_rows, 6) if all_rows else 0
     reused_delta = cumulative_delta(all_rows, 7) if all_rows else 0
@@ -908,14 +1023,13 @@ def db_hour_aggregates(con, lo, hi):
         tok_vals = [r[1] for r in rows if r[1] is not None]
         tok_mean = sum(tok_vals) / len(tok_vals) if tok_vals else None
         tok_max = max(tok_vals, default=None)
-        prefill_vals = [r[2] for r in rows if r[2] is not None]
-        prefill_mean = sum(prefill_vals) / len(prefill_vals) if prefill_vals else None
-        prefill_max = max(prefill_vals, default=None)
+        prefill_mean, prefill_max, prefill_bounded = bounded_prefill([r[2] for r in rows])
     else:
         tok_mean = None
         tok_max = None
         prefill_mean = None
         prefill_max = None
+        prefill_bounded = False
 
     power_vals = [r[9] for r in rows if r[9] is not None]
     hit_vals = [r[3] for r in rows if r[3] is not None]
@@ -929,13 +1043,28 @@ def db_hour_aggregates(con, lo, hi):
         "prompt_tokens": prompt_delta,
         "reused": reused_delta,
         "output_tokens": output_delta,
-        "req_per_min": round(req_delta / span * 60, 2) if span > 0 else 0.0,
+        "req_per_min": round(req_delta / span * 60, 2) if (rate_ok and span > 0) else None,
         "tok_s_mean": tok_mean,
         "tok_s_max": tok_max,
         "prefill_mean": prefill_mean,
         "prefill_max": prefill_max,
+        "prefill_bounded": prefill_bounded,
         "hit_pct_mean": (sum(hit_vals) / len(hit_vals)) if hit_vals else None,
         "accept_pct_mean": (sum(accept_vals) / len(accept_vals)) if accept_vals else None,
+        # M81-T3 (a33-08): the span's own ratios, computed from the cumulative
+        # counters. Additive keys; *_pct_mean stay as they were so no existing
+        # consumer changes meaning, and the panel reads these instead.
+        "hit_pct_window": window_pct(all_rows, 7, 6),
+        "accept_pct_window": window_pct(all_rows, 12, 11),
+        # M81-T3 (a33-09/a33-11): a rate over the span, not a mean of instantaneous
+        # per-poll rates. tok_s_mean weights every idle poll equally with every
+        # busy one, so a long idle stretch drags the figure toward zero.
+        "tok_s_weighted": (output_delta / span) if (rate_ok and output_delta) else None,
+        # Same rule as db_analysis: prompt_ms is a cumulative counter, so a span whose
+        # rows predate the column has no computable prefill rate.
+        "prefill_weighted": (
+            round(max(0.0, prompt_delta - reused_delta) / ms_delta * 1000, 2)
+            if (rate_ok and (ms_delta := cumulative_delta(all_rows, 13))) else None),
         "power_w_mean": (sum(power_vals) / len(power_vals)) if power_vals else None,
         "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
         "idle_pct": round(100 * sum(1 for r in rows if not r[10]) / len(rows), 1),
@@ -1347,7 +1476,8 @@ def db_analysis(con, window_s=DB_WINDOW_S):
     now = datetime.now(timezone.utc).timestamp()
     rows = con.execute(
         "SELECT t, cpu, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens,"
-        " reused, output_tokens, power_w, busy FROM poll WHERE t >= ?",
+        " reused, output_tokens, power_w, busy, drafts_offered, drafts_accepted, prompt_ms"
+        " FROM poll WHERE t >= ? ORDER BY t",
         (now - 2 * window_s,)).fetchall()
     out = {}
     for label, lo, hi in (("recent", now - window_s, now), ("previous", now - 2 * window_s, now - window_s)):
@@ -1356,7 +1486,11 @@ def db_analysis(con, window_s=DB_WINDOW_S):
             out[label] = None
             continue
         first, last = window[0], window[-1]
-        span = max(1e-9, last[0] - first[0])
+        # M81-T3 (a33-17): no 1e-9 sentinel. Duplicate timestamps exist in the live
+        # DB (20,303 rows / 20,285 distinct), so span can legitimately be 0; a span
+        # under one sampling period cannot support any per-minute rate.
+        span = last[0] - first[0]
+        rate_ok = span >= SPAN_FLOOR_S
 
         def avg(i):
             vals = [r[i] for r in window if r[i] is not None]
@@ -1366,26 +1500,48 @@ def db_analysis(con, window_s=DB_WINDOW_S):
         prompt_delta = cumulative_delta(window, 7) or 0
         output_delta = cumulative_delta(window, 9) or 0
         req_count = cumulative_delta(window, 6) or 0
+        reused_delta = cumulative_delta(window, 8) or 0
         tot_tok = prompt_delta + output_delta
+        busy_polls = sum(1 for r in window if r[11])
         tok_s_mean = avg(2) if (req_count > 0 or tot_tok > 0) else None
         tok_s_max = max((r[2] for r in window if r[2] is not None), default=None) if (req_count > 0 or tot_tok > 0) else None
-        prefill_mean = avg(3) if (req_count > 0 or tot_tok > 0) else None
-        prefill_max = max((r[3] for r in window if r[3] is not None), default=None) if (req_count > 0 or tot_tok > 0) else None
+        prefill_mean = prefill_max = None
+        prefill_bounded = False
+        if req_count > 0 or tot_tok > 0:
+            prefill_mean, prefill_max, prefill_bounded = bounded_prefill([r[3] for r in window])
         out[label] = {
             "polls": len(window),
             "span_s": round(span, 1),
             "requests": req_count,
             "total_tokens": tot_tok,
             "prompt_tokens": prompt_delta,
-            "reused": cumulative_delta(window, 8),
+            "reused": reused_delta,
             "output_tokens": output_delta,
-            "req_per_min": round(req_count / span * 60, 2),
+            "req_per_min": round(req_count / span * 60, 2) if rate_ok else None,
             "tok_s_mean": tok_s_mean,
             "tok_s_max": tok_s_max,
             "prefill_mean": prefill_mean,
             "prefill_max": prefill_max,
             "hit_pct_mean": avg(4),
             "accept_pct_mean": avg(5),
+            # M81-T3 (a33-08): the window's OWN ratios. hit_pct/accept_pct per poll
+            # are session-cumulative, so averaging them answers a different question
+            # than the panel's label claims. Measured over the last 60 min on this
+            # PC: mean-of-cumulatives 65.96 % vs the window's true 88.19 %.
+            "hit_pct_window": window_pct(window, 8, 7),
+            "accept_pct_window": window_pct(window, 13, 12),
+            # M81-T3 (a33-09/a33-11): rate over the span rather than a mean of
+            # instantaneous per-poll rates. tok_s_mean weights each poll equally,
+            # so idle polls drag it down; these weight by what actually moved.
+            "tok_s_weighted": round(output_delta / span, 2) if (rate_ok and output_delta) else None,
+            # prompt_ms is a cumulative counter (new column); rows written before it
+            # existed are NULL, so this stays None rather than inventing a rate.
+            "prefill_weighted": (
+                round(max(0.0, prompt_delta - reused_delta) / ms_delta * 1000, 2)
+                if (rate_ok and (ms_delta := cumulative_delta(window, 14))) else None),
+            "prefill_bounded": prefill_bounded,
+            "busy_polls": busy_polls,
+            "window_s": int(window_s),
             "power_w_mean": avg(10),
             "energy_wh": round(sum(power_vals) * span / 3600 / len(power_vals), 3) if power_vals else None,
             "idle_pct": round(100 * sum(1 for r in window if not r[11]) / len(window), 1),
@@ -1537,18 +1693,34 @@ def build_stats():
     # built-in monitor does — only the tokens it actually had to read count.
     prefill_now = None
     prefill_source = None
+    prefill_bounded = False
+
+    # M81-T3 (a33-10): the in-flight estimate is the source of the impossible
+    # readings. The engine reports prompt_read before the prompt has finished,
+    # so an early sample divides a large token count by a near-zero elapsed_s. Of
+    # 20,165 stored prefill samples, all 1,114 above 3,000 tok/s came from busy
+    # polls, running to 1,905,830 tok/s on a card whose decode tops out at 124.
+    # So each candidate is tried in honesty order and the first physically
+    # possible one wins; if any candidate was over the ceiling the value carries
+    # prefill_bounded so the panel prints "· bounded". Nothing is dropped without
+    # being labelled, and a bound does not leave the panel blank.
+    candidates = []
     if isinstance(live, dict) and live.get("state") == "reading" and live.get("elapsed_s"):
         read = live.get("prompt_read")
         if read is None:
             read = (live.get("prompt_tokens") or 0) - (live.get("reused") or 0)
-        prefill_now = max(0.0, read) / live["elapsed_s"]
-        prefill_source = "live"
-    if not prefill_now:
-        prefill_now = prefill_rate(last_req)
-        prefill_source = "last" if prefill_now else None
-    if not prefill_now:
-        prefill_now = hw.get("prefill_tok_s_mean")
-        prefill_source = "engine" if prefill_now else None
+        candidates.append((max(0.0, read) / live["elapsed_s"], "live"))
+    lr = prefill_rate(last_req)
+    if lr is not None:
+        candidates.append((lr, "last"))
+    if hw.get("prefill_tok_s_mean") is not None:
+        candidates.append((hw["prefill_tok_s_mean"], "engine"))
+    for value, src in candidates:
+        if value > PREFILL_CEILING_TOK_S:
+            prefill_bounded = True
+            continue
+        prefill_now, prefill_source = value, src
+        break
 
     prefill_mean = hw.get("prefill_tok_s_mean")
     if not prefill_mean and totals.get("prompt_tokens") and totals.get("prompt_ms"):
@@ -1700,6 +1872,7 @@ def build_stats():
             "mean": tok_mean,
             "peak": None,
             "prefill": prefill_now,
+            "prefill_bounded": prefill_bounded,
             "prefill_mean": prefill_mean,
             "prefill_peak": None,
             "prefill_source": prefill_source,
@@ -1740,14 +1913,34 @@ def build_stats():
         stats["throughput"]["recent_mean"] = rec.get("tok_s_mean")
         stats["throughput"]["recent_prefill_mean"] = rec.get("prefill_mean")
         stats["throughput"]["req_per_min"] = rec.get("req_per_min")
+        # M81-T3 (a33-09): name the window each figure describes, because three
+        # different windows are on screen at once and their labels used to lie.
+        stats["throughput"]["mean_window"] = "session"
+        stats["throughput"]["peak_window"] = f"last {int((rec.get('window_s') or DB_WINDOW_S) / 60)} min"
+        if rec.get("prefill_bounded"):
+            stats["throughput"]["prefill_bounded"] = True
     if rows:
+        # M81-T3 (a33-10): the prefill sparkline scales by max(samples), so one
+        # impossible historical sample (up to 1,905,830 tok/s) flattens every real
+        # value in the chart. Rows written before the source bound keep their raw
+        # value in the DB on purpose, so the published series is bounded here and
+        # the panel is told via prefill_bounded. Over-ceiling samples become holes
+        # in the curve (drawSpark skips nulls) rather than a fake axis.
+        series_prefill = [(None if v is not None and v > PREFILL_CEILING_TOK_S else v) for v in (r[2] for r in rows)]
+        # Count the over-ceiling samples from the raw values: a null in the series
+        # is an idle poll with no prefill at all, not a bounded one.
+        n_bounded = sum(1 for v in (r[2] for r in rows) if v is not None and v > PREFILL_CEILING_TOK_S)
         stats["history"] = {
             "tok_s": [r[1] for r in rows],
-            "prefill": [r[2] for r in rows],
+            "prefill": series_prefill,
             "power_w": [r[4] for r in rows],
             "cpu": [r[5] for r in rows],
             "hit_pct": [r[6] for r in rows],
         }
+        if n_bounded or prefill_bounded:
+            stats["history"]["prefill_bounded"] = True
+            stats["history"]["prefill_bounded_n"] = n_bounded
+            stats["throughput"]["prefill_bounded"] = True
         stats["history"]["requests"] = bucket_db_requests(
             [(r[0], r[3]) for r in rows]) or bucket_requests(metrics) or []
         # The engine's own gpu_* series pass through when they carry values, so a
