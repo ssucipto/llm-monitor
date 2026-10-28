@@ -735,11 +735,13 @@ function renderAnalysis(analysis, telemetry, totals) {
   setText("an-window", `last ${Math.round((recent.span_s || 0) / 60)} min`);
   // M81-review (S1): req_per_min is None when the window's span is under one sampling
   // period (SPAN_FLOOR_S), which the live DB does produce (duplicate timestamps). The
-  // count is still real, so show it alone rather than "12 · null/min". Not a fake 0.
+  // count is still real, so it is shown with the rate marked n/a rather than "12 · null/min"
+  // or a fake 0. Saying why the rate is missing beats dropping it silently: the window may be
+  // too short to support one, which is a different fact from "the engine served nothing".
   setText("an-requests", recent.requests != null
     ? (recent.req_per_min != null
         ? `${fmtInt(recent.requests)} · ${recent.req_per_min}/min`
-        : fmtInt(recent.requests))
+        : `${fmtInt(recent.requests)} · rate n/a`)
     : "--");
   setText("an-tok", recent.tok_s_mean != null ? `${recent.tok_s_mean.toFixed(1)} mean · ${(recent.tok_s_max ?? 0).toFixed(1)} peak` : "--");
   setText("an-prefill", recent.prefill_mean != null ? `${recent.prefill_mean.toFixed(0)} tok/s${recent.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
@@ -946,13 +948,14 @@ function wireDetail() {
   if (!detail) return;
   // M81-T6: only the Reference panels live in this region now. Attaching these to a panel that
   // moved into the main grid would open the region for an unrelated find-in-page hit.
-  // M81-review (A7): derive the ids from the region's own children, so a panel dragged
-  // into Detail keeps its beforematch wiring instead of relying on this list staying true.
+  // M81-review (A7) + review-015: beforematch bubbles, so one delegated listener on the region
+  // covers every panel inside it — including one dragged in later in the same session, which a
+  // per-child loop wired at init would miss until the next reload. The region is the boundary,
+  // so a hit on a panel that has been dragged out of it still does not open this region.
   const region = detail.querySelector(".tiles--detail") || detail;
-  for (const el of region.children) {
-    if (!el.id) continue;
-    el.addEventListener("beforematch", () => { detail.open = true; });
-  }
+  region.addEventListener("beforematch", (e) => {
+    if (region.contains(e.target)) detail.open = true;
+  });
   window.addEventListener("hashchange", () => {
     const target = location.hash.slice(1);
     if (target && detail.querySelector(`#${CSS.escape(target)}`)) detail.open = true;
@@ -1405,7 +1408,7 @@ function renderHistBars() {
     // M81-review (A6): the bar's value only appeared after a click, and the bars are
     // cursor:pointer. A native SVG <title> gives hover/focus affordance with no listener.
     const tip = svgElem("title");
-    tip.textContent = `${(d.date || "day ${i + 1}")} \u00b7 ${fmtNum(v, ` ${m.unit}`, v >= 100 ? 0 : 1)}`;
+    tip.textContent = `${(d.date || `day ${i + 1}`)} \u00b7 ${fmtNum(v, ` ${m.unit}`, v >= 100 ? 0 : 1)}`;
     rect.appendChild(tip);
     svg.appendChild(rect);
   });
@@ -2450,7 +2453,11 @@ async function fetchUsage() {
   const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
   const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const week = new Date(now.getTime() - 7 * 86400000);
-  let wrote = false;
+  // M81-review-015 D1: `u` is read again after the loop for the sources line, so it must be
+  // declared outside the loop body. Declaring it with const inside the for-loop left the
+  // post-loop reference out of scope, so every successful fetch threw and the Sources row
+  // printed "unavailable (u is not defined)" over numbers that had just loaded fine.
+  let last = null;
   try {
     for (const [key, from] of [["day", day], ["week", week]]) {
       const r = await fetch(`/api/usage?from=${iso(from)}&to=${iso(now)}`);
@@ -2461,27 +2468,25 @@ async function fetchUsage() {
       // id aborted the whole ledger and left the rest at "--".
       setText(`usage-${key}-orch`, u.weighted.orchestrator == null ? "unavailable" : `${fmtTok(u.weighted.orchestrator)} weighted`);
       setText(`usage-${key}-exec`, u.executor ? `${fmtTok(u.executor.input + u.executor.output)} tokens` : "unavailable");
-      wrote = true;
+      last = u;
     }
-    setText("usage-sources", `Claude Code ${u.sources.claude_code}, Hermes ${u.sources.hermes}${u.partial ? " (catching up)" : ""}`);
+    // Both windows come from the same ledger, so the last one read is authoritative for
+    // sources and for the partial flag (both are top-level payload keys).
+    setText("usage-sources", `Claude Code ${last.sources.claude_code}, Hermes ${last.sources.hermes}${last.partial ? " (catching up)" : ""}`);
   } catch (err) {
     console.error(err);
     setText("usage-sources", `unavailable (${err.message})`);
-    // The failure line replaces text too, so the tile's height may have changed and the
-    // spans still have to be recomputed.
-    wrote = true;
   }
   // M81-T8 (a32-02): the ledger text is longer than the "--" it replaces, so the panel grows.
   // switchView re-spans for the same reason — a tile's span must not depend on when the
   // ResizeObserver happens to fire, or the row underneath it is measured against a stale span.
   // The stamp lets the UI suite require that a layout pass happened AFTER the ledger landed.
-  // M81-review (A2): the guard is only that some text was written. The suite's geometry
-  // waits treat __lastUsage as a content stamp that a layout pass must post-date, so a
-  // stamp with no matching pass would leave spans unproven — never stamp without spanning.
-  if (wrote) {
-    window.__lastUsage = Date.now();
-    queueLayout();
-  }
+  // M81-review-015 D6: stamp and re-span unconditionally. setText is null-safe, so the try
+  // body only throws from fetch/json (which lands in the catch and still rewrites the Sources
+  // row); every reachable path changes some text, and the suite's geometry waits treat
+  // __lastUsage as a content stamp a layout pass must post-date — never stamp without spanning.
+  window.__lastUsage = Date.now();
+  queueLayout();
 }
 
 async function init() {

@@ -165,7 +165,21 @@ insert(con, [row(NOW - 200, reqs=1, prompt=1000, reused=0, output=10, busy=1),
 rec = server.db_analysis(con)["recent"]
 # honest: the two rows that carry prompt_ms read 1000 tokens in 1000 ms -> 1000 tok/s.
 # the old split-row-set maths reported 3000 tok/s from the same window.
-expect("prefill_weighted uses one row set for both sides of the division (1000, not 3000)",
+expect("prefill_weighted sums both sides over the prompt_ms span (1000, not 3000)",
+       abs(rec["prefill_weighted"] - 1000.0) < 0.01, rec["prefill_weighted"])
+
+# M81-review-015 D1: the opposite failure. Restricting BOTH sides to the rows that carry
+# prompt_ms also breaks cumulative_delta, because that helper splits segments at a decrease
+# and the NULL-ms middle row is the only evidence of the counter reset here. Dropping it
+# makes the numerator read 0, i.e. a fake zero on a window that really moved 1000 tokens.
+con = fresh()
+insert(con, [row(NOW - 200, reqs=1, prompt=5000, reused=0, output=0, busy=1, prompt_ms=9000),
+             row(NOW - 150, reqs=2, prompt=200, reused=0, output=0, busy=1),
+             row(NOW - 100, reqs=3, prompt=1200, reused=0, output=0, busy=1, prompt_ms=10000)])
+rec = server.db_analysis(con)["recent"]
+# The reset survives (prompt moved 1000 across the two segments) and the denominator is the
+# prompt_ms span (1000 ms), so the honest rate is 1000 tok/s. Row-filtering both sides gives 0.0.
+expect("a counter reset seen only in a NULL-prompt_ms row still counts (1000, not a fake 0)",
        abs(rec["prefill_weighted"] - 1000.0) < 0.01, rec["prefill_weighted"])
 
 # ---------- a33-10: impossible prefill readings are bounded and say so ----------
@@ -278,10 +292,31 @@ expect("a single-row hour still gets a baseline from before the span (requests d
 expect("that baseline's span supports a rate (310 s, above the floor)",
        h["span_s"] == 310.0 and h["req_per_min"] is not None, (h["span_s"], h["req_per_min"]))
 # M81-review S5: db_analysis rounds this figure and db_hour_aggregates did not, so the
-# same quantity reached the payload at two different precisions. 50/310 is not exact in
-# two decimals, which is what makes this assertion able to fail.
-expect("the hour path rounds tok_s_weighted like db_analysis does (0.16)",
-       h["tok_s_weighted"] == 0.16, (h["tok_s_weighted"], h["output_tokens"], h["span_s"]))
+# same quantity reached the payload at two different precisions. Pinned to the invariant
+# (the published value equals its own 2-dp rounding) rather than a literal, so a fixture
+# offset shifting cannot turn a passing run into a mystery failure; 50/310 is not exact in
+# two decimals, which is what keeps this able to fail on an unrounded value.
+expect("the hour path rounds tok_s_weighted like db_analysis does",
+       h["tok_s_weighted"] == round(h["output_tokens"] / h["span_s"], 2),
+       (h["tok_s_weighted"], h["output_tokens"], h["span_s"]))
+# M81-review-015 D3: the hour path carried ANY earlier row as its baseline, so a retained
+# row from before an outage gave a one-hour window a span of ~173,400 s and divided this
+# hour's movement by it. An hour's rate must not be computed across a gap the hour did not
+# observe; the baseline has to be recent, the same rule day_aggregates now enforces.
+con = fresh()
+insert(con, [row(HOUR_START - 2 * 86400, reqs=3, prompt=1000, reused=0, output=600, busy=1),
+             row(HOUR_START + 600, reqs=5, prompt=1600, reused=0, output=1000, busy=1),
+             row(HOUR_START + 3000, reqs=8, prompt=2400, reused=0, output=1400, busy=1)])
+h = server.db_hour_aggregates(con, HOUR_START, HOUR_END)
+# Without the bound the retained row set span_s to 173,400 s (measured) and every rate was
+# divided by the outage. With it the hour spans its own two rows.
+expect("an hour does not take a two-day-old baseline as its context (span 2400 s, not 173400)",
+       h["span_s"] == 2400.0, (h["span_s"], h["polls"]))
+expect("the same hour reports its own movement (3 requests) rather than the gap's",
+       h["requests"] == 3, h["requests"])
+expect("and its weighted rate is over the span it actually observed",
+       abs(h["tok_s_weighted"] - round(400 / 2400, 2)) < 0.001,
+       (h["tok_s_weighted"], h["output_tokens"], h["span_s"]))
 # With no baseline at all, one row spans zero seconds: no rate is computable, and the
 # old 1e-9 sentinel used to divide by it anyway.
 con = fresh()

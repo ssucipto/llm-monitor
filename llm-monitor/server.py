@@ -160,7 +160,20 @@ SPAN_FLOOR_S = 5.0
 # requests and 1000 prompt tokens it never served). A baseline older than this is not
 # this day's context, so the day falls back to "no baseline", which is the pre-T3
 # behaviour for that row and reports only the day's own movement.
+#
+# The window is [lo - 86400, lo), i.e. "the previous calendar day or later", measured from
+# the day boundary rather than from now. That is deliberate: for attributing counter
+# movement to THIS day, what matters is whether the baseline is adjacent to the day's edge,
+# not how old it is in wall-clock terms. A row from yesterday 00:00 is this day's boundary
+# context even at 16:00 today; a row from two days ago is not, because the day between them
+# is precisely the outage that must not be charged here.
 DAY_BASELINE_MAX_AGE_S = 86400
+
+# M81-review-015 D3. The hour path had the same unbounded baseline as the day path, so a
+# multi-day outage gave an hour aggregate a span of 173,400 s (measured) and divided this
+# hour's movement by it — req_per_min 0.0 and tok_s_weighted 0.0 for an hour that actually
+# served requests. The bound is the same rule at the hour's own scale.
+HOUR_BASELINE_MAX_AGE_S = 3600
 
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
@@ -914,24 +927,33 @@ def bounded_prefill(vals):
     return sum(kept) / len(kept), max(kept), bounded
 
 
-def weighted_prefill_rate(rows, prompt_idx, reused_idx, ms_idx):
+def weighted_prefill_rate(rows, prompt_idx, reused_idx, ms_idx, t_idx=0):
     """Prompt tokens that were NOT cache hits, per second of prompt-processing time.
 
-    M81-review (S4): numerator and denominator MUST be summed over the same row set.
+    M81-review (S4): numerator and denominator MUST describe the same span.
     cumulative_delta skips a NULL counter, so when the prompt_ms column is still being
     rolled out (rows written before it exists are NULL) an all-rows numerator divided
-    by a non-NULL-only denominator inflated the rate — probe: 300 tok/s reported where
-    the honest figure over the shared row set is 150. Selecting the rows that carry
-    prompt_ms first makes both sides describe the same span.
+    by a non-NULL-only denominator charged prompt movement to time that never read it
+    (probe: 3000 tok/s where the honest figure over the prompt_ms span is 1000).
+
+    Review-015 D1: restricting BOTH sides to the prompt_ms-bearing rows fixes that but
+    breaks the other way, because cumulative_delta splits segments at a decrease — a
+    counter reset visible only in a NULL-prompt_ms row disappears, and the numerator can
+    collapse to 0 (probe: 0.0 where the window really moved 1000 tokens), which is the
+    fake zero this milestone exists to remove. So the shared thing is the TIME SPAN, not
+    the row list: take the span the prompt_ms column actually covers and sum every counter
+    over all rows inside it, keeping the NULL-ms rows as reset evidence.
     """
     sub = [r for r in rows if r[ms_idx] is not None]
     if len(sub) < 2:
         return None
-    ms_delta = cumulative_delta(sub, ms_idx)
+    lo_t, hi_t = sub[0][t_idx], sub[-1][t_idx]
+    span_rows = [r for r in rows if lo_t <= r[t_idx] <= hi_t]
+    ms_delta = cumulative_delta(span_rows, ms_idx)
     if not ms_delta:
         return None
-    prompt = cumulative_delta(sub, prompt_idx) or 0
-    reused = cumulative_delta(sub, reused_idx) or 0
+    prompt = cumulative_delta(span_rows, prompt_idx) or 0
+    reused = cumulative_delta(span_rows, reused_idx) or 0
     return round(max(0.0, prompt - reused) / ms_delta * 1000, 2)
 
 
@@ -1091,12 +1113,18 @@ def _iso_day(d):
 
 
 def db_hour_aggregates(con, lo, hi):
-    """Summarise poll rows in [lo, hi) anchored to the preceding boundary row."""
+    """Summarise poll rows in [lo, hi) anchored to the preceding boundary row.
+
+    M81-review-015 D3: like day_aggregates, the baseline must be recent. Without the bound
+    a retained row from before an outage gave this hour a span spanning the whole gap, so
+    its rates were divided by time in which nothing was being measured.
+    """
     # prompt_ms (index 13) is only read by prefill_weighted; rows written before the
     # column exists come back NULL, which keeps that figure None rather than guessed.
     base = con.execute(
         "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy, "
-        "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t < ? ORDER BY t DESC LIMIT 1", (lo,)).fetchone()
+        "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t < ? AND t >= ? ORDER BY t DESC LIMIT 1",
+        (lo, lo - HOUR_BASELINE_MAX_AGE_S)).fetchone()
     rows = con.execute(
         "SELECT t, tok_s, prefill, hit_pct, accept_pct, reqs, prompt_tokens, reused, output_tokens, power_w, busy, "
         "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t >= ? AND t < ? ORDER BY t", (lo, hi)).fetchall()
@@ -1341,6 +1369,9 @@ def db_timeseries(con, range_str="1h"):
                     # bucket is no longer forced to None.
                     "prefill_max": today_agg.get("prefill_max"),
                     "prefill_bounded": today_agg.get("prefill_bounded", False),
+                    # M81-review-015 D5: the frozen-day and gap branches both carry this key,
+                    # so the live day bucket must too or the two day branches disagree.
+                    "prefill_note": None,
                 })
             elif d in by_d:
                 r = by_d[d]

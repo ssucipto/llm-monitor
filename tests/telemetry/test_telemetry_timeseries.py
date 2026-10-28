@@ -79,20 +79,22 @@ expect("the observed buckets report their real sample counts",
 expect("the payload states how many buckets the range has",
        ts["n_buckets"] == len(ts["buckets"]) == 30, ts.get("n_buckets"))
 
-# M81-review S6: the gap branch of the day-range builder omitted two keys its sibling
-# always sets, so a consumer only survived by using .get(). Every bucket must carry the
-# same key set regardless of whether it was observed.
-gap_keys = None
+# M81-review S6 / review-015 D5: the gap branch of the day-range builder omitted two keys
+# its siblings always set, so a consumer only survived by using .get(). Comparing key SETS
+# (not hunting for two names) is what makes this hold for the next key anyone adds, and it
+# covers all three branches: today's live rollup, a frozen day, and a gap.
+shapes = {}
 for rng in ("7d", "30d", "90d"):
     for b in server.db_timeseries(con, rng)["buckets"]:
-        if not b["samples"]:
-            gap_keys = sorted(b)
-            break
-    if gap_keys:
-        break
-expect("a day-range gap bucket carries the same keys as an observed one",
-       gap_keys is not None and "prefill_bounded" in gap_keys and "prefill_note" in gap_keys,
-       gap_keys)
+        shapes.setdefault(rng, set()).add(tuple(sorted(b)))
+# One range, one key set: today's live rollup, a frozen day and a gap must all agree.
+divergent = {rng: sorted(s) for rng, s in shapes.items() if len(s) > 1}
+expect("every bucket in a day range carries the same key set",
+       bool(shapes) and not divergent, divergent)
+only = next(iter(next(iter(shapes.values()))))
+expect("the shared day-bucket key set includes the prefill disclosure keys",
+       {"prefill_bounded", "prefill_note", "prefill_max", "prefill_mean"} <= set(only),
+       list(only))
 
 # ---------- a33-19: the chart path bounds impossible prefill like every other path ----------
 con = fresh()

@@ -385,12 +385,23 @@ def main():
         problems.append("an-requests interpolates req_per_min without a null guard (renders 'null/min')")
     if not re.search(r'recent\.req_per_min != null', js):
         problems.append("app.js has no req_per_min null guard for the analysis row")
+    # review-015: hiding the rate entirely leaves "12" readable as "this panel only counts".
+    # The absence has to be stated, in the same n/a vocabulary the rest of the page uses.
+    if "rate n/a" not in js:
+        problems.append("the analysis row drops an uncomputable rate without saying so")
     if re.search(r'\$\{days\[0\]\.date\}|\$\{days\[N - 1\]\.date\}', js):
         problems.append("the history caption interpolates days[].date without a fallback (renders 'undefined')")
     bare_none = [ln.strip() for ln in js.splitlines()
                  if re.search(r'setText\("hud-(?:vram|power)-source", .*\|\| "none"\)', ln)]
     if bare_none:
         problems.append(f'a HUD source label prints a bare "none": {bare_none[:2]}')
+    # M81-review-015 D2: a fallback written as a double-quoted string inside a template
+    # literal prints its own ${...} to the user (the history bar title did exactly this).
+    dq = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+    raw_tmpl = [f"{i}: {m.group(0)[:70]}" for i, ln in enumerate(js.splitlines(), 1)
+                for m in dq.finditer(ln) if "${" in m.group(1)]
+    if raw_tmpl:
+        problems.append(f"a double-quoted literal contains uninterpolated template text: {raw_tmpl[:3]}")
     expect("null-safe-readouts", not problems, problems)
 
     # 18 — M81-review (A1/A2): the offline chart fallback reads lastStatsData, so it must be
@@ -426,10 +437,16 @@ def main():
     problems = []
     if re.search(r"observed\(b\)(?!\s*,)", js):
         problems.append("observed() is back to ignoring the value")
-    zero_draw = [ln.strip() for ln in js.splitlines()
-                 if re.search(r"drawSeries\(.*\|\| 0", ln)]
-    if zero_draw:
-        problems.append(f"a drawn series coerces a missing value with || 0: {zero_draw[:2]}")
+    # M81-review-015 D5-app: the values are built once in the SERIES map, so a `|| 0` would
+    # reappear there, not on a drawSeries( line. Scanning only the call sites left that rule dead.
+    series_block = re.search(r"const SERIES = \{([\s\S]*?)\};", js)
+    if not series_block:
+        problems.append("the SERIES map is gone, so nothing pins where drawn values are built")
+    else:
+        zero_draw = [ln.strip() for ln in series_block.group(1).splitlines()
+                     if re.search(r"\?\s*b\.\w+\s*\|\|\s*0", ln)]
+        if zero_draw:
+            problems.append(f"a drawn series coerces a missing value with || 0: {zero_draw[:2]}")
     # The legend's peak and the private scales must come from the drawn values, not the raw maxes.
     if "peakOf(SERIES.prefill)" not in js or "SERIES.prefill" not in js:
         problems.append("the prefill legend no longer discloses the drawn series' own peak")
@@ -450,10 +467,12 @@ def main():
         problems.append("thr-prefill-mean reads prefill_bounded off analysis.recent, not throughput")
     expect("chart-disclosure-honest", not problems, problems)
 
-    # 20 — M81-review (A7): wireDetail attached the beforematch/hashchange open behaviour to a
-    #     hardcoded id list, so a panel dragged into the Detail region lost that wiring. The set
-    #     must be derived from the region's own children at wire time, which is the same source of
-    #     truth drag/persistence already uses.
+    # 20 — M81-review (A7) + review-015: wireDetail attached beforematch/hashchange to a
+    #     hardcoded id list, so a panel dragged into the Detail region lost that wiring. Deriving
+    #     it from the region's children at wire time still missed a panel dragged in later in the
+    #     same session. beforematch bubbles (HTML ancestor revealing algorithm: "with the bubbles
+    #     attribute initialized to true"), so one delegated listener on the region is correct for
+    #     every panel, present or future.
     problems = []
     wd = re.search(r'function wireDetail\(\)\s*\{([\s\S]*?)\n\}', js)
     if not wd:
@@ -462,8 +481,13 @@ def main():
         body = wd.group(1)
         if re.search(r'for \(const id of \[[^\]]*\]\)', body):
             problems.append("wireDetail still iterates a hardcoded id list")
-        if ".tiles--detail" not in body or "region.children" not in body:
-            problems.append("wireDetail does not derive its panels from the region's children")
+        if ".tiles--detail" not in body:
+            problems.append("wireDetail no longer scopes itself to the Detail region")
+        if 'addEventListener("beforematch"' not in body:
+            problems.append("wireDetail no longer listens for beforematch")
+        if re.search(r'region\.children', body):
+            problems.append("wireDetail snapshots the region's children at wire time, which misses "
+                            "a panel dragged in later in the same session")
     expect("detail-wiring-derived", not problems, problems)
 
     # Cleanup last: check 15 also writes under static_tmp, so removing it with the server above

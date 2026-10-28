@@ -1031,6 +1031,7 @@ def main():
         assert any(re.fullmatch(r"\d{4}-\d\d-\d\d . [\d.]+ req/day", t) for t in bars["tips"]), (
             f"no bar title names its day and value ({bars['tips'][:3]!r})"
         )
+
         # y-axis unit on BOTH the axis title and the top gridline label, plus >=2 dated x ticks.
         # Selecting by text-anchor keeps the two assertions independent: a check satisfied by
         # either one would pass with the other removed (proven during this task).
@@ -1638,6 +1639,22 @@ def main():
         assert "300.0" in peak and "900" not in peak, (
             f"the prefill legend discloses a peak that is not the drawn line's ({peak!r})"
         )
+        # The disclosure must be more than text: the privately scaled line has to actually be
+        # drawn to that scale, i.e. its highest point sits on the top of the plot (y = pad.top).
+        # Without this, "scaled to peak X" and the divisor used by drawSeries could drift apart
+        # again and only the legend would look wrong in hindsight.
+        top = js(ws, """(() => {
+          const ln = [...document.querySelectorAll('#chart-series-lines polyline')]
+            .find(p => (p.getAttribute('stroke') || '') === '#3fb950');
+          if (!ln) return null;
+          const ys = (ln.getAttribute('points') || '').trim().split(/\\s+/)
+            .map(pt => parseFloat(pt.split(',')[1]));
+          return ys.length ? Math.min(...ys) : null;
+        })()""")
+        assert top is not None and abs(top - 25.0) < 0.6, (
+            f"the prefill line's peak is at y={top!r}, not at the plot top (25), so its "
+            f"disclosed scale ({peak!r}) is not the scale it was drawn to"
+        )
         # A8: the comment promises the last bucket is always dated; a second clause used to veto
         # it when the leftover gap was under half a stride (reachable at N=17, stride 3).
         ticks = js(ws, """(() => [...document.querySelectorAll('#chart-grid text')]
@@ -1647,6 +1664,101 @@ def main():
             ws.call("Page.removeScriptToEvaluateOnNewDocument",
                     {"identifier": ts_script["identifier"]})
         print("PASS chart-null-value-is-a-hole")
+
+        # 27. usage-ledger-renders (M81-review-015 D1) — the ledger's content is host-specific
+        #     (it reads whatever Claude Code / Hermes state exists), so no check here pinned it,
+        #     which is how a refactor could leave every successful fetch throwing and printing
+        #     "unavailable (u is not defined)" over numbers that had just loaded. Serving a
+        #     pinned /api/usage answer makes the whole path deterministic.
+        usage_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              if (!String(u).includes('api/usage')) return res;
+              return new Response(JSON.stringify({
+                window: {from: '2026-10-28T00:00:00Z', to: '2026-10-28T12:00:00Z'},
+                orchestrator: {sessions: 3}, executor: {input: 1200, output: 300},
+                weighted: {orchestrator: 4200},
+                sources: {claude_code: 'ok', hermes: 'ok'},
+                partial: false, generated_at: '2026-10-28T12:00:00Z',
+              }), {headers: {'content-type': 'application/json'}});
+            });
+          })();"""})
+        js(ws, "window.__m81_pre_usage_nav = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh8 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_usage_nav, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh8 = True
+                break
+            time.sleep(0.25)
+        assert fresh8, "never observed a fresh document on the usage-fixture page"
+        settle_usage(ws)
+        ledger = js(ws, """(() => {
+          const pick = (id) => { const e = document.getElementById(id); return e ? e.textContent : null; };
+          return {orch: pick('usage-day-orch'), exec: pick('usage-week-exec'),
+                  src: pick('usage-sources')};
+        })()""")
+        assert ledger["src"] is not None, "#usage-sources is missing from the page"
+        assert "unavailable" not in ledger["src"] and "not defined" not in ledger["src"], (
+            f"the ledger failed on a payload it was given ({ledger['src']!r})"
+        )
+        assert "Claude Code ok" in ledger["src"] and "Hermes ok" in ledger["src"], (
+            f"the fixture's sources did not reach the row ({ledger['src']!r})"
+        )
+        assert ledger["orch"] == "4.2 k weighted", (
+            f"#usage-day-orch reads {ledger['orch']!r} for a weighted total of 4200"
+        )
+        assert ledger["exec"] == "1.5 k tokens", (
+            f"#usage-week-exec reads {ledger['exec']!r} for 1200 in + 300 out"
+        )
+        if (usage_script or {}).get("identifier"):
+            ws.call("Page.removeScriptToEvaluateOnNewDocument",
+                    {"identifier": usage_script["identifier"]})
+        print("PASS usage-ledger-renders")
+
+        # 28. detail-wiring-follows-the-region (M81-review A7, residual gap from review-015) —
+        # wiring the region's children at init still missed a panel dragged in later in the
+        # same session: nothing re-attaches a listener after a drop. beforematch bubbles (the
+        # HTML ancestor-revealing algorithm fires it "with the bubbles attribute initialized to
+        # true"), so one delegated listener on the region covers every panel, present or future.
+        # The panel is moved with appendChild rather than a trusted drag because the property
+        # under test is purely whether the wiring follows the node into the region; the drop
+        # handler's effect on the DOM is the same move, and drag-persists already proves the drag.
+        wired = js(ws, """(() => {
+          const detail = document.getElementById('detail');
+          const region = detail.querySelector('.tiles--detail');
+          const panel = [...document.querySelector('.tiles').children]
+            .find(el => el.classList.contains('panel') && el.id !== 'detail');
+          if (!detail || !region || !panel) return null;
+          const moved = panel.id;
+          region.appendChild(panel);
+          detail.open = false;
+          // A bubbling beforematch is exactly what find-in-page / fragment navigation dispatches.
+          panel.dispatchEvent(new Event('beforematch', { bubbles: true }));
+          const openedByMoved = detail.open;
+          // And a hit on a panel that has been dragged OUT of the region must not open it.
+          detail.open = false;
+          const stillOutside = [...document.querySelector('.tiles').children]
+            .find(el => el.classList.contains('panel') && el.id !== 'detail' && el.id !== moved);
+          let openedByStranger = null;
+          if (stillOutside) {
+            stillOutside.dispatchEvent(new Event('beforematch', { bubbles: true }));
+            openedByStranger = detail.open;
+          }
+          region.removeChild(panel);
+          document.querySelector('.tiles').appendChild(panel);
+          return {moved, openedByMoved, openedByStranger};
+        })()""")
+        assert wired, "no panel available to move into the Detail region"
+        assert wired["openedByMoved"], (
+            f"beforematch on {wired['moved']!r}, moved into the region after init, did not open it"
+        )
+        assert wired["openedByStranger"] is False, (
+            f"a panel outside the region opened it ({wired['openedByStranger']!r})"
+        )
+        print("PASS detail-wiring-follows-the-region")
         return 0
     finally:
         for p in (proc, server):
