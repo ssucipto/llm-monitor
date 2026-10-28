@@ -543,7 +543,7 @@ function renderThroughput(throughput, history, analysis, totals) {
   if (preMean == null && totals && totals.prompt_tokens && totals.prompt_ms && totals.prompt_ms > 0) {
     preMean = Math.max(0, totals.prompt_tokens - (totals.reused || 0)) / (totals.prompt_ms / 1000);
   }
-  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s${analysis?.recent?.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
+  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s${throughput?.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
 
   const prePeak = (throughput && throughput.prefill_peak) ?? (rec && rec.prefill_max);
   setText("thr-prefill-peak", prePeak != null ? `${prePeak.toFixed(0)} tok/s` : "--");
@@ -733,7 +733,14 @@ function renderAnalysis(analysis, telemetry, totals) {
     return;
   }
   setText("an-window", `last ${Math.round((recent.span_s || 0) / 60)} min`);
-  setText("an-requests", recent.requests != null ? `${fmtInt(recent.requests)} · ${recent.req_per_min}/min` : "--");
+  // M81-review (S1): req_per_min is None when the window's span is under one sampling
+  // period (SPAN_FLOOR_S), which the live DB does produce (duplicate timestamps). The
+  // count is still real, so show it alone rather than "12 · null/min". Not a fake 0.
+  setText("an-requests", recent.requests != null
+    ? (recent.req_per_min != null
+        ? `${fmtInt(recent.requests)} · ${recent.req_per_min}/min`
+        : fmtInt(recent.requests))
+    : "--");
   setText("an-tok", recent.tok_s_mean != null ? `${recent.tok_s_mean.toFixed(1)} mean · ${(recent.tok_s_max ?? 0).toFixed(1)} peak` : "--");
   setText("an-prefill", recent.prefill_mean != null ? `${recent.prefill_mean.toFixed(0)} tok/s${recent.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
   // M81-T3 (a33-08): the window's OWN ratio, not a mean of session-cumulative per-poll
@@ -939,9 +946,12 @@ function wireDetail() {
   if (!detail) return;
   // M81-T6: only the Reference panels live in this region now. Attaching these to a panel that
   // moved into the main grid would open the region for an unrelated find-in-page hit.
-  for (const id of ["engine", "switch", "log"]) {
-    const el = $(id);
-    if (el) el.addEventListener("beforematch", () => { detail.open = true; });
+  // M81-review (A7): derive the ids from the region's own children, so a panel dragged
+  // into Detail keeps its beforematch wiring instead of relying on this list staying true.
+  const region = detail.querySelector(".tiles--detail") || detail;
+  for (const el of region.children) {
+    if (!el.id) continue;
+    el.addEventListener("beforematch", () => { detail.open = true; });
   }
   window.addEventListener("hashchange", () => {
     const target = location.hash.slice(1);
@@ -1063,7 +1073,14 @@ let prefillCeilingValue = PREFILL_CEILING_MIN;
 function prefillCeiling(samples) {
   const vals = (samples || []).filter((v) => v != null && v > 0).sort((a, b) => a - b);
   if (vals.length >= 5) {
-    const p95 = vals[Math.min(vals.length - 1, Math.floor(0.95 * (vals.length - 1)))];
+    // M81-review (A9): p95 by linear interpolation between ranks (the R-7 definition).
+    // The old index floor(0.95*(n-1)) read about p86 on an 8-sample series (p91 at
+    // n=24), biasing the ceiling low so a single high sample pegged the bar near 100% — the
+    // failure mode this ceiling exists to avoid. Nearest-rank would be worse at small n
+    // (p95 of 8 samples is simply their max), so the interpolated rank is used.
+    const rank = 0.95 * (vals.length - 1);
+    const lo = Math.floor(rank);
+    const p95 = vals[lo] + (rank - lo) * ((vals[lo + 1] ?? vals[lo]) - vals[lo]);
     const want = Math.max(PREFILL_CEILING_MIN, Math.ceil(p95 * 1.25));
     // Hysteresis: re-deriving the scale every poll would make bar movements meaningless,
     // so only adopt a ceiling that shifts the scale by more than 20%.
@@ -1186,7 +1203,7 @@ function periodLine(p) {
 function renderHistory(periods, daily, requests) {
   days = daily || [];
   setText("hist-window", days.length
-    ? `${days.length} recorded day(s) · ${days[0].date} → ${days.at(-1).date}`
+    ? `${days.length} recorded day(s) · ${days[0].date || "n/a"} → ${days.at(-1).date || "n/a"}`
     : "awaiting history");
 
   const reqPeriod = (periods && periods.request) || (() => {
@@ -1385,6 +1402,11 @@ function renderHistBars() {
       class: "hist-bar" + (i === scrubIdx ? " is-selected" : ""),
     });
     rect.dataset.day = String(i);
+    // M81-review (A6): the bar's value only appeared after a click, and the bars are
+    // cursor:pointer. A native SVG <title> gives hover/focus affordance with no listener.
+    const tip = svgElem("title");
+    tip.textContent = `${(d.date || "day ${i + 1}")} \u00b7 ${fmtNum(v, ` ${m.unit}`, v >= 100 ? 0 : 1)}`;
+    rect.appendChild(tip);
     svg.appendChild(rect);
   });
 
@@ -1409,8 +1431,11 @@ function renderHistBars() {
 
   if (caption) {
     const unmeasured = N - known.length;
+    // M81-review (A5): a day row without a date must not print "undefined" in the
+    // caption; the x ticks already guard with the same defensive form (line above).
+    const dstr = (d) => (d && d.date ? d.date : "n/a");
     caption.textContent =
-      `${N} recorded day${N === 1 ? "" : "s"} · ${days[0].date} → ${days[N - 1].date} · ` +
+      `${N} recorded day${N === 1 ? "" : "s"} \u00b7 ${dstr(days[0])} \u2192 ${dstr(days[N - 1])} \u00b7 ` +
       `peak ${fmtNum(peak, ` ${m.unit}`, peak >= 100 ? 0 : 1)}` +
       (unmeasured > 0 ? ` · ${unmeasured} day${unmeasured === 1 ? "" : "s"} with no ${m.label}` : "");
   }
@@ -1681,7 +1706,9 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   setText("chart-sum-prefill-hint",
     sum.prefill_max != null
       ? `mean · peak ${sum.prefill_max.toFixed(0)}${sum.prefill_bounded ? " · bounded" : ""}`
-      : (sum.prefill_mean != null ? "mean · peak n/a" : "mean / peak"));
+      // M81-review (A12): the shown mean can be bounded even when no peak exists, so the
+      // tag belongs on this branch too rather than vanishing with the peak.
+      : (sum.prefill_mean != null ? `mean · peak n/a${sum.prefill_bounded ? " · bounded" : ""}` : "mean / peak"));
   // a33-20: every number above is scoped to this window, so the window is stated.
   setText("chart-sum-window",
     `${data.range} · ${data.n_buckets ?? buckets.length} buckets of ${fmtBucket(data.bucket_s)}`
@@ -1720,8 +1747,32 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     return;
   }
 
+  // M81-review (A4): a bucket is observed only if it holds samples AND the value for
+  // this series is not null. A sampled bucket with a null rate (a quiet day rolls up
+  // null since M81-T3) is a hole in that series, never a definite zero point.
+  const observed = (b, v) => Boolean(b.samples) && v != null;
+
+  // One source of truth per series: the exact values that get drawn. The legend's
+  // "scaled to peak" and every private scale are derived from these, so the disclosed
+  // peak is the highest point actually on the line (M81-review A3: it used to be read
+  // from tok_s_max / prefill_max while the drawn series uses means, overstating it).
+  const SERIES = {
+    tokens: buckets.map((b) => (observed(b, b.total_tokens) ? b.total_tokens : null)),
+    reqs: buckets.map((b) => (observed(b, b.requests) ? b.requests : null)),
+    tok: buckets.map((b) => (observed(b, b.tok_s_mean) ? b.tok_s_mean : null)),
+    prefill: buckets.map((b) => (observed(b, b.prefill_mean) ? b.prefill_mean : null)),
+  };
+  const peakOf = (vals) => Math.max(0, ...vals.filter((v) => v != null));
+  const seriesPeak = {
+    tok: peakOf(SERIES.tok),
+    prefill: peakOf(SERIES.prefill),
+    tokens: peakOf(SERIES.tokens),
+    reqs: peakOf(SERIES.reqs),
+  };
+
+  // Axis floors for the primary (axis-owning) series. The axis carries labelled
+  // gridlines, so sizing it from the window's peak readings is honest either way.
   const maxTok = Math.max(1, ...buckets.map(b => b.tok_s_max || b.tok_s_mean || 0));
-  const maxPrefill = Math.max(1, ...buckets.map(b => b.prefill_max || b.prefill_mean || 0));
   const maxTokens = Math.max(1, ...buckets.map(b => b.total_tokens || 0));
   const maxReqs = Math.max(1, ...buckets.map(b => b.requests || 0));
 
@@ -1730,14 +1781,6 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   // series states its own peak in the legend, so no line's height is left unexplained.
   const METRIC_UNIT = { throughput: "tok/s", tokens: "tokens", requests: "req", all: "tokens" };
   const unit = METRIC_UNIT[metric] || "";
-  const seriesPeak = {
-    // Raw maxima for display, without the Math.max(1, …) axis floors above: a series
-    // with no data must read "no data", not "scaled to peak 1".
-    tok: Math.max(0, ...buckets.map(b => (b.tok_s_max ?? b.tok_s_mean) ?? 0)),
-    prefill: Math.max(0, ...buckets.map(b => (b.prefill_max ?? b.prefill_mean) ?? 0)),
-    tokens: Math.max(0, ...buckets.map(b => b.total_tokens || 0)),
-    reqs: Math.max(0, ...buckets.map(b => b.requests || 0)),
-  };
 
   let primaryMax = 100;
   if (metric === "throughput") {
@@ -1764,11 +1807,11 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     gGrid.appendChild(line);
 
     const val = primaryMax * frac;
-    let labelText = "";
+    // M81-review (A10): a metric that is not one of the four wired tabs must still get a
+    // labelled axis. The fallback keeps the gridline numbers from ever going blank.
+    let labelText = `${Math.round(val)}`;
     if (metric === "throughput") {
       labelText = `${val.toFixed(0)}`;
-    } else if (metric === "requests") {
-      labelText = `${Math.round(val)}`;
     } else if (metric === "tokens" || metric === "all") {
       labelText = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M` : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k` : `${Math.round(val)}`;
     }
@@ -1818,11 +1861,11 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
 
   // M81-T4 (a33-20): a fixed stride of floor(N/6) gave every range a different label
   // density and never dated the right edge. Derive the stride for ~6 labels and always
-  // include the last bucket.
+  // include the last bucket so the right edge of the plot is dated.
   const xStep = Math.max(1, Math.round(N / 6));
   const xIdx = [];
   for (let i = 0; i < N; i += xStep) xIdx.push(i);
-  if (xIdx[xIdx.length - 1] !== N - 1 && N - 1 - xIdx[xIdx.length - 1] >= xStep * 0.5) xIdx.push(N - 1);
+  if (xIdx[xIdx.length - 1] !== N - 1) xIdx.push(N - 1);
   xIdx.forEach((i) => {
     const b = buckets[i];
     const x = getX(i);
@@ -1870,31 +1913,35 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     flush();
   };
 
-  // Observed means unobserved buckets are holes: no samples at all, or a null rate for
-  // a bucket that was sampled (a quiet day rolls up null since M81-T3).
-  const observed = (b) => Boolean(b.samples);
-
+  // M81-review (A4): a null value is a hole, so each series draws only its observed
+  // points (drawSeries breaks the polyline at a null). No `|| 0` anywhere: a missing
+  // reading must never render as a definite zero.
   if (metric === "all" || metric === "tokens") {
-    drawSeries(buckets.map((b) => (observed(b) ? b.total_tokens || 0 : null)), primaryMax,
+    drawSeries(SERIES.tokens, primaryMax,
                { stroke: "#bc8cff", width: "2", areaFill: "url(#chart-grad-tokens)" });
   }
 
   if (metric === "all" || metric === "requests") {
-    const rMax = metric === "requests" ? primaryMax : Math.max(maxReqs, 1);
-    drawSeries(buckets.map((b) => (observed(b) ? b.requests || 0 : null)), rMax,
+    // A privately scaled series is scaled by the peak the legend discloses, so the
+    // highest point on the line really does sit at the top of the plot.
+    const rMax = metric === "requests" ? primaryMax : Math.max(seriesPeak.reqs, 1);
+    drawSeries(SERIES.reqs, rMax,
                { stroke: "#d29922", width: metric === "requests" ? "2.2" : "1.8",
                  dash: metric === "all" ? "4,3" : null,
                  areaFill: metric === "requests" ? "url(#chart-grad-reqs)" : null });
   }
 
   if (metric === "all" || metric === "throughput") {
-    const tMax = metric === "throughput" ? primaryMax : Math.max(maxTok, 1);
-    drawSeries(buckets.map((b) => (observed(b) ? b.tok_s_mean : null)), tMax,
+    const tMax = metric === "throughput" ? primaryMax : Math.max(seriesPeak.tok, 1);
+    drawSeries(SERIES.tok, tMax,
                { stroke: "#58a6ff", width: "2.2",
                  areaFill: metric === "throughput" ? "url(#chart-grad-tok)" : null });
 
-    const pMax = metric === "throughput" ? Math.max(maxPrefill * 1.15, 100) : Math.max(maxPrefill, 1);
-    drawSeries(buckets.map((b) => (observed(b) ? b.prefill_mean : null)), pMax,
+    // A privately scaled series is scaled by exactly the peak its legend discloses, so
+    // "scaled to peak X" is literally true: the highest point on the line sits at the
+    // top of the plot (M81-review A3).
+    const pMax = Math.max(seriesPeak.prefill, 1);
+    drawSeries(SERIES.prefill, pMax,
                { stroke: "#3fb950", width: "1.8" });
   }
 
@@ -2066,6 +2113,12 @@ async function refresh() {
   // x-axis with the real interval rather than the per-poll default (r3-01).
   if (data.history_bucket_s) historyBucketMs = data.history_bucket_s * 1000;
 
+  // M81-review (A1): the offline chart fallback reads lastStatsData. Stamping it after
+  // the render block meant a render that threw halfway left it null, so the next failed
+  // poll fell back to an empty history and drew nothing while still stamping success.
+  // The data is fetched; the fallback may use it whether or not every panel rendered.
+  lastStatsData = data;
+
   renderEngine(data.engine, data.config);
   renderLive(data.live, data.status);
   renderContext(data.context);
@@ -2086,7 +2139,6 @@ async function refresh() {
   renderHistory(data.periods, data.daily, data.requests);
   renderHud(data);
 
-  lastStatsData = data;
   // M81-T8 (a32-02): marks the poll whose values are now on screen. The suite waits for this
   // instead of sleeping, which is also what lets a check prove a seeded DB row or a pinned
   // fixture actually reached the DOM. Stamped before layoutAll so a masonry pass always
@@ -2219,7 +2271,7 @@ function renderHud(data) {
   const gpu = data.gpu || {};
   // M81-T2 (a33-04): report the source the server sent; inventing one hides the difference
   // between "derived from vram_free_mib" and "we have no idea".
-  setText("hud-vram-source", gpu.mem_source || "none");
+  setText("hud-vram-source", gpu.mem_source || "not reported");
   setText("hud-vram-val", gpu.mem_pct != null ? `${gpu.mem_pct.toFixed(0)}%` : "--");
   setMeter("hud-vram-gauge", gpu.mem_pct);
   const vramVal = $("hud-vram-val");
@@ -2236,7 +2288,7 @@ function renderHud(data) {
 
   // Power Card
   const pw = data.power || {};
-  setText("hud-power-source", pw.source || "none");
+  setText("hud-power-source", pw.source || "not reported");
   setText("hud-power-val", pw.total_w != null ? `${pw.total_w} W` : "--");
   // rated_w is the server's alias of peak_w; before M81-T2 it did not exist, so this gauge was
   // permanently zero. Guard with != null: a genuine 0 W reading must still size the gauge.
@@ -2398,25 +2450,38 @@ async function fetchUsage() {
   const iso = (d) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
   const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const week = new Date(now.getTime() - 7 * 86400000);
+  let wrote = false;
   try {
     for (const [key, from] of [["day", day], ["week", week]]) {
       const r = await fetch(`/api/usage?from=${iso(from)}&to=${iso(now)}`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const u = await r.json();
-      $(`usage-${key}-orch`).textContent = u.weighted.orchestrator == null ? "unavailable" : `${fmtTok(u.weighted.orchestrator)} weighted`;
-      $(`usage-${key}-exec`).textContent = u.executor ? `${fmtTok(u.executor.input + u.executor.output)} tokens` : "unavailable";
-      $("usage-sources").textContent = `Claude Code ${u.sources.claude_code}, Hermes ${u.sources.hermes}${u.partial ? " (catching up)" : ""}`;
+      // M81-review (A2): every element here is optional in the DOM. setText() already
+      // tolerates a missing node; writing through $() directly did not, and one missing
+      // id aborted the whole ledger and left the rest at "--".
+      setText(`usage-${key}-orch`, u.weighted.orchestrator == null ? "unavailable" : `${fmtTok(u.weighted.orchestrator)} weighted`);
+      setText(`usage-${key}-exec`, u.executor ? `${fmtTok(u.executor.input + u.executor.output)} tokens` : "unavailable");
+      wrote = true;
     }
+    setText("usage-sources", `Claude Code ${u.sources.claude_code}, Hermes ${u.sources.hermes}${u.partial ? " (catching up)" : ""}`);
   } catch (err) {
     console.error(err);
-    $("usage-sources").textContent = `unavailable (${err.message})`;
+    setText("usage-sources", `unavailable (${err.message})`);
+    // The failure line replaces text too, so the tile's height may have changed and the
+    // spans still have to be recomputed.
+    wrote = true;
   }
   // M81-T8 (a32-02): the ledger text is longer than the "--" it replaces, so the panel grows.
   // switchView re-spans for the same reason — a tile's span must not depend on when the
   // ResizeObserver happens to fire, or the row underneath it is measured against a stale span.
   // The stamp lets the UI suite require that a layout pass happened AFTER the ledger landed.
-  window.__lastUsage = Date.now();
-  queueLayout();
+  // M81-review (A2): the guard is only that some text was written. The suite's geometry
+  // waits treat __lastUsage as a content stamp that a layout pass must post-date, so a
+  // stamp with no matching pass would leave spans unproven — never stamp without spanning.
+  if (wrote) {
+    window.__lastUsage = Date.now();
+    queueLayout();
+  }
 }
 
 async function init() {

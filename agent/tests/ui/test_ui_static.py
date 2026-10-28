@@ -23,6 +23,10 @@ Checks
  14 gauge-scale-labelled the prefill gauge's scale is named in markup and driven from data (a33-27)
  15 engine-fixture-honoured LLM_MONITOR_FIXTURE answers _get_json, and a bad fixture aborts startup (a33-35)
  16 geometry-read-settled every viewport change is followed by a settle, not a fixed sleep (a32-02)
+ 17 null-safe-readouts no readout prints null/undefined/bare "none" (M81 review S1/A5/A13)
+ 18 offline-fallback-and-ledger lastStatsData is set before rendering; the ledger writes via setText (A1/A2)
+ 19 chart-disclosure-honest the legend names the drawn scale, no missing value draws a zero (A3/A4/A9/A10/A12)
+ 20 detail-wiring-derived wireDetail derives its panels from the region's children, not a fixed list (A7)
 """
 import json
 import os
@@ -370,6 +374,97 @@ def main():
         if stamp not in read("app.js"):
             problems.append(f"app.js no longer exposes the {stamp} observable the suite waits on")
     expect("geometry-read-settled", not problems, problems)
+
+    # 17 — M81-review (S1/A5/A13): a readout must never print the word "null", "undefined" or a
+    #     bare "none". Each of these was a real rendering on this PC's data: req_per_min is None
+    #     whenever a window's span is under one sampling period (the live DB holds duplicate
+    #     timestamps), a day row without a date reached the caption, and the HUD source labels
+    #     read "none", which reads as a claim rather than an absence.
+    problems = []
+    if re.search(r'recent\.requests != null \? `\$\{fmtInt\(recent\.requests\)\} . \$\{recent\.req_per_min\}/min`', js):
+        problems.append("an-requests interpolates req_per_min without a null guard (renders 'null/min')")
+    if not re.search(r'recent\.req_per_min != null', js):
+        problems.append("app.js has no req_per_min null guard for the analysis row")
+    if re.search(r'\$\{days\[0\]\.date\}|\$\{days\[N - 1\]\.date\}', js):
+        problems.append("the history caption interpolates days[].date without a fallback (renders 'undefined')")
+    bare_none = [ln.strip() for ln in js.splitlines()
+                 if re.search(r'setText\("hud-(?:vram|power)-source", .*\|\| "none"\)', ln)]
+    if bare_none:
+        problems.append(f'a HUD source label prints a bare "none": {bare_none[:2]}')
+    expect("null-safe-readouts", not problems, problems)
+
+    # 18 — M81-review (A1/A2): the offline chart fallback reads lastStatsData, so it must be
+    #     assigned when the data arrives and not only after every panel rendered (a render that
+    #     threw left it null, and the next failed poll then drew nothing while still stamping
+    #     success). And the usage ledger must write through setText, which tolerates a missing
+    #     node — a bare $().textContent aborted the whole ledger on one missing id.
+    problems = []
+    refresh_src = js[js.index("async function refresh()"):] if "async function refresh()" in js else ""
+    if not refresh_src:
+        problems.append("refresh() is gone — the stamp-order check has nothing to read")
+    else:
+        head = refresh_src[:refresh_src.index("renderEngine(")] if "renderEngine(" in refresh_src else ""
+        if "lastStatsData = data" not in head:
+            problems.append("lastStatsData is assigned after the render block, so a throwing render "
+                            "leaves the offline fallback with nothing")
+    usage_src = js[js.index("async function fetchUsage()"):] if "async function fetchUsage()" in js else ""
+    if not usage_src:
+        problems.append("fetchUsage() is gone")
+    else:
+        usage_body = usage_src[:usage_src.index("\n}\n") + 2] if "\n}\n" in usage_src else usage_src
+        bare = [ln.strip() for ln in usage_body.splitlines()
+                if re.search(r'\$\(`?usage-[^"]*`?\)\.textContent', ln)]
+        if bare:
+            problems.append(f"the usage ledger writes through $() with no null guard: {bare[:2]}")
+        if "setText(`usage-" not in usage_body and 'setText("usage-' not in usage_body:
+            problems.append("the usage ledger no longer writes through setText")
+    expect("offline-fallback-and-ledger", not problems, problems)
+
+    # 19 — M81-review (A3/A4/A9/A10/A12): the chart must disclose the scale it actually drew and
+    #     must never turn a missing reading into a definite zero. These are source-level rules
+    #     because they hold for every payload shape, not one seeded window.
+    problems = []
+    if re.search(r"observed\(b\)(?!\s*,)", js):
+        problems.append("observed() is back to ignoring the value")
+    zero_draw = [ln.strip() for ln in js.splitlines()
+                 if re.search(r"drawSeries\(.*\|\| 0", ln)]
+    if zero_draw:
+        problems.append(f"a drawn series coerces a missing value with || 0: {zero_draw[:2]}")
+    # The legend's peak and the private scales must come from the drawn values, not the raw maxes.
+    if "peakOf(SERIES.prefill)" not in js or "SERIES.prefill" not in js:
+        problems.append("the prefill legend no longer discloses the drawn series' own peak")
+    if re.search(r"Math\.floor\(0\.95 \* \(vals\.length - 1\)\)", js):
+        problems.append("the gauge percentile is back to the off-by-one index (about p86 at n=8)")
+    if "0.95 * (vals.length - 1)" not in js:
+        problems.append("prefillCeiling no longer interpolates the p95 rank")
+    # An unknown metric must still get labelled gridlines, never a blank axis.
+    axis_block = js[js.index('let labelText'):] if "let labelText" in js else ""
+    if axis_block and not re.match(r"\s*let labelText = `\$\{Math\.round\(val\)\}`;", axis_block):
+        problems.append("the y-axis label starts empty again, so an unwired metric draws a blank axis")
+    # The bounded tag must survive the "peak n/a" branch (A12).
+    na_branch = re.search(r'`mean . peak n/a\$\{([^}]*)\}`', js)
+    if not na_branch or "prefill_bounded" not in na_branch.group(1):
+        problems.append("the bounded tag disappears when the peak is absent (a33-19/A12)")
+    # thr-prefill-mean's tag must come from the object whose figure it shows (A11).
+    if re.search(r'setText\("thr-prefill-mean".*analysis\?\.recent\?\.prefill_bounded', js):
+        problems.append("thr-prefill-mean reads prefill_bounded off analysis.recent, not throughput")
+    expect("chart-disclosure-honest", not problems, problems)
+
+    # 20 — M81-review (A7): wireDetail attached the beforematch/hashchange open behaviour to a
+    #     hardcoded id list, so a panel dragged into the Detail region lost that wiring. The set
+    #     must be derived from the region's own children at wire time, which is the same source of
+    #     truth drag/persistence already uses.
+    problems = []
+    wd = re.search(r'function wireDetail\(\)\s*\{([\s\S]*?)\n\}', js)
+    if not wd:
+        problems.append("wireDetail() is gone")
+    else:
+        body = wd.group(1)
+        if re.search(r'for \(const id of \[[^\]]*\]\)', body):
+            problems.append("wireDetail still iterates a hardcoded id list")
+        if ".tiles--detail" not in body or "region.children" not in body:
+            problems.append("wireDetail does not derive its panels from the region's children")
+    expect("detail-wiring-derived", not problems, problems)
 
     # Cleanup last: check 15 also writes under static_tmp, so removing it with the server above
     # would take that path away. Best-effort, since a passing run must not fail on a locked file.

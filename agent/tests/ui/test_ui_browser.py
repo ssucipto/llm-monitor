@@ -1011,6 +1011,9 @@ def main():
           if (!svg) return null;
           return {
             rects: svg.querySelectorAll('rect.hist-bar').length,
+            // M81-review (A6): the bars are cursor:pointer but had no hover affordance, so
+            // a value only appeared after a click. Each rect must carry a <title>.
+            tips: [...svg.querySelectorAll('rect.hist-bar > title')].map(t => t.textContent.trim()),
             texts: [...svg.querySelectorAll('text')].map(t => t.textContent.trim()),
             caption: (document.getElementById('hist-bars-caption') || {}).textContent || '',
             first: (document.getElementById('hist-scrub-first') || {}).textContent || '',
@@ -1021,6 +1024,12 @@ def main():
         assert bars, "#hist-bars is missing from the page"
         assert bars["rects"] >= len(hist_days), (
             f"expected >= {len(hist_days)} bars for the seeded days, got {bars['rects']}"
+        )
+        assert len(bars["tips"]) == bars["rects"], (
+            f"{bars['rects']} bars but only {len(bars['tips'])} carry a hover title"
+        )
+        assert any(re.fullmatch(r"\d{4}-\d\d-\d\d . [\d.]+ req/day", t) for t in bars["tips"]), (
+            f"no bar title names its day and value ({bars['tips'][:3]!r})"
         )
         # y-axis unit on BOTH the axis title and the top gridline label, plus >=2 dated x ticks.
         # Selecting by text-anchor keeps the two assertions independent: a check satisfied by
@@ -1334,8 +1343,9 @@ def main():
                 if (j.totals) j.totals.since = window.__m81_bad_since
                   ? 'not a timestamp' : (Date.now() / 1000 - 11520);
                 if (j.engine) j.engine.build_info = 'Strata 9.9.99-test';
-                // A prefill series whose p95 is 1,000 tok/s. The gauge scale must follow it
-                // (1.25x = 1,250), which the old hardcoded 2000 could never produce.
+                // A prefill series whose interpolated p95 is 1,032.5 tok/s. The gauge scale
+                // must follow it (1.25x = 1,291), which the old hardcoded 2000 could never
+                // produce and the old off-by-one index (p91 -> 1,250) does not match either.
                 if (j.history) j.history.prefill = [120, 300, 450, 640, 800, 900, 1000, 1050];
                 if (j.throughput) j.throughput.prefill = 345;
                 return new Response(JSON.stringify(j), {headers: {'content-type': 'application/json'}});
@@ -1383,19 +1393,19 @@ def main():
         assert head["build"] == "Strata 9.9.99-test", (
             f"the header build string reads {head['build']!r}"
         )
-        assert re.search(r"gauge to 1,?250", head["scale"] or ""), (
+        assert re.search(r"gauge to 1,?291", head["scale"] or ""), (
             f"the gauge scale is not derived from the series ({head['scale']!r}); it must follow "
-            f"the pinned p95 of 1,000 tok/s, not a hardcoded constant"
+            f"the interpolated p95 of the fixture series (1,032.5 tok/s), not a hardcoded constant"
         )
         assert "2,000" not in (head["scale"] or "") and "2000" not in (head["scale"] or ""), (
             f"the gauge still prints the old hardcoded 2000 tok/s ceiling ({head['scale']!r})"
         )
-        assert "1,250" in head["aria"] and "345" in head["aria"], (
+        assert "1,291" in head["aria"] and "345" in head["aria"], (
             f"the gauge's accessible label does not name the reading and its scale: {head['aria']!r}"
         )
-        # 345 of a 1,250 ceiling is ~28% — visible movement, where the old scale pinned it at 17%.
-        assert head["w"] and abs(float(head["w"].rstrip("%")) - 27.6) < 1.0, (
-            f"the gauge fill is {head['w']!r} for 345 tok/s against a 1,250 ceiling"
+        # 345 of a 1,291 ceiling is ~27% — visible movement, where the old scale pinned it at 17%.
+        assert head["w"] and abs(float(head["w"].rstrip("%")) - 26.7) < 1.0, (
+            f"the gauge fill is {head['w']!r} for 345 tok/s against a 1,291 ceiling"
         )
         # An unparseable `since` must degrade to "--", never to a NaN duration.
         js(ws, "window.__m81_bad_since = true")
@@ -1546,6 +1556,97 @@ def main():
                 fx_server.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 fx_server.kill()
+
+        # 26. chart-null-value-is-a-hole (M81-review A3/A4) — the renderer's contract, pinned with
+        #     a payload no live DB can produce deterministically: a bucket that WAS sampled but
+        #     holds null values. The old code drew `b.total_tokens || 0`, i.e. a definite zero on
+        #     the plot floor for a reading that simply does not exist, and the legend disclosed
+        #     prefill_max while the drawn line uses prefill_mean, overstating the scale.
+        #     A page-level fetch rewrite is the right tool here: this tests what drawSeries does
+        #     with a value, not what the server chooses to emit.
+        ts_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              if (!String(u).includes('api/timeseries')) return res;
+              const b = (i, v) => ({
+                t: 1792512000 + i * 60, time: '2026-10-22T00:0' + i + ':00Z',
+                label: 'b' + i, samples: 2,
+                requests: v ? v * 3 : null, prompt_tokens: v ? v * 10 : null,
+                reused: 0, output_tokens: v ? v * 5 : null, total_tokens: v ? v * 15 : null,
+                tok_s_mean: v ? v * 20 : null, tok_s_max: v ? v * 22 : null,
+                // prefill_max is deliberately 900 while the drawn mean is far lower: the legend
+                // must disclose the peak of the line, not of an undrawn series.
+                prefill_mean: v ? v * 100 : null, prefill_max: v ? 900 : null,
+                prefill_bounded: false, prefill_note: null,
+              });
+              // 17 buckets: the label stride is round(17/6)=3, so the last index lands at 15 and
+              // the right-edge date is exactly the case a ">= half a stride" veto would drop.
+              const vals = [];
+              for (let i = 0; i < 17; i++) vals.push(i === 8 ? null : (i % 3) + 1);
+              const buckets = vals.map((v, i) => b(i, v));
+              // Highest drawn prefill_mean is 3 x 100 = 300 while every drawn prefill_max would
+              // say 900, so the A3 assertion below cannot be satisfied by the undrawn series.
+              return new Response(JSON.stringify({
+                range: '1h', span_s: 1020, bucket_s: 60, n_buckets: 17, empty_buckets: 0,
+                buckets,
+                summary: {total_requests: 54, total_tokens: 270, prompt_tokens: 180,
+                          output_tokens: 90, reused_tokens: 0, tok_s_mean: 50, tok_s_max: 60,
+                          prefill_mean: 150, prefill_max: 900},
+              }), {headers: {'content-type': 'application/json'}});
+            });
+          })();"""})
+        js(ws, "window.__m81_pre_ts_nav = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh7 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_ts_nav, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh7 = True
+                break
+            time.sleep(0.25)
+        assert fresh7, "never observed a fresh document on the timeseries-fixture page"
+        # A range-button click forces the fetch (the 5 s throttle would otherwise reuse data).
+        fetch_stamp = js(ws, "window.__lastChartFetch || 0")
+        js(ws, """(() => {
+          const b = document.querySelector("#chart-range-btns .chart-range-btn[data-range='1h']");
+          if (b) b.click();
+        })()""")
+        settle_chart(ws, fetch_stamp, "the forced 1h fetch under the timeseries fixture")
+
+        # A4: a sampled bucket whose value is null must be a hole. A point on the plot floor
+        # (y = pad.top + chartH = 25 + 240) is what `|| 0` used to draw for it.
+        tok_stamp = js(ws, "window.__lastChartRender || 0")
+        js(ws, "document.querySelector('#chart-metric-tabs .chart-tab[data-metric=tokens]').click()")
+        settle(ws, "(window.__lastChartRender || 0) > %d" % int(tok_stamp),
+               "the tokens re-render under the timeseries fixture")
+        floor = js(ws, """(() => {
+          const pts = [...document.querySelectorAll('#chart-series-lines polyline')]
+            .flatMap(p => (p.getAttribute('points') || '').trim().split(/\\s+/));
+          return pts.filter(pt => Math.abs(parseFloat(pt.split(',')[1]) - 265.0) < 0.6);
+        })()""")
+        assert not floor, (
+            f"a sampled bucket with a null value drew a point on the plot floor ({floor[:4]!r})"
+        )
+        # A3: the prefill line is drawn from prefill_mean, so its disclosure must name the peak
+        # of THAT line (3 x 100 = 300.0), never the undrawn prefill_max (900).
+        thr_stamp = js(ws, "window.__lastChartRender || 0")
+        js(ws, "document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]').click()")
+        settle(ws, "(window.__lastChartRender || 0) > %d" % int(thr_stamp),
+               "the throughput legend under the timeseries fixture")
+        peak = js(ws, "(document.querySelector('#chart-legend .legend-prefill .legend-peak') || {}).textContent || ''")
+        assert "300.0" in peak and "900" not in peak, (
+            f"the prefill legend discloses a peak that is not the drawn line's ({peak!r})"
+        )
+        # A8: the comment promises the last bucket is always dated; a second clause used to veto
+        # it when the leftover gap was under half a stride (reachable at N=17, stride 3).
+        ticks = js(ws, """(() => [...document.querySelectorAll('#chart-grid text')]
+            .map(t => (t.textContent || '').trim()).filter(s => /^b\\d+$/.test(s)))()""")
+        assert "b16" in ticks, f"the right edge of the plot is undated ({ticks!r})"
+        if (ts_script or {}).get("identifier"):
+            ws.call("Page.removeScriptToEvaluateOnNewDocument",
+                    {"identifier": ts_script["identifier"]})
+        print("PASS chart-null-value-is-a-hole")
         return 0
     finally:
         for p in (proc, server):
