@@ -646,6 +646,29 @@ progress:
 recent_work:
   - date: 2026-10-28
     description: |
+      M81 review round 2 — reviewing my own remediation (diff-style over 36ec53a..66b8711). The second
+      pass found real defects INTRODUCED by the first pass, which is why the loop is run twice rather
+      than once. Two are high: fetchUsage read a variable after the loop that declared it, so every
+      successful usage fetch threw and the Sources row printed "unavailable (u is not defined)"; and
+      weighted_prefill_rate filtered BOTH sides of the ratio to prompt_ms-bearing rows, which deleted
+      the NULL middle row cumulative_delta uses to segment counter resets, collapsing the rate to a
+      fake 0.0 — worse than the inflation it was written to fix. The hour aggregate path still had an
+      unbounded baseline (a one-hour window reported span_s = 173,400). All nine findings fixed and
+      mutation-proven; every gate re-run green at HEAD.
+    items:
+      - "✅ D-015-01 (high, regression I introduced): fetchUsage read u outside the for loop that declared it -> ReferenceError on every successful fetch, Sources row printed 'unavailable (u is not defined)'. Hoisted let last = null; also deleted the wrote guard, which was dead code (true on every reachable path). Proven: browser usage-ledger-renders"
+      - "✅ D-015-02 (high): weighted_prefill_rate filtered both sides to prompt_ms rows, so cumulative_delta lost a counter-reset segment and the rate became a fake 0.0. The shared thing is the TIME SPAN, not the row list: take the span from the prompt_ms rows, then sum all counters inside that span"
+      - "✅ D-015-03: db_hour_aggregates kept an unbounded baseline after S-015-03 bounded the day path — a one-hour window measured span_s = 173,400 (~48 h). HOUR_BASELINE_MAX_AGE_S = 3600 added"
+      - "✅ D-015-04: \"day ${i + 1}\" was a double-quoted literal and printed the raw ${...}; static rule added rejecting any double-quoted literal containing ${"
+      - "✅ D-015-05: the today day-branch omitted prefill_note and the old test only asserted the string appeared somewhere; the key added and the test now compares KEY SETS across all three day branches"
+      - "✅ D-015-06: A-015-07 derived the Detail wiring at wire time, so panels dragged in later stayed unwired. Replaced with one delegated listener on .tiles--detail after verifying against the HTML spec that beforematch bubbles"
+      - "✅ D-015-07: the || 0 static rule had gone dead after the SERIES refactor (it scanned a code shape that no longer existed and passed vacuously); re-pointed at the SERIES map where the coercion would reappear. D-015-08 S1 fallback now says 'rate n/a'; D-015-09 the rounding assertion pins the invariant, not a fixture literal"
+      - "✅ 10 round-2 mutations proven (drivers must run the INDIVIDUAL suite files — run-tests.py truncates a failing suite to its last 20 lines and made one probe report NOT PROVEN falsely)"
+      - "✅ gates re-run green at 66b8711: ui browser 28/28 + static 20/20 PASS · telemetry 41/25/27 rc_all=0 · usage 5/33 rc_all=0 · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS 6/6 · acp-validate.ts PASS 0 warnings (canonical 0.3.0)"
+      - "✅ review-015 extended with the round-2 section; the stale probe figure in its S-015-04 row corrected to the proven values (3000.0 inflated vs 1000.0 honest)"
+      - "⏳ a33-37 still pending (Strata/llama log tailing) — unchanged, needs its own task"
+  - date: 2026-10-28
+    description: |
       M81 review + remediation (review-015, diff-style over 3f3b368..HEAD). Two diff-review passes
       produced 20 candidate findings (server S1-S7, app A1-A13); every one was re-checked against the
       working tree before acting, and one reviewer claim was a false positive. The theme is the same as

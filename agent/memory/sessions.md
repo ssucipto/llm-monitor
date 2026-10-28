@@ -5,6 +5,27 @@
 - date: 2026-10-28
   executor: zed
   branch: main
+  tasks: ["review-015 round 2 (self-review of 36ec53a..66b8711)"]
+  done:
+    - "D-015-01 (high, a regression the previous commit introduced): fetchUsage read u after the for loop that declared it, so every successful usage fetch threw ReferenceError and the Sources row printed 'unavailable (u is not defined)'. Fixed with let last = null hoisted above the loop; the wrote guard was deleted as dead code because it is true on every reachable path"
+    - "D-015-02 (high): my own weighted_prefill_rate filtered BOTH sides of the ratio to prompt_ms-bearing rows, deleting the NULL middle row cumulative_delta uses to segment counter resets, so the rate collapsed to a fake 0.0 - worse than the inflation it replaced. The shared thing is the TIME SPAN, not the row list"
+    - "D-015-03: db_hour_aggregates still had an unbounded baseline after the day path was bounded; a one-hour window reported span_s = 173,400 (~48 h). HOUR_BASELINE_MAX_AGE_S = 3600"
+    - "D-015-04: double-quoted 'day ${i + 1}' printed the raw placeholder; new static rule rejects any double-quoted literal containing a dollar-brace"
+    - "D-015-05: the today day-branch omitted prefill_note and the test only asserted the string appeared somewhere; key added and the test now compares KEY SETS across all three day branches"
+    - "D-015-06: per-child Detail wiring missed panels dragged in later; replaced by one delegated listener on .tiles--detail after verifying in the HTML spec that beforematch bubbles"
+    - "D-015-07: the || 0 static rule had gone dead after the SERIES refactor (passed vacuously); re-pointed at the SERIES map. D-015-08 S1 fallback says 'rate n/a'; D-015-09 pins the rounding invariant instead of a fixture literal"
+    - "new checks: browser chart-null-value-is-a-hole, usage-ledger-renders, detail-wiring-follows-the-region, per-bar hover title in history-bars, prefill line drawn to the disclosed peak; static gains the dollar-brace rule and the null-safe/offline/derived-wiring rules. Counts browser 28, static 20; telemetry 41/25/27"
+    - "10 round-2 mutations proven. Lesson: mutation drivers must invoke the INDIVIDUAL suite files, not run-tests.py, which truncates a failing suite to its last 20 lines and made one probe report NOT PROVEN falsely"
+    - "review-015 extended with the round-2 findings table and validation block; corrected its stale S-015-04 probe figure to the proven 3000.0 inflated vs 1000.0 honest"
+    - "gates re-run green at 66b8711: ui 28/20 PASS · telemetry rc_all=0 · usage rc_all=0 · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS 6/6 · acp-validate.ts PASS 0 warnings"
+  deferred:
+    - "push of the 12 local commits (3f3b368..66b8711) -> not authorised this session"
+    - "a33-37 Strata/llama log tailing -> still needs its own task"
+  key_fact: "a fix that restricts which rows feed a cumulative-delta aggregate can destroy the very evidence (a NULL middle row) that marks a counter reset; bound the TIME SPAN instead of filtering the row set, and prove the fix on a fixture whose counters reset"
+
+- date: 2026-10-28
+  executor: zed
+  branch: main
   tasks: ["review-015 remediation (M81 diff, 3f3b368..HEAD)"]
   done:
     - "server S2 dead duplicate return deleted; S3 DAY_BASELINE_MAX_AGE_S bounds the day delta baseline so a multi-day outage no longer charges days of counter movement to one day (requests 3 not 5, prompt 800 not 1400) while G-34-03 still passes"

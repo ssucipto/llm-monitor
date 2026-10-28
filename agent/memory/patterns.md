@@ -2,6 +2,47 @@
 # Populated automatically by /acp-commit when patterns are identified
 # Format: date-stamped YAML entries, max 60 days active
 
+- date: 2026-10-28
+  name: windowed-aggregate-over-cumulative-counters
+  kind: telemetry-aggregation-pattern
+  problem: |
+    A poll loop stores session-CUMULATIVE counters and the dashboard reports
+    per-window rates from them. Three defects recur and each fix can create the
+    next: (a) a delta baseline taken from ANY earlier row is unbounded, so after
+    an outage days of counter movement are charged to one window; (b) a ratio
+    whose numerator and denominator are built from DIFFERENT row sets silently
+    inflates while a column is being rolled out; (c) "fixing" (b) by filtering
+    both sides to the rows that carry the new column deletes the NULL middle row
+    that marks a counter RESET, so the delta collapses to a fake 0.0 - a wrong
+    number that looks definite. A zero-length window (duplicate timestamps) also
+    turns a max(1e-9, span) guard into dead code.
+  solution: |
+    Bound the TIME SPAN, never the row list. Pick the window's span from the rows
+    that carry the quantity (or the window itself), then sum every counter over
+    all rows inside that span, and let the delta helper do its own segmentation
+    (split at decreases, skip NULLs) over the full sequence. Add an explicit
+    max-age constant per aggregate path (hour vs day) so a stale baseline is
+    refused rather than used, and fall back to "no baseline" instead of reaching
+    further back. Floor the span at one sampling period so sub-period windows
+    return None rather than a huge rate, which also makes the span guard live.
+  example: |
+    llm-monitor/server.py: cumulative_delta(), DAY_BASELINE_MAX_AGE_S (86400) and
+    HOUR_BASELINE_MAX_AGE_S (3600), SPAN_FLOOR_S = 5.0 tied to app.js REFRESH_MS,
+    weighted_prefill_rate() taking its span from the prompt_ms rows while summing
+    counters over every row in that span. Proven by tests/telemetry fixtures whose
+    counters RESET mid-window and whose baseline row is days old.
+  applies_to: any poll-based monitor, metrics rollup or usage ledger built on
+    cumulative counters (Prometheus-style gauges included)
+  guards:
+    - "a fixture must exercise the branch - seed a counter decrease inside the window,
+      or the reset-segmentation code is never asserted on"
+    - "assert on the aggregate path's OWN returned record, not on its helper; deleting
+      the call inside the path must turn the check red"
+    - "keep the key SET identical across every branch of a multi-branch aggregate and
+      compare sets in the test, so a missing key cannot hide behind a substring match"
+    - "when a fix changes a derived constant (a gauge scale, a ceiling), update the
+      pinned expectation to the honest derived value instead of reverting the fix"
+
 - date: 2026-10-07
   name: side-channel-path-resolve
   kind: bug-pattern
