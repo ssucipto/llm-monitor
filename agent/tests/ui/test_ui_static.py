@@ -437,16 +437,27 @@ def main():
     problems = []
     if re.search(r"observed\(b\)(?!\s*,)", js):
         problems.append("observed() is back to ignoring the value")
-    # M81-review-015 D5-app: the values are built once in the SERIES map, so a `|| 0` would
-    # reappear there, not on a drawSeries( line. Scanning only the call sites left that rule dead.
-    series_block = re.search(r"const SERIES = \{([\s\S]*?)\};", js)
+    # M81-review-015 D5-app + round 3 (A1): the values are built once in the SERIES map, so a
+    # `|| 0` would reappear there, not on a drawSeries( line. The first version of this rule
+    # required the shape `? b.<name> || 0`, which went dead the moment the code was refactored
+    # to `observed(b, b.x) ? b.x : null` — a regression could reintroduce the coercion as
+    # `? (b.x || 0) : null` or `: (b.x || 0)` and pass. So the rule scans for the coercion
+    # itself anywhere in the block, plus a coerced-else (`: 0`) which is the same defect.
+    series_block = re.search(r"const SERIES = \{([\s\S]*?)\n  \};", js)
     if not series_block:
         problems.append("the SERIES map is gone, so nothing pins where drawn values are built")
     else:
-        zero_draw = [ln.strip() for ln in series_block.group(1).splitlines()
-                     if re.search(r"\?\s*b\.\w+\s*\|\|\s*0", ln)]
+        block = series_block.group(1)
+        zero_draw = [ln.strip() for ln in block.splitlines()
+                     if re.search(r"b\.\w+\s*\|\|\s*0", ln) or re.search(r"\)\s*\|\|\s*0", ln)]
         if zero_draw:
             problems.append(f"a drawn series coerces a missing value with || 0: {zero_draw[:2]}")
+        # Not anchored at end of line: `? b.x : 0))` (the ternary wrapped in one more paren pair)
+        # is the shape a refactor produces, and an anchored rule went dead on exactly that.
+        coerced_else = [ln.strip() for ln in block.splitlines()
+                        if re.search(r":\s*0\b", ln)]
+        if coerced_else:
+            problems.append(f"a drawn series falls back to 0 instead of null: {coerced_else[:2]}")
     # The legend's peak and the private scales must come from the drawn values, not the raw maxes.
     if "peakOf(SERIES.prefill)" not in js or "SERIES.prefill" not in js:
         problems.append("the prefill legend no longer discloses the drawn series' own peak")
@@ -483,8 +494,15 @@ def main():
             problems.append("wireDetail still iterates a hardcoded id list")
         if ".tiles--detail" not in body:
             problems.append("wireDetail no longer scopes itself to the Detail region")
-        if 'addEventListener("beforematch"' not in body:
-            problems.append("wireDetail no longer listens for beforematch")
+        # Round 3 (A2): this used to assert only that SOME beforematch listener exists. A
+        # rewrite to `document.addEventListener("beforematch", e => { if (detail.contains(...)) })`
+        # satisfied every string rule here while breaking the region-boundary invariant, so the
+        # rule now pins the listener TARGET: it must be attached to the region variable.
+        if not re.search(r'region\.addEventListener\(\s*["\']beforematch["\']', body):
+            problems.append("wireDetail's beforematch listener is not attached to the region, so "
+                            "the region boundary stops being what decides whether it opens")
+        if re.search(r'document\.addEventListener\(\s*["\']beforematch["\']', body):
+            problems.append("wireDetail listens for beforematch on document, which escapes the region")
         if re.search(r'region\.children', body):
             problems.append("wireDetail snapshots the region's children at wire time, which misses "
                             "a panel dragged in later in the same session")

@@ -207,6 +207,14 @@ function layoutTiles(c) {
   }
 }
 
+// M81-review-015 round 3 (A9): the layout pass is not verified here, and it does not need to be.
+// A pass can measure a tile at the height it had BEFORE the change that triggered it (the observed
+// case: #requests kept span 123 = ceil((480 + 12) / 4), the span for the fold while it was open,
+// after the panel had become 83px tall). What matters is that this heals: agent/scratch-m81-rv3/
+// flake.py sampled the page every 100 ms after a real summary click and saw the span go 123 -> 24
+// within ~100 ms in 3/3 runs, and refresh()'s 5 s poll re-spans it regardless. What was broken was
+// the SUITE: settle_spans accepted two identical reads of a stale span as a settled page, so it
+// validated the mid-race state instead of waiting past it. That is fixed in the test, not here.
 function layoutAll() {
   for (const c of containersList()) layoutTiles(c);
   // M81-T8 (a32-02): the UI suite must not guess when a layout pass has landed. Every
@@ -953,8 +961,13 @@ function wireDetail() {
   // per-child loop wired at init would miss until the next reload. The region is the boundary,
   // so a hit on a panel that has been dragged out of it still does not open this region.
   const region = detail.querySelector(".tiles--detail") || detail;
-  region.addEventListener("beforematch", (e) => {
-    if (region.contains(e.target)) detail.open = true;
+  // M81-review-015 round 3 (A6): no `region.contains(e.target)` guard here. With the listener
+  // attached to the region, an event can only reach this callback if it was dispatched on the
+  // region or a descendant, so that test was true on every reachable path — dead code that
+  // read like a boundary check. The listener target IS the boundary; the UI suite pins it
+  // structurally (DOMDebugger.getEventListeners on the region, and none on document/window).
+  region.addEventListener("beforematch", () => {
+    detail.open = true;
   });
   window.addEventListener("hashchange", () => {
     const target = location.hash.slice(1);
@@ -1424,7 +1437,12 @@ function renderHistBars() {
       x: cx.toFixed(1), y: H - 12, class: "chart-axis-text", "text-anchor": "middle",
     });
     // MM-DD keeps 90 days legible; the full ISO date is in the scrubber readout.
-    t.textContent = (days[i].date || "").slice(5);
+    // M81-review-015 round 3 (A8) + round 4: an undated day row left this tick blank while the
+    // bar's tooltip said "day N", and the same class printed "undefined" in the scrubber readouts
+    // (fixed by dayName below). Fall back to the wording the tooltip already uses, so the two
+    // agree — and the slice is not applied to the fallback.
+    const tickDay = days[i];
+    t.textContent = tickDay && tickDay.date ? tickDay.date.slice(5) : `day ${i + 1}`;
     svg.appendChild(t);
     svg.appendChild(svgElem("line", {
       x1: cx.toFixed(1), y1: pad.top + chartH, x2: cx.toFixed(1), y2: pad.top + chartH + 4,
@@ -1465,6 +1483,14 @@ function wireHistMetricTabs() {
 // straight to a day; dragging slides it.
 let scrubIdx = 0;
 
+// M81-review-015 round 4 (R3-3): a day row's `date` is not guaranteed. The bars and the caption
+// already fall back, but the scrubber readouts interpolated it bare, so one date-less row printed
+// "undefined" in aria-valuetext and in the selected-day line. One helper, same wording the bar
+// tooltips use, so every readout that names a day agrees.
+function dayName(d, i) {
+  return d && d.date ? d.date : `day ${i + 1}`;
+}
+
 function selectDay(idx, force) {
   const track = $("scrub");
   const marker = $("scrub-marker");
@@ -1488,7 +1514,7 @@ function selectDay(idx, force) {
   const x = days[scrubIdx];
   // a33-24: an index is not a day. Screen readers (and the caption beside the track) need
   // the date itself, and the track ends must name the range it spans.
-  track.setAttribute("aria-valuetext", `${x.date}, day ${scrubIdx + 1} of ${days.length}`);
+  track.setAttribute("aria-valuetext", `${dayName(x, scrubIdx)}, day ${scrubIdx + 1} of ${days.length}`);
   setText("hist-scrub-first", days[0].date || "--");
   setText("hist-scrub-last", days[days.length - 1].date || "--");
 
@@ -1504,10 +1530,10 @@ function selectDay(idx, force) {
   if (x.energy_wh != null) bits.push(`${fmtNum(x.energy_wh, " Wh", 1)}`);
   if (x.hit_mean != null) bits.push(`hit ${Math.round(x.hit_mean)}%`);
   if (x.idle_pct != null) bits.push(`idle ${Math.round(x.idle_pct)}%`);
-  let line = `${x.date} · ${bits.join(" · ")}`;
+  let line = `${dayName(x, scrubIdx)} · ${bits.join(" · ")}`;
   if (prev && prev.requests) {
     const d = ((x.requests - prev.requests) / prev.requests) * 100;
-    line += ` · ${fmtDelta(d)} req vs ${prev.date}`;
+    line += ` · ${fmtDelta(d)} req vs ${dayName(prev, scrubIdx - 1)}`;
   }
   sel.textContent = line;
 }
@@ -1587,10 +1613,13 @@ function synthesizeFallbackTimeseries(range) {
     const limit = range === "7d" ? 7 : range === "30d" ? 30 : 90;
     const slice = daysArr.slice(-limit);
     for (const d of slice) {
+      // R3-3: a day row without a date must not throw here (d.date.slice), and its label must
+      // agree with the wording the history chart uses for the same row.
+      const dayLabel = d.date ? d.date.slice(5) : `day ${d.d}`;
       buckets.push({
         t: d.d * 86400,
-        time: `${d.date}T00:00:00Z`,
-        label: d.date.slice(5),
+        time: d.date ? `${d.date}T00:00:00Z` : null,
+        label: dayLabel,
         // M81-T4: the fallback path must carry the same fields the API emits, or the
         // gap-aware renderer treats every fallback bucket as unobserved and draws nothing.
         samples: d.polls || 0,
@@ -2466,13 +2495,20 @@ async function fetchUsage() {
       // M81-review (A2): every element here is optional in the DOM. setText() already
       // tolerates a missing node; writing through $() directly did not, and one missing
       // id aborted the whole ledger and left the rest at "--".
-      setText(`usage-${key}-orch`, u.weighted.orchestrator == null ? "unavailable" : `${fmtTok(u.weighted.orchestrator)} weighted`);
+      // M81-review-015 round 3 (A5): the payload's objects are optional too. A 200 response
+      // that omits `weighted` or `sources` made these dereferences throw a TypeError, which the
+      // catch then reported as "unavailable (Cannot read properties of undefined...)" over
+      // numbers that had loaded fine — the same symptom one level deeper. Read each field
+      // defensively and render the documented absence per field.
+      const w = u.weighted || {};
+      setText(`usage-${key}-orch`, w.orchestrator == null ? "unavailable" : `${fmtTok(w.orchestrator)} weighted`);
       setText(`usage-${key}-exec`, u.executor ? `${fmtTok(u.executor.input + u.executor.output)} tokens` : "unavailable");
       last = u;
     }
     // Both windows come from the same ledger, so the last one read is authoritative for
     // sources and for the partial flag (both are top-level payload keys).
-    setText("usage-sources", `Claude Code ${last.sources.claude_code}, Hermes ${last.sources.hermes}${last.partial ? " (catching up)" : ""}`);
+    const s = (last && last.sources) || {};
+    setText("usage-sources", `Claude Code ${s.claude_code ?? "n/a"}, Hermes ${s.hermes ?? "n/a"}${last && last.partial ? " (catching up)" : ""}`);
   } catch (err) {
     console.error(err);
     setText("usage-sources", `unavailable (${err.message})`);
@@ -2481,10 +2517,11 @@ async function fetchUsage() {
   // switchView re-spans for the same reason — a tile's span must not depend on when the
   // ResizeObserver happens to fire, or the row underneath it is measured against a stale span.
   // The stamp lets the UI suite require that a layout pass happened AFTER the ledger landed.
-  // M81-review-015 D6: stamp and re-span unconditionally. setText is null-safe, so the try
-  // body only throws from fetch/json (which lands in the catch and still rewrites the Sources
-  // row); every reachable path changes some text, and the suite's geometry waits treat
-  // __lastUsage as a content stamp a layout pass must post-date — never stamp without spanning.
+  // M81-review-015 D6 + round 3 (A5): stamp and re-span unconditionally. Every reachable path
+  // changes some text — setText is null-safe for missing DOM nodes, and a payload missing a
+  // field now renders "n/a"/"unavailable" per field instead of throwing — so the catch branch
+  // still rewrites the Sources row. The suite's geometry waits treat __lastUsage as a content
+  // stamp a layout pass must post-date; never stamp without spanning.
   window.__lastUsage = Date.now();
   queueLayout();
 }

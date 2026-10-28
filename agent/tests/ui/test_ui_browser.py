@@ -188,36 +188,6 @@ def mark_layout(ws):
     return js(ws, "window.__lastLayout || 0")
 
 
-def settle_spans(ws, since=None, what="after the change", timeout=10.0):
-    """Wait for two consecutive identical reads of every tile's span+height.
-
-    When `since` is given, also require a masonry pass newer than it AND newer than every
-    content stamp (__lastUsage / __lastRender). The content-stamp condition is what caught a
-    real flake on 2026-10-27: the usage ledger fetch rewrites the Usage panel's text after
-    load, growing it, so a pass that merely post-dates a viewport change can still be stale
-    relative to content that lands later. Requiring __lastLayout >= max(__lastUsage,
-    __lastRender) means the spans cover every known mutation; the double read catches
-    anything that moves afterwards.
-    """
-    if since is not None:
-        cond = ("(window.__lastLayout || 0) > %d"
-                " && window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)"
-                % int(since))
-        settle(ws, cond, f"no masonry pass covering all content changes {what}", timeout)
-    else:
-        settle(ws, "window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)",
-               f"no masonry pass covering all content changes {what}", timeout)
-    deadline = time.time() + timeout
-    prev = js(ws, SPANS_SIG)
-    while time.time() < deadline:
-        cur = js(ws, SPANS_SIG)
-        if cur == prev:
-            return cur
-        prev = cur
-        time.sleep(0.15)
-    raise AssertionError(f"row spans never agreed within {timeout}s {what}")
-
-
 def settle_render(ws, since, what="after the change", timeout=20.0):
     """Wait for a poll to finish rendering (values on screen) later than `since`.
     REFRESH_MS is 5 s, so the default timeout covers at least one full poll interval."""
@@ -252,14 +222,72 @@ SPANS_SIG = """(() => {
   for (const sel of ['.tiles', '.tiles--detail']) {
     const t = document.querySelector(sel);
     if (!t) continue;
+    const cs = getComputedStyle(t);
+    const unit = parseFloat(cs.gridAutoRows) || 4;
+    const gap = parseFloat(cs.columnGap) || 0;
     for (const el of t.children) {
       // Height is part of the signature: a span can stay the same while the tile grows past it.
-      out.push(el.id + ':' + getComputedStyle(el).gridRowEnd + ':'
-               + Math.round(el.getBoundingClientRect().height));
+      const h = Math.round(el.getBoundingClientRect().height);
+      out.push(el.id + ':' + getComputedStyle(el).gridRowEnd + ':' + h);
+      // And whether that span still brackets that height. Two identical reads of the raw values
+      // only prove the page stopped working; a STALE span (written for a height the tile no longer
+      // has) is perfectly stable, so without this flag a settle can confirm a broken layout.
+      // The drag preview slot is spanned to the dragged panel's height by placeSlot, not to its
+      // own box, so it would read stale by construction. It only exists during a drag, and no
+      // settle runs then — skipping it keeps that from becoming a hang if one ever does.
+      if (el.classList.contains('drop-slot')) continue;
+      const cs2 = getComputedStyle(el);
+      const m = /span (\\d+)/.exec(cs2.gridRowEnd);
+      // A tile with height left at gridRowEnd:auto is just as broken as a span that is too big:
+      // it overlaps its neighbours instead of leaving a gap. Both must keep the settle waiting.
+      const stale = !!h && (!m || parseInt(m[1], 10) * unit > h + gap + unit * 2);
+      out.push(el.id + (stale ? ':STALE' : ''));
     }
   }
   return out.join('|');
 })()"""
+
+
+def settle_spans(ws, since=None, what="after the change", timeout=10.0):
+    """Wait for two consecutive identical reads of every tile's span+height.
+
+    When `since` is given, also require a masonry pass newer than it AND newer than every
+    content stamp (__lastUsage / __lastRender). The content-stamp condition is what caught a
+    real flake on 2026-10-27: the usage ledger fetch rewrites the Usage panel's text after
+    load, growing it, so a pass that merely post-dates a viewport change can still be stale
+    relative to content that lands later. Requiring __lastLayout >= max(__lastUsage,
+    __lastRender) means the spans cover every known mutation; the double read catches
+    anything that moves afterwards.
+
+    A stable read is NOT the same as a correct one. M81-review-015 round 3 (A9) saw
+    requests-collapsible fail with span=123 on an 83px panel: 123 is ceil((480 + 12) / 4), the
+    span for the panel while the fold was still OPEN, and both settle reads landed inside the
+    window before the ResizeObserver pass that re-spans (measured at ~100 ms after the click,
+    agent/scratch-m81-rv3/flake.py). So a signature containing a STALE marker keeps settling
+    instead of returning, and a genuinely stuck layout times out with a message that names it.
+    """
+    if since is not None:
+        cond = ("(window.__lastLayout || 0) > %d"
+                " && window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)"
+                % int(since))
+        settle(ws, cond, f"no masonry pass covering all content changes {what}", timeout)
+    else:
+        settle(ws, "window.__lastLayout >= Math.max(window.__lastUsage || 0, window.__lastRender || 0)",
+               f"no masonry pass covering all content changes {what}", timeout)
+    deadline = time.time() + timeout
+    prev = js(ws, SPANS_SIG)
+    while time.time() < deadline:
+        cur = js(ws, SPANS_SIG)
+        if cur == prev and ":STALE" not in cur:
+            return cur
+        prev = cur
+        time.sleep(0.15)
+    last = js(ws, SPANS_SIG)
+    stale = [p for p in last.split("|") if p.endswith(":STALE")]
+    raise AssertionError(
+        f"row spans never agreed within {timeout}s {what}"
+        + (f"; span no longer brackets the tile height: {stale}" if stale else "")
+    )
 
 
 def main():
@@ -682,6 +710,13 @@ def main():
               return res.json().then((j) => {
                 if (j.gpu) j.gpu.temp_c = null;
                 if (j.hardware) j.hardware.cpu_pct = null;
+                // M81-review-015 round 3 (A7): req_per_min is None whenever the window's span is
+                // under one sampling period, which the live DB does produce. Force that state so
+                // the "rate n/a" branch is driven by data rather than only grepped in the source.
+                if (j.analysis && j.analysis.recent) {
+                  j.analysis.recent.req_per_min = null;
+                  j.analysis.recent.requests = 12;
+                }
                 // audit-33 a33-36: the HUD multiplied an already-percentage value by 100.
                 // Pin it so the check catches a re-scaling in either place.
                 if (j.context) { j.context.pct = 74.16954; j.context.used = 194431; j.context.max = 262144; }
@@ -721,7 +756,8 @@ def main():
               return {temp: t.textContent, tempVal: m.getAttribute('value'),
                       cls: m.getAttribute('class') || '', stripe,
                       cpu: c ? c.textContent : null, cpuVal: cm ? cm.getAttribute('value') : null,
-                      hudCtx: hc ? hc.textContent : null, hudCtxVal: hv ? hv.textContent : null};
+                      hudCtx: hc ? hc.textContent : null, hudCtxVal: hv ? hv.textContent : null,
+                      reqs: (() => { const e = document.getElementById('an-requests'); return e ? e.textContent : null; })()};
             })()""")
             # The element ships as "--", so a single match is not proof the fixture landed:
             # require the meter to be indeterminate, which only the null path can produce.
@@ -749,6 +785,16 @@ def main():
                 f"null cpu_pct rendered as {gauges['cpu']!r}/{gauges['cpuVal']!r}"
             )
         print("PASS null-gauge-not-zero")
+
+        # 11b. rate-na-on-short-span (M81-review-015 round 3, A7) — the static check only grepped
+        #      for the string "rate n/a", which a comment would satisfy. This drives the actual
+        #      state (a real request count with an uncomputable rate) through the same fixture and
+        #      requires the row to state both: the count stays, the rate is marked absent.
+        assert gauges["reqs"] == "12 \u00b7 rate n/a", (
+            f"#an-requests reads {gauges['reqs']!r} for requests=12 with req_per_min null; it must "
+            f"keep the count and mark the rate n/a (never '12 \u00b7 null/min' or a bare '12')"
+        )
+        print("PASS rate-na-on-short-span")
 
         # 12. hud-context-scale — audit-33 a33-36: context.pct is already a percentage, so the
         #     HUD's extra *100 rendered 7417.0% for a real 74.2%, and the token rows read keys
@@ -1670,20 +1716,32 @@ def main():
         #     which is how a refactor could leave every successful fetch throwing and printing
         #     "unavailable (u is not defined)" over numbers that had just loaded. Serving a
         #     pinned /api/usage answer makes the whole path deterministic.
+        # Round 3 (A4): the payload used to be a literal inside the injected script, so the
+        # fixture and the assertions below were two copies of the same hand-written field names.
+        # Renaming a key in usage_ledger.summary() would have left both sides agreeing and the
+        # check green while the real panel read undefined. The fixture is now one dict, and its
+        # shape is cross-checked against what this suite's own server actually answers below.
+        usage_fixture = {
+            "window": {"from": "2026-10-28T00:00:00Z", "to": "2026-10-28T12:00:00Z"},
+            "orchestrator": {"sessions": 3},
+            "executor": {"input": 1200, "output": 300},
+            "weighted": {"orchestrator": 4200},
+            "sources": {"claude_code": "ok", "hermes": "ok"},
+            "partial": False,
+            "generated_at": "2026-10-28T12:00:00Z",
+            # executor_models is part of the /api/usage contract (M78-H5) even though this panel
+            # does not render it; leaving it out would let the fixture drift from the real payload.
+            "executor_models": ["strata-iq3_s"],
+        }
         usage_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
           (() => {
             const real = window.fetch;
             window.fetch = (u, o) => real(u, o).then((res) => {
               if (!String(u).includes('api/usage')) return res;
-              return new Response(JSON.stringify({
-                window: {from: '2026-10-28T00:00:00Z', to: '2026-10-28T12:00:00Z'},
-                orchestrator: {sessions: 3}, executor: {input: 1200, output: 300},
-                weighted: {orchestrator: 4200},
-                sources: {claude_code: 'ok', hermes: 'ok'},
-                partial: false, generated_at: '2026-10-28T12:00:00Z',
-              }), {headers: {'content-type': 'application/json'}});
+              return new Response(JSON.stringify(%s),
+                                  {headers: {'content-type': 'application/json'}});
             });
-          })();"""})
+          })();""" % json.dumps(usage_fixture)})
         js(ws, "window.__m81_pre_usage_nav = 1")
         ws.call("Page.navigate", {"url": base + "/"})
         fresh8 = False
@@ -1713,10 +1771,143 @@ def main():
         assert ledger["exec"] == "1.5 k tokens", (
             f"#usage-week-exec reads {ledger['exec']!r} for 1200 in + 300 out"
         )
+        # The fixture must stay the shape the server emits, or this check quietly stops testing
+        # the real payload. Ask the suite's own server (its ledger is empty on a fresh test DB,
+        # which is fine: only the key set matters here), and require BOTH directions: every
+        # fixture key exists in the response, and the response carries no contract key the
+        # fixture omits. Proven by agent/scratch-m81-rv3/mutate_a4.py — dropping a contract key
+        # from the fixture (or from usage_ledger.summary) fails with the two key sets named.
+        live = json.loads(urllib.request.urlopen(
+            base + "/api/usage?from=2026-10-28T00:00:00Z&to=2026-10-28T12:00:00Z", timeout=10
+        ).read())
+        absent = sorted(set(usage_fixture) - set(live))
+        assert not absent, (
+            f"the usage fixture carries keys the server no longer emits: {absent}; "
+            f"the server emits {sorted(live)}"
+        )
+        untested = sorted(set(live) - set(usage_fixture))
+        assert not untested, (
+            f"the server's usage contract has keys the fixture never exercises: {untested}; "
+            f"the fixture carries {sorted(usage_fixture)}"
+        )
         if (usage_script or {}).get("identifier"):
             ws.call("Page.removeScriptToEvaluateOnNewDocument",
                     {"identifier": usage_script["identifier"]})
         print("PASS usage-ledger-renders")
+
+        # 27b. usage-payload-missing-keys (review-015 round 4, R3-1) — the A5 guards exist for a
+        #      payload that omits a key the server normally emits (a proxy, a truncated body, a
+        #      future shape change). The fixture above supplies every key, so deleting both guards
+        #      left the whole suite green: the fix had no coverage. Same payload minus the two
+        #      guarded keys must degrade field by field, not throw over numbers that rendered.
+        thin_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              if (!String(u).includes('api/usage')) return res;
+              return new Response(JSON.stringify(%s),
+                                  {headers: {'content-type': 'application/json'}});
+            });
+          })();""" % json.dumps({
+            "window": {"from": "2026-10-28T00:00:00Z", "to": "2026-10-28T12:00:00Z"},
+            "orchestrator": {"sessions": 3},
+            "executor": {"input": 1200, "output": 300},
+            "partial": False,
+            "generated_at": "2026-10-28T12:00:00Z",
+        })})
+        js(ws, "window.__m81_pre_thin_nav = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh9 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_thin_nav, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh9 = True
+                break
+            time.sleep(0.25)
+        assert fresh9, "never observed a fresh document on the thin-payload page"
+        settle_usage(ws)
+        thin = js(ws, """(() => {
+          const pick = (id) => { const e = document.getElementById(id); return e ? e.textContent : null; };
+          return {orch: pick('usage-day-orch'), exec: pick('usage-week-exec'),
+                  src: pick('usage-sources')};
+        })()""")
+        assert thin["orch"] == "unavailable", (
+            f"a payload with no weighted block must read unavailable, got {thin['orch']!r}"
+        )
+        assert thin["exec"] == "1.5 k tokens", (
+            f"the executor block WAS present and must still render, got {thin['exec']!r}"
+        )
+        assert "n/a" in (thin["src"] or "") and "unavailable" not in (thin["src"] or ""), (
+            f"missing sources must print n/a per source, not the catch branch's "
+            f"'unavailable (...)', got {thin['src']!r}"
+        )
+        if (thin_script or {}).get("identifier"):
+            ws.call("Page.removeScriptToEvaluateOnNewDocument",
+                    {"identifier": thin_script["identifier"]})
+        print("PASS usage-payload-missing-keys")
+
+        # 27c. history-dateless-day (review-015 round 4, R3-2/R3-3) — the A8 fix guarded the x
+        #      tick only. The scrubber's aria-valuetext, its selected-day line and the offline
+        #      fallback label all read `.date` unguarded, so one date-less day row still printed
+        #      "undefined" (or threw) while the bars themselves said "day N". Driven with a real
+        #      date-less row: grepping app.js for the fallback would not have caught any of it.
+        #      This check FAILED on the code as shipped before dayName() existed —
+        #      `aria-valuetext printed an undefined date ('undefined, day 11 of 11')` — so its
+        #      failability is established by the defect it found, not by a later mutation.
+        dateless_script = ws.call("Page.addScriptToEvaluateOnNewDocument", {"source": """
+          (() => {
+            const real = window.fetch;
+            window.fetch = (u, o) => real(u, o).then((res) => {
+              if (!String(u).includes('api/stats')) return res;
+              return res.json().then((j) => {
+                if (j && Array.isArray(j.daily) && j.daily.length) {
+                  // Keep the shape, drop the date on the last (rightmost, ticked) day.
+                  delete j.daily[j.daily.length - 1].date;
+                }
+                return new Response(JSON.stringify(j),
+                                    {headers: {'content-type': 'application/json'}});
+              });
+            });
+          })();"""})
+        js(ws, "window.__m81_pre_dateless_nav = 1")
+        ws.call("Page.navigate", {"url": base + "/"})
+        fresh10 = False
+        for _ in range(60):
+            state = js(ws, "({sentinel: window.__m81_pre_dateless_nav, ready: document.readyState})")
+            if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                fresh10 = True
+                break
+            time.sleep(0.25)
+        assert fresh10, "never observed a fresh document on the dateless-day page"
+        render_stamp = js(ws, "window.__lastRender || 0")
+        settle_render(ws, render_stamp, "the poll that renders the seeded days", timeout=25.0)
+        # Select the date-less day (the last one) so every readout that names a day is exercised.
+        js(ws, """(() => {
+          const bars = document.querySelectorAll('#hist-bars .hist-bar');
+          if (bars.length) bars[bars.length - 1].dispatchEvent(new MouseEvent('click', {bubbles: true}));
+        })()""")
+        # selectDay() runs synchronously on click, so no wait is needed before reading.
+        named = js(ws, """(() => {
+          const track = document.getElementById('scrub');
+          const sel = document.getElementById('hist-selected');
+          const ticks = [...document.querySelectorAll('#hist-bars .chart-axis-text')]
+            .map(t => (t.textContent || '').trim());
+          return {valuetext: track && track.getAttribute('aria-valuetext'),
+                  selected: sel && (sel.textContent || '').trim(), ticks};
+        })()""")
+        assert named["valuetext"] and "undefined" not in named["valuetext"], (
+            f"aria-valuetext printed an undefined date ({named['valuetext']!r})"
+        )
+        assert named["selected"] and "undefined" not in named["selected"], (
+            f"the selected-day line printed an undefined date ({named['selected']!r})"
+        )
+        assert not any("undefined" in t for t in named["ticks"]), (
+            f"an x tick printed an undefined date ({named['ticks']!r})"
+        )
+        if (dateless_script or {}).get("identifier"):
+            ws.call("Page.removeScriptToEvaluateOnNewDocument",
+                    {"identifier": dateless_script["identifier"]})
+        print("PASS history-dateless-day")
 
         # 28. detail-wiring-follows-the-region (M81-review A7, residual gap from review-015) —
         # wiring the region's children at init still missed a panel dragged in later in the
@@ -1726,6 +1917,10 @@ def main():
         # The panel is moved with appendChild rather than a trusted drag because the property
         # under test is purely whether the wiring follows the node into the region; the drop
         # handler's effect on the DOM is the same move, and drag-persists already proves the drag.
+        # The panel is moved back out of the region without a following settle. That is safe only
+        # because this check is the last one in the file (review-015 round 4, R3-6); anything
+        # appended after it that reads geometry must settle first, or it inherits the stale span
+        # this leaves behind.
         wired = js(ws, """(() => {
           const detail = document.getElementById('detail');
           const region = detail.querySelector('.tiles--detail');
@@ -1738,25 +1933,56 @@ def main():
           // A bubbling beforematch is exactly what find-in-page / fragment navigation dispatches.
           panel.dispatchEvent(new Event('beforematch', { bubbles: true }));
           const openedByMoved = detail.open;
-          // And a hit on a panel that has been dragged OUT of the region must not open it.
+          // Round 3 (A3): the previous negative here dispatched on a child of the SIBLING grid.
+          // A bubbling event can never reach a listener on this subtree, so `openedByStranger
+          // is False` was unfailable by construction and tested DOM basics, not coverage.
+          // The discriminating version dispatches on document.body: it bubbles through every
+          // ancestor, so a listener attached to document/window (the rewrite the static check
+          // now also forbids) WOULD open the region, while a region-bound listener does not.
           detail.open = false;
-          const stillOutside = [...document.querySelector('.tiles').children]
-            .find(el => el.classList.contains('panel') && el.id !== 'detail' && el.id !== moved);
-          let openedByStranger = null;
-          if (stillOutside) {
-            stillOutside.dispatchEvent(new Event('beforematch', { bubbles: true }));
-            openedByStranger = detail.open;
-          }
+          document.body.dispatchEvent(new Event('beforematch', { bubbles: true }));
+          const openedByBodyDispatch = detail.open;
+          detail.open = false;
           region.removeChild(panel);
           document.querySelector('.tiles').appendChild(panel);
-          return {moved, openedByMoved, openedByStranger};
+          return {moved, openedByMoved, openedByBodyDispatch};
         })()""")
         assert wired, "no panel available to move into the Detail region"
         assert wired["openedByMoved"], (
             f"beforematch on {wired['moved']!r}, moved into the region after init, did not open it"
         )
-        assert wired["openedByStranger"] is False, (
-            f"a panel outside the region opened it ({wired['openedByStranger']!r})"
+        assert wired["openedByBodyDispatch"] is False, (
+            "a beforematch dispatched on document.body opened the region, so the listener is not "
+            f"bound to the region ({wired['openedByBodyDispatch']!r})"
+        )
+
+        # And the structural half (round 3 A2/A3): ask the browser directly where the listener
+        # lives, rather than inferring it from behaviour. The region must have a beforematch
+        # listener; document and window must not.
+        def listeners_of(expression):
+            obj = ws.call("Runtime.evaluate", {"expression": expression, "objectGroup": "m81dw"})
+            object_id = (obj.get("result") or {}).get("objectId")
+            if not object_id:
+                return None
+            # depth 0 = the object itself plus its prototype chain. depth -1 would search every
+            # DESCENDANT, which made document report the region's and #log's own listeners and
+            # this check fail on correct code.
+            got = ws.call("DOMDebugger.getEventListeners", {"objectId": object_id, "depth": 0})
+            return [l for l in got.get("listeners", []) if l.get("type") == "beforematch"]
+
+        try:
+            on_region = listeners_of(
+                "document.getElementById('detail').querySelector('.tiles--detail')")
+            on_document = listeners_of("document")
+            on_window = listeners_of("window")
+        finally:
+            ws.call("Runtime.releaseObjectGroup", {"objectGroup": "m81dw"})
+        assert on_region is not None and len(on_region) >= 1, (
+            "the Detail region has no beforematch listener"
+        )
+        assert not on_document and not on_window, (
+            f"beforematch is also listened for outside the region "
+            f"(document={len(on_document or [])} window={len(on_window or [])})"
         )
         print("PASS detail-wiring-follows-the-region")
         return 0
