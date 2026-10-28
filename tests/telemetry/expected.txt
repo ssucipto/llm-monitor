@@ -1,4 +1,4 @@
 # tests/telemetry suites and their PASS counts (M81-T3). A change in count changes this file in the same commit.
-test_telemetry_analysis.py 41
+test_telemetry_analysis.py 50
 test_telemetry_days.py 25
-test_telemetry_timeseries.py 27
+test_telemetry_timeseries.py 29

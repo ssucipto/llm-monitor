@@ -173,7 +173,21 @@ DAY_BASELINE_MAX_AGE_S = 86400
 # multi-day outage gave an hour aggregate a span of 173,400 s (measured) and divided this
 # hour's movement by it — req_per_min 0.0 and tok_s_weighted 0.0 for an hour that actually
 # served requests. The bound is the same rule at the hour's own scale.
+#
+# Round 4 review note (R2): HOUR_SPAN_MAX_S below now decides correctness — every baseline this
+# query can return passes the span test or is dropped, because rows[-1][0] >= lo. What this one
+# still does is bound how far the query reaches back, so it stays as a scan limit rather than a
+# correctness rule; deleting it would not turn any test red.
 HOUR_BASELINE_MAX_AGE_S = 3600
+
+# M81-review-015 round 3 (S3). Bounding the baseline's AGE is necessary but not sufficient:
+# a row at lo-3599 satisfies the age rule and still makes the hour's published span
+# last_row - baseline ≈ 7200 s, twice the hour being labelled, so that hour published
+# tok_s_weighted 0.0 for real work (probe: rows at lo-3599 and lo+3599 gave span 7198.0).
+# Rows are polled every REFRESH_MS, so the largest legitimate span for an hour aggregate is
+# one hour: a baseline that would push the span past this is not this hour's context and is
+# dropped, leaving the hour to report its own movement.
+HOUR_SPAN_MAX_S = 3600
 
 # Rated envelopes for THIS machine (see hermes CONFIGURATION.md). Used only when the
 # engine does not expose measured GPU power; the payload always says which source it
@@ -900,11 +914,20 @@ def window_pct(rows, num_idx, den_idx):
     Both sides are cumulative counters, so their deltas give the window figure.
     Returns None when the window moved no denominator (no prompt read, no drafts
     offered) — an empty window has no rate, which is not the same as 0 %.
+
+    Review-015 round 4 (R3): it also returns None when the numerator exceeds the
+    denominator. A cache-hit rate above 100 % is as impossible as the prefill rates S1/S4
+    remove, and it is the same cause — a poll that omitted one counter makes the other's
+    delta larger than the whole it is supposed to be a fraction of (probe: prompt 1000 with
+    reused 3500 published hit_pct_window 250.0). Fixing only weighted_prefill_rate left the
+    rule local to one caller while six call sites share this helper.
     """
     den = cumulative_delta(rows, den_idx)
     if not den:
         return None
     num = cumulative_delta(rows, num_idx) or 0
+    if num > den:
+        return None
     return num / den * 100
 
 
@@ -943,18 +966,54 @@ def weighted_prefill_rate(rows, prompt_idx, reused_idx, ms_idx, t_idx=0):
     fake zero this milestone exists to remove. So the shared thing is the TIME SPAN, not
     the row list: take the span the prompt_ms column actually covers and sum every counter
     over all rows inside it, keeping the NULL-ms rows as reset evidence.
+
+    Review-015 round 3 (S1/S2) closes the two holes that decision left open:
+    S1 — when the counters disagree (the reused delta exceeds the prompt delta, which one
+    poll omitting prompt_tokens is enough to cause), max(0.0, ...) used to publish a fake
+    0.0 tok/s for a window that really read tokens. A disagreement means we do not know the
+    numerator, so it returns None, matching window_pct's "no denominator moved" rule.
+    S2 — a reset visible only in a NULL-prompt_ms row IS evidence for the prompt counter,
+    but prompt_ms is skipped at NULL rows either way, so that reset is invisible to the
+    denominator: the ms delta silently loses the segment after the restart and the rate is
+    overstated (probe: 10,000.0 where the same window's honest figure is 1,000). An unseen
+    reset makes the denominator unknowable, so that also returns None.
     """
     sub = [r for r in rows if r[ms_idx] is not None]
     if len(sub) < 2:
         return None
     lo_t, hi_t = sub[0][t_idx], sub[-1][t_idx]
     span_rows = [r for r in rows if lo_t <= r[t_idx] <= hi_t]
+
+    def unseen_reset(idx):
+        """True when a counter decreases at a row prompt_ms cannot see."""
+        prev = None
+        for r in span_rows:
+            v = r[idx]
+            if v is None:
+                continue
+            if prev is not None and v < prev and r[ms_idx] is None:
+                return True
+            prev = v
+        return False
+
+    if unseen_reset(prompt_idx) or unseen_reset(reused_idx):
+        return None
+
     ms_delta = cumulative_delta(span_rows, ms_idx)
     if not ms_delta:
         return None
     prompt = cumulative_delta(span_rows, prompt_idx) or 0
     reused = cumulative_delta(span_rows, reused_idx) or 0
-    return round(max(0.0, prompt - reused) / ms_delta * 1000, 2)
+    if prompt < reused:
+        # The counters contradict each other: no honest numerator exists.
+        return None
+    rate = (prompt - reused) / ms_delta * 1000
+    if rate > PREFILL_CEILING_TOK_S:
+        # S4: this was the one prefill figure exempt from the ceiling, so it could publish
+        # 9,001,000.0 tok/s (probe) on a card that decodes at 4-124. No published prefill
+        # number may exceed the physical ceiling; an impossible rate is not a measurement.
+        return None
+    return round(rate, 2)
 
 
 def published_day_prefill(mean, maximum):
@@ -1118,6 +1177,21 @@ def db_hour_aggregates(con, lo, hi):
     M81-review-015 D3: like day_aggregates, the baseline must be recent. Without the bound
     a retained row from before an outage gave this hour a span spanning the whole gap, so
     its rates were divided by time in which nothing was being measured.
+
+    Review-015 round 3 (S3): bounding the baseline's AGE still admitted a row at lo-3599,
+    giving a span of ~7200 s — twice the hour the row is labelled — so the hour published
+    tok_s_weighted 0.0 for real work (probe), and dropping it one second later made the
+    hour's own movement disappear. What must be bounded here is the span the baseline
+    produces (HOUR_SPAN_MAX_S).
+
+    Round 4 review note: the day path does NOT share this defect, but not for the reason first
+    written here. Its published span is rows[-1][0] - rows[0][0], so a carried baseline can never
+    stretch it, and every rate in the record divides by that span. The day DOES charge counter
+    movement across the gap between its baseline and its first row (day_aggregates takes the
+    deltas over span_rows = [base] + rows) — that is deliberate: movement between yesterday's
+    last poll and today's first belongs to a day, and DAY_BASELINE_MAX_AGE_S caps how far back
+    that context may reach. The hour has no such attribution job, so an over-long baseline span
+    there is pure distortion and is dropped.
     """
     # prompt_ms (index 13) is only read by prefill_weighted; rows written before the
     # column exists come back NULL, which keeps that figure None rather than guessed.
@@ -1130,6 +1204,12 @@ def db_hour_aggregates(con, lo, hi):
         "drafts_offered, drafts_accepted, prompt_ms FROM poll WHERE t >= ? AND t < ? ORDER BY t", (lo, hi)).fetchall()
     if not rows:
         return None
+    # A baseline that would stretch the hour's span past one hour's worth of time is dropped
+    # rather than stretched: an hour's rates may only be divided by time an hour can cover.
+    # With polls every REFRESH_MS, last_row - baseline can legitimately reach at most the
+    # hour's own width, so exceeding it means the row is not this hour's context.
+    if base and rows[-1][0] - base[0] > HOUR_SPAN_MAX_S:
+        base = None
     all_rows = ([base] + rows) if base else rows
     first, last = (all_rows[0], all_rows[-1]) if all_rows else (rows[0], rows[-1])
     # M81-T3 (a33-17): the old max(1e-9, ...) sentinel made the "if span > 0" guard

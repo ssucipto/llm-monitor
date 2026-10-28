@@ -121,6 +121,30 @@ expect("a window that read no prompt has no hit rate: None, not 0%",
 expect("a window that offered no drafts has no accept rate: None, not 0%",
        rec["accept_pct_window"] is None, rec["accept_pct_window"])
 
+# Round 4 (R3): a numerator larger than its denominator is the same impossible-number class S1/S4
+# remove for prefill. One poll omitting prompt_tokens is enough to cause it, and six call sites
+# share window_pct, so the rule belongs in the helper rather than in one caller.
+con = fresh()
+rows = [row(NOW - 300, reqs=1, prompt=1000, reused=1000, output=10, offered=100, accepted=50),
+        row(NOW - 200, reqs=1, prompt=None, reused=2500, output=10, offered=100, accepted=50),
+        row(NOW - 100, reqs=1, prompt=2000, reused=3500, output=10, offered=100, accepted=50)]
+insert(con, rows)
+rec = server.db_analysis(con)["recent"]
+# Without the guard: prompt delta 1000, reused delta 2500 -> a 250% cache-hit rate published.
+expect("a window whose reused delta exceeds its prompt delta has no hit rate: None, not 250%",
+       rec["hit_pct_window"] is None, rec["hit_pct_window"])
+
+# The guard must not swallow honest windows: the same shape with agreeing counters still reads.
+con = fresh()
+rows = [row(NOW - 300, reqs=1, prompt=1000, reused=500, output=10, offered=100, accepted=50),
+        row(NOW - 200, reqs=1, prompt=2000, reused=1000, output=10, offered=200, accepted=100),
+        row(NOW - 100, reqs=1, prompt=3000, reused=1500, output=10, offered=300, accepted=150)]
+insert(con, rows)
+rec = server.db_analysis(con)["recent"]
+expect("a window whose counters agree still reports its ratio (50% hit, 50% accept)",
+       rec["hit_pct_window"] == 50.0 and rec["accept_pct_window"] == 50.0,
+       (rec["hit_pct_window"], rec["accept_pct_window"]))
+
 # ---------- a33-09/a33-11: token-weighted rates ----------
 # Four idle polls carrying a stale 60 tok/s and one busy poll at 30 skew an unweighted mean.
 con = fresh()
@@ -168,19 +192,52 @@ rec = server.db_analysis(con)["recent"]
 expect("prefill_weighted sums both sides over the prompt_ms span (1000, not 3000)",
        abs(rec["prefill_weighted"] - 1000.0) < 0.01, rec["prefill_weighted"])
 
-# M81-review-015 D1: the opposite failure. Restricting BOTH sides to the rows that carry
-# prompt_ms also breaks cumulative_delta, because that helper splits segments at a decrease
-# and the NULL-ms middle row is the only evidence of the counter reset here. Dropping it
-# makes the numerator read 0, i.e. a fake zero on a window that really moved 1000 tokens.
+# M81-review-015 D1 + round-3 S2. Restricting BOTH sides to the rows that carry prompt_ms
+# breaks cumulative_delta, because that helper splits segments at a decrease and the NULL-ms
+# middle row is the only evidence of the counter reset here — dropping it made the numerator
+# read 0.0 on a window that really moved 1000 tokens. So the NULL-ms row IS kept as reset
+# evidence for the numerator (round-2 fix, still in force).
+#
+# Round 3 (S2) then asks what the DENOMINATOR can see: prompt_ms also skips that row, so the
+# same reset is invisible to it and the ms delta loses the segment after the restart. The
+# reviewer measured 10,000.0 tok/s where they expected 1,000 for that shape (probe agrees:
+# 10000.0). The expected figure assumed the engine restarted for prompt_tokens but not for
+# prompt_ms, which cannot happen — one restart resets both. With the restart invisible to
+# prompt_ms, its post-restart baseline is unknown and no honest denominator exists, so this
+# window publishes nothing rather than either a fake 0 or an overstated rate.
 con = fresh()
 insert(con, [row(NOW - 200, reqs=1, prompt=5000, reused=0, output=0, busy=1, prompt_ms=9000),
              row(NOW - 150, reqs=2, prompt=200, reused=0, output=0, busy=1),
              row(NOW - 100, reqs=3, prompt=1200, reused=0, output=0, busy=1, prompt_ms=10000)])
 rec = server.db_analysis(con)["recent"]
-# The reset survives (prompt moved 1000 across the two segments) and the denominator is the
-# prompt_ms span (1000 ms), so the honest rate is 1000 tok/s. Row-filtering both sides gives 0.0.
-expect("a counter reset seen only in a NULL-prompt_ms row still counts (1000, not a fake 0)",
-       abs(rec["prefill_weighted"] - 1000.0) < 0.01, rec["prefill_weighted"])
+# The reset is still counted in the numerator (the window's own hit ratio survives it), so
+# the row set was not narrowed; only the unknowable prefill rate is withheld.
+expect("a counter reset invisible to prompt_ms yields no prefill rate rather than an overstated one",
+       rec["prefill_weighted"] is None, rec["prefill_weighted"])
+expect("the same window still counts the reset in its numerator (prompt moved 1000, row set not narrowed)",
+       rec["prompt_tokens"] == 1000, rec["prompt_tokens"])
+
+# ---------- round 3 S1/S4: the prefill rate refuses to publish what it cannot know ----------
+# S1: one poll that omits prompt_tokens (db_record writes NULL for a field the engine did
+# not report) makes cumulative_delta skip it, so the prompt delta can come out BELOW the
+# reused delta. max(0.0, ...) then published a definite 0.0 tok/s for a window that really
+# read tokens — the fake zero this milestone exists to remove.
+con = fresh()
+insert(con, [row(NOW - 300, reqs=1, prompt=9000, reused=8000, output=10, busy=1, prompt_ms=9000),
+             row(NOW - 200, reqs=1, prompt=None, reused=8500, output=10, busy=1, prompt_ms=9100),
+             row(NOW - 100, reqs=1, prompt=600, reused=500, output=10, busy=1, prompt_ms=9700)])
+rec = server.db_analysis(con)["recent"]
+expect("disagreeing counters give no prefill rate rather than a fake 0.0",
+       rec["prefill_weighted"] is None, rec["prefill_weighted"])
+# S4: prefill_weighted was the only prefill figure exempt from PREFILL_CEILING_TOK_S, so it
+# could publish 9,001,000.0 tok/s (probe) on a card that decodes at 4-124.
+con = fresh()
+insert(con, [row(NOW - 200, reqs=1, prompt=1000, reused=0, output=10, busy=1, prompt_ms=1000),
+             row(NOW - 150, reqs=1, prompt=9_001_000, reused=0, output=10, busy=1, prompt_ms=1000),
+             row(NOW - 100, reqs=1, prompt=9_002_000, reused=0, output=10, busy=1, prompt_ms=2000)])
+rec = server.db_analysis(con)["recent"]
+expect("a prefill rate above the physical ceiling is withheld, not published",
+       rec["prefill_weighted"] is None, rec["prefill_weighted"])
 
 # ---------- a33-10: impossible prefill readings are bounded and say so ----------
 con = fresh()
@@ -291,14 +348,49 @@ expect("a single-row hour still gets a baseline from before the span (requests d
        h["requests"] == 5, h["requests"])
 expect("that baseline's span supports a rate (310 s, above the floor)",
        h["span_s"] == 310.0 and h["req_per_min"] is not None, (h["span_s"], h["req_per_min"]))
-# M81-review S5: db_analysis rounds this figure and db_hour_aggregates did not, so the
-# same quantity reached the payload at two different precisions. Pinned to the invariant
-# (the published value equals its own 2-dp rounding) rather than a literal, so a fixture
-# offset shifting cannot turn a passing run into a mystery failure; 50/310 is not exact in
-# two decimals, which is what keeps this able to fail on an unrounded value.
-expect("the hour path rounds tok_s_weighted like db_analysis does",
-       h["tok_s_weighted"] == round(h["output_tokens"] / h["span_s"], 2),
+# M81-review S5 + review-015 round 3: this assertion used to be `h["tok_s_weighted"] ==
+# round(h["output_tokens"] / h["span_s"], 2)`, which restates the helper's own body
+# (server.py publishes exactly round(output_delta/span, 2)) — it detects a formula change but
+# never a dropped or widened rounding. Pinned to literals over inputs this test already pins
+# (span 310 s, output delta 50 above): an unrounded quotient is 0.16129… and round(…, 1)
+# would be 0.2, so both fail here, while a fixture offset shifting cannot silently move the
+# target because span_s and output_tokens are asserted alongside it.
+expect("the hour path rounds tok_s_weighted to 2 dp (50 tokens over the pinned 310 s span)",
+       h["tok_s_weighted"] == 0.16 and h["output_tokens"] == 50 and h["span_s"] == 310.0,
        (h["tok_s_weighted"], h["output_tokens"], h["span_s"]))
+# M81-review-015 D3 + round-3 S3: bounding the baseline's AGE left a hole. A row at lo-3599
+# satisfies the age rule and still gave the hour span_s 7198.0 — twice the hour it labels —
+# publishing tok_s_weighted 0.0 for an hour that served work (probe). The bound is now on the
+# span the baseline produces (HOUR_SPAN_MAX_S), so these two rows get no baseline at all and
+# the hour reports its own movement instead of a stretched span.
+con = fresh()
+insert(con, [row(HOUR_START - 3599, reqs=1000, prompt=50000, reused=0, output=50000, busy=1),
+             row(HOUR_START + 3599, reqs=1001, prompt=50010, reused=0, output=50010, busy=1)])
+h = server.db_hour_aggregates(con, HOUR_START, HOUR_END)
+expect("a baseline may not stretch an hour's span to 7198 s (twice the hour it labels)",
+       h["span_s"] == 0.0 and h["tok_s_weighted"] is None, (h["span_s"], h["tok_s_weighted"]))
+# The other side of the rule: a baseline that keeps the span within one hour IS kept, so a
+# quiet hour still gets the boundary context that attributes movement across its edge.
+con = fresh()
+insert(con, [row(HOUR_START - 1700, reqs=4, prompt=400, reused=200, output=40, busy=1),
+             row(HOUR_START + 300, reqs=9, prompt=900, reused=450, output=90, busy=1)])
+h = server.db_hour_aggregates(con, HOUR_START, HOUR_END)
+expect("a baseline that keeps the span inside one hour is kept (span 2000 s, requests delta 5)",
+       h["span_s"] == 2000.0 and h["requests"] == 5, (h["span_s"], h["requests"]))
+# Round 4 (R5): the exact boundary, so flipping > to >= (or moving the constant by a second) is
+# visible. Both baselines satisfy HOUR_BASELINE_MAX_AGE_S, so only the span rule can act here.
+con = fresh()
+insert(con, [row(HOUR_START - 1, reqs=4, prompt=400, reused=200, output=40, busy=1),
+             row(HOUR_START + 3599, reqs=9, prompt=900, reused=450, output=90, busy=1)])
+h = server.db_hour_aggregates(con, HOUR_START, HOUR_END)
+expect("a span of exactly HOUR_SPAN_MAX_S is kept (3600 s, requests delta 5)",
+       h["span_s"] == 3600.0 and h["requests"] == 5, (h["span_s"], h["requests"]))
+con = fresh()
+insert(con, [row(HOUR_START - 2, reqs=4, prompt=400, reused=200, output=40, busy=1),
+             row(HOUR_START + 3599, reqs=9, prompt=900, reused=450, output=90, busy=1)])
+h = server.db_hour_aggregates(con, HOUR_START, HOUR_END)
+expect("one second past the bound drops the baseline (span 0.0, no movement attributed)",
+       h["span_s"] == 0.0 and h["requests"] == 0, (h["span_s"], h["requests"]))
 # M81-review-015 D3: the hour path carried ANY earlier row as its baseline, so a retained
 # row from before an outage gave a one-hour window a span of ~173,400 s and divided this
 # hour's movement by it. An hour's rate must not be computed across a gap the hour did not

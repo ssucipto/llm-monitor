@@ -83,6 +83,18 @@ expect("the payload states how many buckets the range has",
 # its siblings always set, so a consumer only survived by using .get(). Comparing key SETS
 # (not hunting for two names) is what makes this hold for the next key anyone adds, and it
 # covers all three branches: today's live rollup, a frozen day, and a gap.
+#
+# Round 3 (S6) found the claim was false as written: fresh() truncates the day table and
+# nothing seeded it before this block, so the frozen-day branch produced no bucket and only
+# two of the three branches were ever compared. The day must exist in the fixture for the
+# comparison to mean what it says, so it is seeded here (and re-seeded by the later blocks).
+con = fresh()
+insert(con, [row(DAY + i * 120, tok_s=40.0, reqs=1 + i, prompt=1000 + i * 100,
+                 reused=200 + i * 20, output=50 + i * 5, prefill=p)
+             for i, p in enumerate([300.0, 400.0, 1_210_150.0, 200.0])])
+# marker poll on a later day so DAY counts as ended and gets frozen
+insert(con, [row(DAY + 86400 + 60, reqs=1, prompt=10, output=1)])
+server.db_finalize_days(con)
 shapes = {}
 for rng in ("7d", "30d", "90d"):
     for b in server.db_timeseries(con, rng)["buckets"]:
@@ -95,6 +107,29 @@ only = next(iter(next(iter(shapes.values()))))
 expect("the shared day-bucket key set includes the prefill disclosure keys",
        {"prefill_bounded", "prefill_note", "prefill_max", "prefill_mean"} <= set(only),
        list(only))
+# The fixture must actually contain all three branch kinds, or the check above is vacuous
+# (that is exactly how S6 hid). Assert the branches exist rather than trusting a comment.
+kinds = {"live": 0, "frozen": 0, "gap": 0}
+for b in server.db_timeseries(con, "7d")["buckets"]:
+    day_idx = int(server.datetime.fromtimestamp(b["t"], server.timezone.utc).timestamp() // 86400)
+    if day_idx == int(NOW // 86400):
+        kinds["live"] += 1
+    elif b["samples"]:
+        kinds["frozen"] += 1
+    else:
+        kinds["gap"] += 1
+expect("the fixture really exercises all three day branches (live, frozen, gap)",
+       all(v > 0 for v in kinds.values()), kinds)
+
+# Round 3 (S6) also claimed db_daily's shape was unpinned next to the chart buckets. Half of
+# that is a false positive: db_daily's prefill_note is conditional BY DESIGN (a post-fix day
+# has no note), and both states are already pinned below ("pre-bound record" for a legacy row,
+# "prefill_note" not in a post-fix row). What was missing is the unconditional part of that
+# shape, pinned here so a key cannot disappear from db_daily unnoticed.
+dd = [d for d in server.db_daily(con) if d["d"] == int(DAY // 86400)]
+expect("db_daily's frozen row always carries the prefill mean/max/bounded keys",
+       bool(dd) and {"prefill_mean", "prefill_max", "prefill_bounded"} <= set(dd[0]),
+       sorted(dd[0]) if dd else "no frozen row")
 
 # ---------- a33-19: the chart path bounds impossible prefill like every other path ----------
 con = fresh()
