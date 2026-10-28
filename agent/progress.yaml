@@ -644,6 +644,28 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-28
+    description: |
+      M81 review + remediation (review-015, diff-style over 3f3b368..HEAD). Two diff-review passes
+      produced 20 candidate findings (server S1-S7, app A1-A13); every one was re-checked against the
+      working tree before acting, and one reviewer claim was a false positive. The theme is the same as
+      M81 itself: no readout may invent, overstate or mis-attribute a number. server.py now bounds the
+      day delta baseline (a multi-day outage no longer charges days of counter movement to one day) and
+      computes prefill_weighted from ONE row set (the prompt_ms rollout no longer inflates the rate).
+      app.js stops rendering "12 · null/min", stops drawing a sampled-but-null bucket as a definite zero
+      bar, discloses the peak of the series it actually drew, and derives the Detail region's wiring and
+      its own chart scale from data instead of constants. Every fix has a failable test and all 18
+      mutations were proven by reverting the fix against the new assertion.
+    items:
+      - "✅ server S2 dead duplicate return deleted; S3 DAY_BASELINE_MAX_AGE_S bounds the day delta baseline (requests 3 not 5, prompt 800 not 1400 after a 2-day gap) while G-34-03 still passes; S4 weighted_prefill_rate() puts numerator and denominator on one row set (1000 tok/s honest vs 3000 inflated); S5 hour path rounds tok_s_weighted like db_analysis; S6 gap buckets carry prefill_bounded/prefill_note"
+      - "✅ app S1 an-requests no longer interpolates req_per_min raw (renders the count alone, never a fake 0); A1 lastStatsData assigned when the fetch succeeds so the offline fallback survives a throwing render; A2 usage ledger writes via setText and only re-spans when text changed; A3 legend peaks + private scales derive from the drawn SERIES values; A4 observed(b,v) treats a null value as a hole, no || 0 on any drawn series"
+      - "✅ app A5 caption and #hist-window guard days[].date (the static check surfaced a second instance at :1206); A6 every history bar carries a hover <title>; A7 wireDetail derives from .tiles--detail children; A8 the right-edge date can no longer be vetoed (reachable at N=17, stride 3); A9 interpolated p95 (R-7) replaces the off-by-one index — fixture-derived gauge scale moves 1,250 -> 1,291; A10-A13 axis-label fallback, bounded tag from the right object and on the n/a branch, HUD 'not reported'"
+      - "✅ false positive recorded: A1's second half claimed an unfailable __lastChartFetch stamp in fetchTimeseries' catch — the stamp was already inside if (fallback), verified by reading the lines"
+      - "✅ new checks: browser chart-null-value-is-a-hole (plus history-bars now requires a hover title per bar); static null-safe-readouts, offline-fallback-and-ledger, chart-disclosure-honest, detail-wiring-derived. Counts browser 26, static 20; expected.txt bumped in the same commits"
+      - "✅ tests/telemetry counts 37 / 25 / 26 (expected.txt bumped); all 18 mutations mutation-proven and reverted (git diff HEAD -- app.js server.py empty, no MUTATION PROBE markers)"
+      - "✅ gates at HEAD: ui 26/20 PASS · telemetry rc_all=0 · usage rc_all=0 · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS (6/6) · acp-validate.ts PASS 0 warnings (canonical 0.3.0)"
+      - "✅ phase-1 scanner on the diff: 4 HIGH, all pre-existing (identical at the 3f3b368 baseline) — zero new findings; left alone as an out-of-scope refactor"
+      - "⏳ a33-37 still pending (Strata/llama log tailing) — unchanged, needs its own task"
   - date: 2026-10-27
     description: |
       M81-T8 — the verification suite can now prove values instead of structure, and it no longer

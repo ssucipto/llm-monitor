@@ -115,3 +115,8 @@
   mistake: "Wrote the fixture endpoint assertion as `if k != 'status' and not v` — an exception carved out of my own new check so it would pass against a fixture that did not answer /status. The check went green while quietly covering less than it claimed."
   correction: "Never special-case a member out of a completeness assertion to make it pass. Fix the fixture so the rule holds for every member, and prove the assertion failable by renaming one key (static: 'fixture is missing endpoints: [/status]'; browser: 'the fixture does not answer for: [status]'). Audit your own new checks the same way: mkdtemp dirs need removal in a finally, and any check that starts the real server must pass LLM_MONITOR_DB even when the run is expected to abort at startup."
   priority: high
+- date: 2026-10-28
+  task_type: testing
+  mistake: "Optimised app.js fetchUsage() to skip queueLayout() when no ledger text was written, but left window.__lastUsage stamped unconditionally. The browser suite's settle_spans() requires __lastLayout >= max(__lastUsage, __lastRender), so a stamp with no matching layout pass can never be satisfied and view-toggle-spans failed with 6 tiles at span auto."
+  correction: "The content stamps (__lastUsage / __lastRender) are a contract with the suite's geometry waits: every stamp MUST be paired with the layout pass that covers it. Gate the stamp and the pass together (if (wrote) { stamp; queueLayout(); }), never the pass alone. Fixing a real defect (unguarded $().textContent) still requires re-running the full UI suite, because a 'harmless' saving in a stamped path is a test-contract change."
+  priority: high

@@ -182,3 +182,6 @@
       must require layout >= max(all content stamps), not just newer than the viewport change
     - app.js is <script type=module>: its consts are module-scoped and unreachable from
       CDP Runtime.evaluate; expose window stamps for observables, parse the source for consts
+    - a content stamp is a contract, not a log line: every __lastUsage / __lastRender must be
+      paired with the layout pass that covers it, so gate stamp and pass together and never
+      save a pass while still stamping

@@ -2,6 +2,30 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-10-28
+  executor: zed
+  branch: main
+  tasks: ["review-015 remediation (M81 diff, 3f3b368..HEAD)"]
+  done:
+    - "server S2 dead duplicate return deleted; S3 DAY_BASELINE_MAX_AGE_S bounds the day delta baseline so a multi-day outage no longer charges days of counter movement to one day (requests 3 not 5, prompt 800 not 1400) while G-34-03 still passes"
+    - "server S4 weighted_prefill_rate() puts numerator and denominator on ONE row set: the prompt_ms rollout no longer inflates the rate (probe 3000.0 vs the honest 1000.0); S5 hour path rounds tok_s_weighted like db_analysis; S6 gap buckets carry prefill_bounded/prefill_note"
+    - "app S1 an-requests stopped interpolating req_per_min raw, which rendered '12 · null/min' on the live DB's duplicate-timestamp windows; the count now stands alone rather than being faked to 0"
+    - "app A1 lastStatsData assigned when the fetch succeeds, so a throwing render can no longer leave the offline chart fallback with nothing; A2 usage ledger writes via setText and only stamps + re-spans when text actually changed"
+    - "app A3 legend peaks and every private scale derive from the exact drawn SERIES values, so 'scaled to peak' is literally true; A4 observed(b,v) treats a sampled-but-null value as a hole and no drawn series coerces with || 0 any more"
+    - "app A5 caption and #hist-window guard days[].date (the new static check surfaced a second instance at app.js:1206 of the same class); A6 every history bar carries a hover <title>; A7 wireDetail derives from .tiles--detail children instead of a hardcoded id list"
+    - "app A8 the right-edge date can no longer be vetoed (reachable at N=17, stride 3); A9 interpolated p95 (R-7) replaces the off-by-one index, moving the fixture-derived gauge scale 1,250 -> 1,291; A10-A13 axis-label fallback, bounded tag from the right object and on the peak-n/a branch, HUD labels say 'not reported'"
+    - "one reviewer claim was a FALSE POSITIVE and is recorded as such: A1's second half alleged an unfailable __lastChartFetch stamp in fetchTimeseries' catch, but the stamp was already inside if (fallback)"
+    - "new checks: browser chart-null-value-is-a-hole, and history-bars now requires one hover title per bar; static null-safe-readouts, offline-fallback-and-ledger, chart-disclosure-honest, detail-wiring-derived. Counts browser 25 -> 26, static 16 -> 20; tests/telemetry 35/22/25 -> 37/25/26, expected.txt bumped in the same commits"
+    - "18 mutation probes run (4 server, 14 front end), each produced a targeted failure with the wrong value shown, all reverted: git diff HEAD -- app.js server.py empty and no MUTATION PROBE markers remain"
+    - "the suite caught a regression I caused: gating queueLayout() on 'wrote' while still stamping __lastUsage left a content stamp with no matching layout pass, so view-toggle-spans failed. Fixed by stamping only when a pass follows"
+    - "phase-1 scanner on the diff: 4 HIGH, all pre-existing and identical at the 3f3b368 baseline (fetchStats / wireDragDrop / init EH-01 and the deliberate localStorage catch) - zero new findings, left alone as out of scope"
+    - "gates at HEAD: ui 26/20 PASS, telemetry rc_all=0, usage rc_all=0, run-e2e-tests.sh 5 passed, acp.ci.sh --fast PASS 6/6, acp-validate.ts PASS 0 warnings (canonical 0.3.0)"
+    - "agent/reports/review-015-m81-diff.md written (gitignored per ADR-28); a33-37 still pending and unchanged"
+  deferred:
+    - "a33-37 Strata/llama log tailing -> needs its own task, still pending"
+    - "push of the 10 local commits -> not authorised this session"
+  key_fact: "the UI suite's geometry waits treat __lastUsage as a content stamp that a layout pass must post-date, so any code path that stamps it MUST also run a layout pass; gating the pass but keeping the stamp fails view-toggle-spans"
+
 - date: 2026-10-27
   executor: zed
   branch: main
