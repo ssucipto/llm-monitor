@@ -723,7 +723,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: null
-    notes: "Recorded during M81-T3 work, not fixed. LOG_FILES lists watchdog.log / autostart.log / server.log.err, whose last writes are 2026-10-25 and 2026-10-09, while engine-active.txt says strata. The live engine log is C:\Project\Strata\strata-iq3_s.log: 6,196,001 bytes, refreshed the same day, containing 'conversation cache:' x8534, 'resident RAM:' x5360, 'KV streaming:' x5360, 'expert tiers:' x5360, 'decode expert cache hit rate:' x5355, 'lookup chain:' x5315, 'suffix drafts:' x4391, WARNING x5. Strata exposes no /log, /logs or /events (all 404), so tailing the file is the only route. Fix: include the active engine's log path per engine-active.txt alongside the launcher tails. Not planned into M81; needs its own task"
+    notes: "Recorded during M81-T3 work, not fixed. LOG_FILES lists watchdog.log / autostart.log / server.log.err, whose last writes are 2026-10-25 and 2026-10-09, while engine-active.txt says strata. The live engine log is C:\\Project\\Strata\\strata-iq3_s.log: 6,196,001 bytes, refreshed the same day, containing 'conversation cache:' x8534, 'resident RAM:' x5360, 'KV streaming:' x5360, 'expert tiers:' x5360, 'decode expert cache hit rate:' x5355, 'lookup chain:' x5315, 'suffix drafts:' x4391, WARNING x5. Strata exposes no /log, /logs or /events (all 404), so tailing the file is the only route. Fix: include the active engine's log path per engine-active.txt alongside the launcher tails. Not planned into M81; needs its own task"
   - id: a33-34
     audit: 33
     finding: "the browser UI suite writes synthetic poll rows into the production telemetry.sqlite3 on every run"

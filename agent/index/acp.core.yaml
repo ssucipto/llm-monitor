@@ -166,4 +166,7 @@ acp:
       description: |
         "Verify" intent maps to /acp-review (standards enforcement) and
         /acp-validate (consistency + schema). There is no /acp-verify command.
+      rationale: |
+        Agents asked to "verify" work otherwise invent a nonexistent /acp-verify
+        call; this note routes the intent to the two commands that exist.
       applies: acp.proceed, acp.validate, acp.review

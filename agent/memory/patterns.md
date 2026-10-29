@@ -215,15 +215,20 @@
   applies_to: any harness that drives a real server whose upstream is live, host-specific
     or absent on CI
   guards:
-    - a page-level fetch fixture survives navigation: keep the identifier and remove it
+    - >-
+      a page-level fetch fixture survives navigation: keep the identifier and remove it
       before a check that needs the server's own answers
-    - capture the "before" value BEFORE the action; a settle baselined afterwards passes
+    - >-
+      capture the "before" value BEFORE the action; a settle baselined afterwards passes
       or fails on nothing
-    - a secondary fetch that rewrites text grows its tile after load, so geometry waits
+    - >-
+      a secondary fetch that rewrites text grows its tile after load, so geometry waits
       must require layout >= max(all content stamps), not just newer than the viewport change
-    - app.js is <script type=module>: its consts are module-scoped and unreachable from
+    - >-
+      app.js is <script type=module>: its consts are module-scoped and unreachable from
       CDP Runtime.evaluate; expose window stamps for observables, parse the source for consts
-    - a content stamp is a contract, not a log line: every __lastUsage / __lastRender must be
+    - >-
+      a content stamp is a contract, not a log line: every __lastUsage / __lastRender must be
       paired with the layout pass that covers it, so gate stamp and pass together and never
       save a pass while still stamping
 
