@@ -5,6 +5,23 @@
 - date: 2026-10-29
   executor: zed
   branch: main
+  tasks: ["M81 close-out: acp-validate (full) + acp-sync + acp-update + acp-commit + git-commit + push"]
+  done:
+    - "ran /acp-validate to its command doc, not just scripts/acp-validate.ts. The .ts in this repo implements only version/pointers/status; steps 1, 2, 2c-2g, 5, 9, 10, 11 were run separately (agent/scratch-m81-close/v2g.py + vrest.py, deleted after use)"
+    - "found and fixed 3 real defects the trimmed validator cannot see, all in tracked records: patterns.md did not parse as YAML at all (the M81 guards list starts with a quoted word, so YAML read the item as a double-quoted scalar - rewritten as >- folded items); audit-carryovers.md line 726 had C:\\Project\\Strata inside a double-quoted scalar, and \\P is an unknown escape (backslashes doubled); agent/index/acp.core.yaml's path-null note was missing the required rationale: field"
+    - "both memory files now whole-file parse; strict-YAML duplicate-key scan over sessions/lessons/patterns/audit-carryovers is clean; progress.yaml parses strictly; 5 recurring tasks schema-valid; namespaces clean; index 15/20 entries valid; 0 broken milestone links"
+    - "acp-sync: no specs and no acp.meta-scan.sh in this repo, so the marker/traceability steps (1.3-1.6) had no data - recorded rather than faked. Documentation counters verified accurate (34 task docs, 10 milestone docs)"
+    - "README drift fixed: GET /api/timeseries (shipped in M74) was never documented. Added with the eight UI ranges (the endpoint also accepts 12h), the four metric tabs and the exact payload shape read off db_timeseries; corrected my own first draft, which claimed nine ranges and a prefill mode that does not exist as a tab"
+    - "noted, NOT fixed (out of scope): agent/wiki/architecture.md is still the unfilled bootstrap template from the bootstrap commit"
+    - "progress.yaml: new recent_work entry for this close-out; sessions.md now 14 entries (under 15, no compaction); no routing tasks exist in this repo (only route-template.md), so there was nothing to auto-stamp completed"
+  deferred:
+    - "a33-37 (Strata/llama log tailing) -> its own task, unchanged"
+    - "agent/wiki/* is still bootstrap template content (architecture.md last_verified: YYYY-MM-DD literal) -> needs a decision on whether the wiki layer is used at all here"
+  key_fact: "A green scripts/acp-validate.ts does NOT mean /acp-validate passed. The .ts covers version + pointers + status only, so memory files that do not parse as YAML at all, and index entries missing required schema fields, sit invisible behind a PASS line. Run the command doc's steps, not just its TypeScript subset - and remember a double-quoted YAML scalar treats backslashes as escapes, so any Windows path inside one needs doubled backslashes (or a single-quoted/folded scalar)."
+
+- date: 2026-10-29
+  executor: zed
+  branch: main
   tasks: ["review-015 rounds 3 and 4 (self-review of the round-2 and round-3 fixes)"]
   done:
     - "R3 server: weighted_prefill_rate returns None when the counters disagree (was a fake 0.0), when a decrease is invisible to prompt_ms (was 10,000.0 vs an honest 1,000) and when the rate exceeds PREFILL_CEILING_TOK_S (was 9,001,000.0); HOUR_SPAN_MAX_S = 3600 bounds the PRODUCED span rather than the row's age"

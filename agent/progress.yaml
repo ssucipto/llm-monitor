@@ -646,6 +646,17 @@ progress:
 recent_work:
   - date: 2026-10-29
     description: |
+      Close-out of the M81 review loop: /acp-validate run in full, /acp-sync over the docs,
+      then commit and push. Validate found three real defects that the trimmed TypeScript
+      validator cannot see, all in tracked records rather than product code.
+    items:
+      - "agent/memory/patterns.md did not parse as YAML: the M81 guards list begins with a quoted word (capture the \"before\" value), so the whole list item was read as a double-quoted scalar. Rewritten as >- folded items; the file now whole-file parses"
+      - "agent/memory/audit-carryovers.md line 726 did not parse: a double-quoted notes scalar contained C:\\Project\\Strata, and \\P is an unknown escape. Backslashes doubled"
+      - "agent/index/acp.core.yaml: the path-null note entry was missing rationale: (required by the index schema), unreported because scripts/acp-validate.ts in this repo covers only version/pointers/status. Added"
+      - "llm-monitor/README.md had drifted: no mention of GET /api/timeseries, added in M74. Documented with the eight UI ranges (the endpoint also accepts 12h), the four metric tabs and the exact payload shape read off db_timeseries"
+      - "Not fixed, noted: agent/wiki/architecture.md is still the unfilled bootstrap template (pre-existing since bootstrap, out of scope here)"
+  - date: 2026-10-29
+    description: |
       M81 review rounds 3 and 4 — the loop run over the round-2 fixes, then over the round-3 fixes.
       Round 3 produced 15 findings (7 server, 8 app/UI): the prefill rate published a fake 0.0 when
       its counters disagreed, a reset invisible to prompt_ms overstated it by 10x, an hour's baseline
