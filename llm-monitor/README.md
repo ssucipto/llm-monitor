@@ -12,7 +12,7 @@ Hermes workspace switches between.
 | `index.html` | Page structure — element IDs are the API contract                  |
 | `style.css`  | Dark theme with automatic light mode (`light-dark()` palette)      |
 | `app.js`     | Fetches `/api/stats`, renders, auto-refreshes every 5 s            |
-| `server.py`  | Static server + `/api/stats` endpoint (Python stdlib)              |
+| `server.py`  | Static server + the `/api/*` JSON endpoints (Python stdlib)        |
 
 ## Run it
 
@@ -152,6 +152,17 @@ files and log tails. Sections:
   table is bounded to ~28h, ended days are frozen into the rollup at each day
   boundary before pruning can drop them, so weekly/monthly history survives uptime
   the raw polls cannot.
+- **Timeseries chart** — an interactive SVG chart over eight windows: `15m` / `1h` /
+  `3h` / `6h` / `24h` and `7d` / `30d` / `90d`, in four metric tabs (All Combined,
+  Tokens/s, Token Usage, Requests; the prefill series rides along in All Combined).
+  Backed by `GET /api/timeseries?range=<r>` — which also accepts `12h` — bucketing the
+  SQLite history with counter-reset safety and returning `{range, span_s, bucket_s,
+  n_buckets, empty_buckets, buckets:[{t,time,label,samples,requests,prompt_tokens,
+  reused,output_tokens,total_tokens,tok_s_mean,tok_s_max,prefill_mean,prefill_max,
+  prefill_bounded}], summary}`. A bucket with `samples: 0` is a gap in observation, not
+  an idle engine, and the chart draws it that way. An unknown range is HTTP 404; if the
+  endpoint fails, the panel rebuilds its buckets from the `/api/stats` payload instead
+  of going blank.
 
 ## Layout
 
