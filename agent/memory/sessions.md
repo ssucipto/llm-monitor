@@ -5,6 +5,26 @@
 - date: 2026-10-29
   executor: zed
   branch: main
+  tasks: ["service restart (:8090)", "M81 follow-up close-out: acp-validate (full) + acp-sync + acp-update + acp-commit + git-commit + push"]
+  done:
+    - "cycled the :8090 monitor through its scheduled task: stopped supervisor PID 34952 then listener PID 26648, each only after printing its Win32_Process command line; verified DOWN (no listener on 8090, HTTP connect failed) before Start-ScheduledTask brought it back as supervisor 38012 / server 25328 with GET / and /api/stats both 200"
+    - "the supervisor-first order was required, not stylistic: the supervisor respawns the server, so killing only the :8090 listener gets undone in seconds. Stop-ScheduledTask alone reported Status: Ready while the child still held the port, so the port check is the real evidence"
+    - "Strata's process matched the server.py name pattern and was excluded by its command line (--port 8081); :8080 gateway PID 14852 and :8081 PID 17396 verified still listening afterwards"
+    - "validate beyond the trimmed validator: acp-validate.ts PASS (version 0.3.0 == CHANGELOG, no dangling pointers, no status drift, 0 warnings) and acp-validate.test.mjs 1/1; manual step 2g clean (sessions 17 / lessons 24 / patterns 9 / audit-carryovers 95 entries, 0 duplicate-key entries; progress.yaml parses strictly); steps 1 and 2d clean (all agent/ dirs present, 5 recurring tasks schema-valid)"
+    - "constraints.yml has NO hooks block, so the ADR-20 hook-binding half of step 2g is inert in this repo — recorded rather than reported as a pass"
+    - "threw away two false findings from my own probe before reporting them: a parity probe demanded .github/prompts + .cursor/commands + .claude/commands wrappers, but those directories do not exist at all here (this repo ships only .opencode/commands), and its sessions-key regex was wrong because date: sits on the - date: line itself. The repo's authoritative validator passes clean"
+    - "sync: README agrees with server.py on all six endpoints (/api/stats, /api/export, /api/export.csv, /api/timeseries, /api/usage, /api/usage/sessions); DB_MAX_ROWS 20000 and the ~90 day DB_DAILY_MAX prune match the docs; framework version 6.40.0 consistent across AGENTS.md, CLAUDE.md, copilot-instructions.md and manifest.yaml"
+    - "noted, NOT fixed: recurring_tasks have last_run/next_due/status all commented out, so the step 4.5 overdue check can never fire here; agent/wiki/architecture.md is still the unfilled bootstrap template; nine empty agent/scratch-* folders from earlier milestones are still on disk"
+    - "progress.yaml: recent_work entry for the service cycle + full validate/sync, documentation.last_updated stamped 2026-10-29; no routing tasks exist in this repo (only route-template.md) so there was nothing to auto-stamp completed"
+  deferred:
+    - "a33-37 (Strata/llama log tailing) -> its own task, unchanged"
+    - "recurring_tasks cadence fields are commented out -> either populate last_run/next_due or drop the block so the overdue check stops being inert"
+    - "nine empty agent/scratch-* folders + agent-scratch-old-server.py left in place (not ours to delete unasked)"
+  key_fact: "A scheduled task's Status: Ready tells you nothing about its children. The evidence that a service is down is the absence of a listener on its port plus a failed HTTP request, and the stop order must be supervisor-then-listener or the respawn undoes the kill. Also: a probe that reports 75 errors can be the bug - when every finding is 'missing wrapper directory', check whether the convention applies to this repo at all before believing it."
+
+- date: 2026-10-29
+  executor: zed
+  branch: main
   tasks: ["M81 close-out: acp-validate (full) + acp-sync + acp-update + acp-commit + git-commit + push"]
   done:
     - "ran /acp-validate to its command doc, not just scripts/acp-validate.ts. The .ts in this repo implements only version/pointers/status; steps 1, 2, 2c-2g, 5, 9, 10, 11 were run separately (agent/scratch-m81-close/v2g.py + vrest.py, deleted after use)"

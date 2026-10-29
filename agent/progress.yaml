@@ -632,7 +632,7 @@ documentation:
   milestone_documents: 10
   pattern_documents: 0
   task_documents: 34
-  last_updated: 2026-10-26
+  last_updated: 2026-10-29
 
 # Overall progress metrics
 progress:
@@ -644,6 +644,21 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: 2026-10-29
+    description: |
+      Service cycle then a full /acp-validate + /acp-sync pass. The :8090 monitor was stopped and
+      restarted through its scheduled task (supervisor PID first, then the listener), because the
+      supervisor auto-respawns the server. Validate was run beyond the trimmed TypeScript validator,
+      with the documented manual steps (1, 2d, 2g, 9, 10, 11.7) checked by throwaway probes.
+    items:
+      - "service: stopped supervisor PID 34952 (service-supervisor.ps1) and listener PID 26648 (server.py 8090), each after printing its command line; verified no listener on :8090 and a failed HTTP connect, then Start-ScheduledTask -TaskName LLMMonitor brought it back as supervisor 38012 / server 25328 with GET / and /api/stats both 200"
+      - ":8080 (gateway, PID 14852) and :8081 (Strata, PID 17396) were never touched; Strata's server.py matched the process-name pattern and was excluded by its command line"
+      - "validate: scripts/acp-validate.ts PASS (version 0.3.0 == CHANGELOG, no dangling pointers, no status drift, 0 warnings); acp-validate.test.mjs 1/1 pass"
+      - "manual step 2g: memory duplicate-key scan clean (sessions 17, lessons 24, patterns 9, audit-carryovers 95 entries, 0 duplicate-key entries); progress.yaml parses as strict YAML; constraints.yml has no hooks block, so the ADR-20 hook-binding check is inert here"
+      - "manual steps 1 and 2d: all required agent/ directories present; 5 recurring_tasks schema-valid (0 errors, 0 duplicate ids)"
+      - "sync: README vs server.py agree on all six endpoints (/api/stats, /api/export, /api/export.csv, /api/timeseries, /api/usage, /api/usage/sessions); DB_MAX_ROWS 20000 and the ~90 day DB_DAILY_MAX prune both match the docs; ACP framework version 6.40.0 consistent across AGENTS.md, CLAUDE.md, copilot-instructions.md and manifest.yaml"
+      - "noted, not fixed: recurring_tasks carry no last_run/next_due/status (all commented out), so the step 4.5 overdue check can never fire; agent/wiki/architecture.md is still the unfilled bootstrap template; nine empty agent/scratch-* folders from earlier milestones remain on disk"
+      - "⏳ a33-37 still pending (Strata/llama log tailing) — unchanged, needs its own task"
   - date: 2026-10-29
     description: |
       Close-out of the M81 review loop: /acp-validate run in full, /acp-sync over the docs,
