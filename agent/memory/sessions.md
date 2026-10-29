@@ -2,6 +2,29 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-10-29
+  executor: zed
+  branch: main
+  tasks: ["review-015 rounds 3 and 4 (self-review of the round-2 and round-3 fixes)"]
+  done:
+    - "R3 server: weighted_prefill_rate returns None when the counters disagree (was a fake 0.0), when a decrease is invisible to prompt_ms (was 10,000.0 vs an honest 1,000) and when the rate exceeds PREFILL_CEILING_TOK_S (was 9,001,000.0); HOUR_SPAN_MAX_S = 3600 bounds the PRODUCED span rather than the row's age"
+    - "R4 server: moved the disagreement guard into window_pct, where all six rate call sites share it - a 250% cache-hit rate was publishable. Pinned the HOUR_SPAN_MAX_S boundary both ways (3600 kept, 3601 dropped) so flipping > to >= is visible"
+    - "R4 flake root-caused by measurement: agent/scratch-m81-rv3/flake.py sampled the page every 100 ms after a real fold click and saw span 123 -> 24 within ~100 ms in 3/3 runs; 123 is exactly ceil((480 + 12) / 4), the span for the panel while the fold was OPEN. The product self-heals; the TEST was confirming a mid-race state"
+    - "Rejected a subagent's recommendation to re-drive layout passes in app.js: its 'persists indefinitely' claim is disproved by that probe, and my first attempt contained an in-pass check that re-read the measurement it had just written (the same unfailable-assertion trap as D-015-09). app.js layout engine unchanged"
+    - "settle fix in the suite: SPANS_SIG flags a span that no longer brackets its tile's height (and a tile left at auto with height); settle_spans refuses to return while the marker is present. Proven deterministically by prove_stale.py, which forces span 123 on an 83px panel and shows the pre-fix rule accepts that as settled"
+    - "R4-1 (high): the A5 payload guards had NO coverage - deleting both left the suite green. New browser check usage-payload-missing-keys; reverting either guard now fails with '--' and 'unavailable (Cannot read properties of undefined (reading claude_code))'"
+    - "R4-2 (high): dayName() fixes aria-valuetext, the selected-day line and the offline fallback label, all of which read .date unguarded. The new check FAILED on shipped code ('undefined, day 11 of 11') before the fix existed"
+    - "R4-3: the widened SERIES rule anchored ': 0' at end of line, so '? b.x : 0))' slipped through (rule_check.py). Anchor dropped; a : 0 fallback now fails chart-disclosure-honest"
+    - "Corrected my own S3 docstring, which claimed the day path was immune because it charges no cumulative totals to a gap - false: day_aggregates publishes prompt/reused/output deltas over [base] + rows. No day-path change; that attribution is what a day rollup is for"
+    - "HOUR_BASELINE_MAX_AGE_S recorded honestly as a scan limit, not a correctness rule: every baseline it admits also passes the span test, so deleting it turns no test red"
+    - "R3-S7 kept as a FALSE POSITIVE (mutation against pre-round-2 code fails it with 3000.0, so it does discriminate); db_daily's conditional prefill_note is by design"
+    - "counts: browser 28 -> 31, telemetry analysis 41 -> 50, static 20 unchanged; expected.txt bumped in the same commits. Six round-3 server mutations plus six round-4 mutations proven, all reverted (each driver prints restored: True)"
+    - "the :8090 service was down at session start; Start-ScheduledTask -TaskName LLMMonitor brought it up (HTTP 200), so it now runs the round-3 server.py"
+    - "commits 294e248 (server) and 2ffccbe (app + UI suite); the split verified bisectable by stashing the UI half and re-running the previous suite green at 28/28. NOT pushed - not authorised"
+  deferred:
+    - "a33-37 (Strata/llama log tailing) -> its own task, unchanged"
+  key_fact: "A STABLE read is not a CORRECT read: two identical geometry reads only prove the page stopped working. A stale row span is perfectly stable, so a settle built on identical reads validates the mid-race layout instead of waiting past it - flag the invariant (span brackets height) in the signature, not just the values. And bound the quantity you actually publish (the span), never the proxy you thought about (the row's age)."
+
 - date: 2026-10-28
   executor: zed
   branch: main

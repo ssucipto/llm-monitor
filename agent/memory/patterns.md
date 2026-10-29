@@ -226,3 +226,37 @@
     - a content stamp is a contract, not a log line: every __lastUsage / __lastRender must be
       paired with the layout pass that covers it, so gate stamp and pass together and never
       save a pass while still stamping
+
+- date: 2026-10-29
+  name: settle-on-the-invariant-not-the-values
+  kind: browser-harness-synchronisation-pattern
+  problem: |
+    A geometry wait polls "two consecutive identical reads of every element's state" and calls
+    that settled. It is not: a STALE value is perfectly stable, so the double read confirms a
+    broken layout instead of refuting it. Observed as a one-in-N flake where a masonry row span
+    still held the value written while a fold was open (span 123 = ceil((480 + 12) / 4) on an
+    83px panel); the product healed it ~100 ms later, but both settle reads landed inside that
+    window and the check then asserted against the stale state.
+  solution: |
+    Encode the INVARIANT in the signature alongside the values. Emit a per-element marker when
+    the published value stops bracketing the measured one (here: span * unit outside
+    h - 1 .. h + gap + unit * 2, the same tolerance the suite's existing slack checks use), and
+    treat the marker as not-settled so the wait continues; a genuinely stuck layout then times
+    out with a message naming the element. Prove such a guard deterministically rather than by
+    re-losing a rare race: force the bad state, hold it against the app's own repair path (a
+    requestAnimationFrame keeper, since the poll re-spans every 5 s), show the real helper refuses
+    to settle on it, and show the pre-fix rule ACCEPTS the same state as settled.
+  example: |
+    agent/tests/ui/test_ui_browser.py SPANS_SIG (the :STALE marker, skipping .drop-slot and
+    treating a sized tile left at gridRowEnd:auto as stale) and settle_spans (refuses to return
+    while the marker is present; timeout message lists the flagged ids).
+  applies_to: any harness that waits for a UI to stop moving before asserting on it
+  guards:
+    - an in-pass verification that re-measures what it just wrote can never fail — the
+      "assertion restating the helper's body" trap; measure something the write could not produce
+    - keep the tolerance identical to the suite's other slack checks, or the settle and the
+      assertions disagree about what counts as broken
+    - elements legitimately spanned to something other than their own box (a drag preview slot)
+      must be skipped, or a future settle mid-interaction hangs to the timeout
+    - before changing product code on a reviewer's timing claim, measure how long the bad state
+      actually lasts; here it self-healed in ~100 ms and the real defect was in the test
