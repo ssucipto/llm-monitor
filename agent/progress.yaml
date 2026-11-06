@@ -7,7 +7,7 @@ project:
   version: 0.3.0
   started: 2026-10-07
   status: in_progress
-  current_milestone: M81
+  current_milestone: M82
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -222,6 +222,22 @@ milestones:
       HUD power gauge, and labels session-cumulative ratios as window rates.
       Lifts the M79/M80 "zero /api changes" rule deliberately: payload keys are additive only.
       Version goes 0.2.1 -> 0.3.0 on implementation.
+
+  - id: M82
+    name: Autonomous Telemetry Daemon, Strata Engine Alignment, and Verification Rigor
+    priority: 1
+    file: agent/milestones/milestone-82-autonomous-telemetry-and-strata-alignment.md
+    status: in_progress
+    progress: 0
+    started: "2026-11-06"
+    completed: null
+    estimated_weeks: 1
+    tasks_completed: 0
+    tasks_total: 4
+    notes: |
+      Planned from audit-34 to address telemetry cessation when UI is closed,
+      live Strata engine log & architectural knobs alignment (DFlash2, k8v4),
+      Session-0 socket attestation in gate-service.ps1, and calendar-safe telemetry tests.
 
 active_handoff:
   path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
@@ -626,13 +642,50 @@ tasks:
       actual_hours: null
       file: agent/tasks/milestone-81-information-architecture-and-correctness/task-81-t8-verification.md
       estimated_hours: 4
+  milestone_82:
+    - id: task-82-t1
+      name: Autonomous background telemetry engine
+      priority: 1
+      status: not_started
+      started: null
+      completed_date: null
+      actual_hours: null
+      file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t1-autonomous-telemetry-daemon.md
+      estimated_hours: 3
+    - id: task-82-t2
+      name: Live Strata engine & log alignment
+      priority: 1
+      status: not_started
+      started: null
+      completed_date: null
+      actual_hours: null
+      file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t2-strata-log-and-knobs-alignment.md
+      estimated_hours: 2
+    - id: task-82-t3
+      name: Service gate & test suite remediation
+      priority: 1
+      status: not_started
+      started: null
+      completed_date: null
+      actual_hours: null
+      file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t3-service-gate-and-test-suite-remediation.md
+      estimated_hours: 2
+    - id: task-82-t4
+      name: Trend history resilience & documentation synchronization
+      priority: 1
+      status: not_started
+      started: null
+      completed_date: null
+      actual_hours: null
+      file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t4-trend-history-resilience-and-docs-sync.md
+      estimated_hours: 2
 
 documentation:
   design_documents: 0
-  milestone_documents: 10
+  milestone_documents: 11
   pattern_documents: 0
-  task_documents: 34
-  last_updated: 2026-10-29
+  task_documents: 38
+  last_updated: 2026-11-06
 
 # Overall progress metrics
 progress:

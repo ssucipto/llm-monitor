@@ -895,3 +895,48 @@ carryovers:
     fix_applied_date: 2026-10-27
     verified_in_audit: null
     notes: "M81 needs value-dependent checks (null-gauge-not-zero, history-bars, chart-axis-labelled). Add LLM_MONITOR_FIXTURE so _get_json serves a fixture and the temp DB is seeded from it. Planned as M81-T8 step 2. Partially mitigated by M81-T4 without needing the fixture: chart-series-breaks-at-gap and chart-no-impossible-prefill seed the LLM_MONITOR_DB test file directly, so their expected values are exact and independent of whatever engine is live. The remaining engine-dependent value checks (the gauge family) still rely on the Page.addScriptToEvaluateOnNewDocument fetch fixture rather than a server-side one. CLOSED 2026-10-27 (M81-T8 step 2): server.py honours LLM_MONITOR_FIXTURE and _get_json answers from agent/tests/ui/fixtures/engine.json; an unusable fixture raises SystemExit(2) instead of falling back to the live engine. New browser check fixture-engine-values asserts exact numbers only the fixture can produce (gpu.temp_c 71.0, util_pct 62.0/measured, mem_pct 73.2421875, power_w 187.0, throughput.prefill 200.0, prefill_mean 500.0, spec.accept_pct 70.0, cache.hit_pct 80.0) and the rendered panel (#gpu-temp '71%', #gpu-util '62%', #gpu-mem '73%', temp meter value 71, #gpu-state 'counters live' plus the engine/OS name disagreement). New static check engine-fixture-honoured. Mutation-proven: removing the _FIXTURE branch fails static and makes the browser check report the live engine's numbers (prefill_mean 211.58 vs 500.0, accept_pct 77.70 vs 70.0, hit_pct 97.76 vs 80.0); replacing SystemExit(2) with pass fails static; changing the fixture's gpu_temp to 65.0 fails the browser check. python agent/tests/ui/run-tests.py -> ok test_ui_browser.py: 25/25, ok test_ui_static.py: 16/16, [tests/ui] PASS"
+  - id: a34-01
+    audit: 34
+    finding: "telemetry poll rows are not collected in telemetry.sqlite3 while the interface is closed, causing all rolling trends and 1h timeseries to blank on re-opening"
+    location: llm-monitor/server.py:2157
+    severity: high
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Proven in audit 34: telemetry() is only called in build_stats() on GET /api/stats. While usage_ledger has usage_thread daemon, telemetry has no background polling thread. When the browser tab closes, collection stops (verified: 16.5-hour gap 2026-11-05 16:55 to 2026-11-06 09:27). On re-opening, db_analysis rolling 1h/2h windows have <2 samples -> recent: null -> UI sets an-trend: -- and 'awaiting history'; timeseries 1h has 50+ empty buckets. Fix: add a background telemetry daemon thread in server.py (polling every 15-30s) independent of client requests"
+  - id: a34-02
+    audit: 34
+    finding: "LOG_FILES in server.py tails obsolete llama.cpp files in Hermes while Strata is the active engine; live Strata log path is C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log"
+    location: llm-monitor/server.py:41
+    severity: medium
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Audit 34 verified: active engine is Strata 0.1.57 (port 8081, upstreamed on 8080). Server tails watchdog.log / autostart.log / server.log.err in C:\\Project\\hermes\\tools\\llama-cpp, so System Log shows only stale autostart lines from Nov 5. The active Strata log is C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log (correcting stale path C:\\Project\\Strata in a33-37). Fix: tail the active engine log dynamically per engine-active.txt"
+  - id: a34-03
+    audit: 34
+    finding: "gate-service.ps1:G3 reports false failure on Session 0 sockets because Get-NetTCPConnection without elevation reports OwningProcess = 0"
+    location: agent/scripts/gate-service.ps1:81
+    severity: medium
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Audit 34 verified: server PID 14428 is supervised by PID 2900 in Session 0 (LLMMonitorBoot) with valid 10s heartbeats in service-8090.state.json. Get-NetTCPConnection returns OwningProcess = 0 from desktop PowerShell, causing $st.server_pid -eq $srvPid (14428 -eq 0) to evaluate false and fail G3. netstat -ano correctly resolves PID 14428. Fix: fall back to netstat or the verified state file PID when OwningProcess is 0"
+  - id: a34-04
+    audit: 34
+    finding: "tests/telemetry/test_telemetry_days.py line 211 calendar drift failure: hardcoded DAY = 1792512000 (October 22, 2026) fails when executed in November 2026"
+    location: tests/telemetry/test_telemetry_days.py:211
+    severity: medium
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Audit 34 verified: test asserts cur.get('tok_s_mean') == 40.0 for the 'current' month. In November 2026, DAY (October 2026) falls into the previous month, so db_periods().get('month').get('current') is empty and returns None. Fix: anchor DAY relative to current UTC month in the test fixture"
+  - id: a34-05
+    audit: 34
+    finding: "Strata engine knobs (drafting: dflash2, kv: k8v4, kv_resident, conversation_cache_mib, prefill_cap, stream_all_min) are omitted from gather_config()"
+    location: llm-monitor/server.py:481
+    severity: low
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Audit 34 verified: Strata /metrics reports rich architecture metadata (DFlash2 drafting with 82% acceptance, k8v4 KV cache, 32k resident KV tokens, 4 GB conversation cache), but gather_config() does not extract drafting, kv, kv_resident, conversation_cache_mib, prefill_cap, or stream_all_min"
