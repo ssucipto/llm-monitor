@@ -10,6 +10,11 @@ IG_JSON_MODE="${IG_JSON_MODE:-false}"
 IG_CI_MODE="${IG_CI_MODE:-false}"
 IG_BASELINE_FILE="${IG_BASELINE_FILE:-}"
 IG_WRITE_BASELINE_FILE="${IG_WRITE_BASELINE_FILE:-}"
+# Native Windows python cannot open MSYS (/d/..., /tmp/...) paths; hand file
+# arguments to python in the Windows form. Bash-side use keeps the original path.
+_native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
 IG_FINDINGS_TOTAL=0
 IG_FINDINGS_CRITICAL=0
 IG_FINDINGS_HIGH=0
@@ -194,7 +199,7 @@ ig_load_baseline() {
   while IFS= read -r key; do
     [[ -z "$key" ]] && continue
     IG_BASELINE_KEYS+="${key}"$'\n'
-  done < <(python3 - "$IG_BASELINE_FILE" <<'PY'
+  done < <(python3 - "$(_native_path "$IG_BASELINE_FILE")" <<'PY'
 import json
 import sys
 
@@ -283,7 +288,7 @@ ig_load_rule_overrides() {
         IG_RULE_SEVERITY_KEYS+="${line#SEVERITY:}"$'\n'
         ;;
     esac
-  done 3< <(python3 "$IG_RULE_OVERRIDE_LOADER" "$(ig_repo_root)" "${IG_RULE_OVERRIDES_FILE:-}" 2>/dev/null || true)
+  done 3< <(python3 "$(_native_path "$IG_RULE_OVERRIDE_LOADER")" "$(_native_path "$(ig_repo_root)")" "${IG_RULE_OVERRIDES_FILE:-}" 2>/dev/null || true)
 
   IG_RULE_OVERRIDES_LOADED=true
 }

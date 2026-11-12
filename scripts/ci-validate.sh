@@ -8,14 +8,16 @@ trap 'echo "[ci-validate] Error on line ${LINENO}" >&2; exit 1' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CI_YAML="${PROJECT_ROOT}/agent/configurables/ci.yml"
+CI_YAML="${ACP_CI_CONFIG:-${PROJECT_ROOT}/agent/configurables/ci.yml}"
+# Native Windows python cannot open MSYS (/d/...) paths; hand it the Windows form.
+if command -v cygpath >/dev/null 2>&1; then CI_YAML_ARG="$(cygpath -m "${CI_YAML}")"; else CI_YAML_ARG="${CI_YAML}"; fi
 
 if [[ ! -f "${CI_YAML}" ]]; then
   echo "ci-validate.sh: agent/configurables/ci.yml not found" >&2
   exit 1
 fi
 
-python3 - "$CI_YAML" <<'PY'
+python3 - "$CI_YAML_ARG" <<'PY'
 import sys, re
 text = open(sys.argv[1], encoding="utf-8").read()
 # Reuse the ci.yml shape check: every tier step id must be declared under steps:.

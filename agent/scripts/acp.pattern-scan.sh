@@ -43,7 +43,7 @@ if [[ ! -e "$TARGET" ]]; then
   exit 2
 fi
 
-combined=$(ACP_TARGET="$TARGET" python3 "${SCRIPT_DIR}/acp.pattern-scan.py" 2>&1)
+combined=$(ACP_TARGET="$(_native_path "$TARGET")" python3 "$(_native_path "${SCRIPT_DIR}/acp.pattern-scan.py")" 2>&1)
 
 while IFS= read -r line; do
   [[ -z "$line" || "$line" == ACP_FINDING_COUNT=* ]] && continue

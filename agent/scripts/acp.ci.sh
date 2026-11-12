@@ -22,8 +22,10 @@ trap 'echo "[acp.ci] Error on line ${LINENO}" >&2; exit 1' ERR
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
+# Native Windows python cannot open MSYS (/d/...) paths; hand it the Windows form.
+if command -v cygpath >/dev/null 2>&1; then REPO_ROOT_ARG="$(cygpath -m "${REPO_ROOT}")"; else REPO_ROOT_ARG="${REPO_ROOT}"; fi
 
-CI_CONFIG="${ACP_CI_CONFIG:-${REPO_ROOT}/agent/configurables/ci.yml}"
+CI_CONFIG="${ACP_CI_CONFIG:-${REPO_ROOT_ARG}/agent/configurables/ci.yml}"
 STEPS_LIB="${ACP_CI_STEPS_LIB:-${SCRIPT_DIR}/acp.ci-steps.sh}"
 
 TIER="fast"

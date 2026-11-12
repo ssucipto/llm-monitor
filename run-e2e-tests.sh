@@ -9,6 +9,11 @@ trap 'echo "[run-e2e-tests] Error on line ${LINENO}" >&2; exit 1' ERR
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}"
 
+# Native Windows python/py cannot open MSYS (/d/...) paths; hand them the Windows form.
+_native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
 # accept (and ignore) --skip-network for parity with the ci-steps invocation
 for arg in "$@"; do
   case "${arg}" in
@@ -31,16 +36,16 @@ done
 # M78: the usage ledger suites (stdlib; counts enforced by tests/usage/run-tests.py). py on this PC (a bare python is a shim).
 if command -v py >/dev/null 2>&1; then PY=(py -3.12); elif command -v python3 >/dev/null 2>&1; then PY=(python3); else
   echo "run-e2e-tests.sh: neither py nor python3 found for tests/usage" >&2; exit 1; fi
-"${PY[@]}" "${PROJECT_ROOT}/tests/usage/run-tests.py"
+"${PY[@]}" "$(_native_path "${PROJECT_ROOT}/tests/usage/run-tests.py")"
 pass=$((pass + 1))
 
 # M81: the telemetry maths suites (window ratios, weighting, outlier bounds, day rollups;
 # counts enforced by tests/telemetry/run-tests.py). SIMULATED: a temp sqlite file, no engine.
-"${PY[@]}" "${PROJECT_ROOT}/tests/telemetry/run-tests.py"
+"${PY[@]}" "$(_native_path "${PROJECT_ROOT}/tests/telemetry/run-tests.py")"
 pass=$((pass + 1))
 
 # M79: the UI static suites (id contract, tile grid, server smoke; counts enforced by agent/tests/ui/run-tests.py).
-"${PY[@]}" "${PROJECT_ROOT}/agent/tests/ui/run-tests.py"
+"${PY[@]}" "$(_native_path "${PROJECT_ROOT}/agent/tests/ui/run-tests.py")"
 pass=$((pass + 1))
 
 echo "run-e2e-tests.sh: ${pass} e2e tests passed"

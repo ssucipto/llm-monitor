@@ -49,7 +49,7 @@ fi
 run_entropy_python() {
   local file="$1"
   ACP_THRESHOLD="$THRESHOLD" \
-  ACP_FILEPATH="$file" \
+  ACP_FILEPATH="$(_native_path "$file")" \
   ACP_REVIEW_SC01_MODE="$REVIEW_SC01_MODE" \
   python3 - <<'PY'
 import math

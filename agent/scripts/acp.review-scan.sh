@@ -30,6 +30,12 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IG_PREFS_ROOT="${IG_PREFS_ROOT:-$PROJECT_ROOT}"
 
+# Native Windows python cannot open MSYS (/d/..., /tmp/...) paths; hand file
+# arguments to python in the Windows form. Bash-side use keeps the original path.
+_native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
 emit_review_finding() {
   local file="$1"
   local line="${2:-0}"
@@ -217,7 +223,7 @@ scan_ts_js() {
   while IFS=$'\t' read -r out_file line_num rule message severity || [[ -n "${out_file:-}" ]]; do
     [[ -z "${out_file:-}" ]] && continue
     emit_review_finding "$out_file" "$line_num" "$rule" "$message" "$severity"
-  done < <(ACP_REVIEW_FILE="$file" python3 "${SCRIPT_DIR}/acp.review-scan-ts.py" 2>/dev/null || true)
+  done < <(ACP_REVIEW_FILE="$(_native_path "$file")" python3 "$(_native_path "${SCRIPT_DIR}/acp.review-scan-ts.py")" 2>/dev/null || true)
 
   while IFS=$'\t' read -r out_file line_num rule message severity || [[ -n "${out_file:-}" ]]; do
     [[ -z "${out_file:-}" ]] && continue
@@ -413,7 +419,7 @@ scan_tsconfig_rules() {
   while IFS=$'\t' read -r line_num rule message severity || [[ -n "${line_num:-}" ]]; do
     [[ -z "${line_num:-}" ]] && continue
     emit_review_finding "$file" "$line_num" "$rule" "$message" "$severity"
-  done < <(python3 - "$file" <<'PY'
+  done < <(python3 - "$(_native_path "$file")" <<'PY'
 import json
 import sys
 path = sys.argv[1]
@@ -450,7 +456,7 @@ scan_package_security_rules() {
     while IFS=$'\t' read -r file line_num rule message severity || [[ -n "${file:-}" ]]; do
       [[ -z "${file:-}" ]] && continue
       emit_review_finding "$file" "$line_num" "$rule" "$message" "$severity"
-    done < <(python3 - "$audit_file" <<'PY'
+    done < <(python3 - "$(_native_path "$audit_file")" <<'PY'
 import json
 import sys
 path = sys.argv[1]
@@ -474,7 +480,7 @@ PY
       while IFS=$'\t' read -r file line_num rule message severity || [[ -n "${file:-}" ]]; do
         [[ -z "${file:-}" ]] && continue
         emit_review_finding "$file" "$line_num" "$rule" "$message" "$severity"
-      done < <(python3 - "$package_file" "$audit_output" <<'PY'
+      done < <(python3 - "$(_native_path "$package_file")" "$audit_output" <<'PY'
 import json
 import sys
 path = sys.argv[1]
@@ -684,7 +690,7 @@ scan_gitleaks_file() {
   while IFS=$'\t' read -r out_file line_num rule message severity || [[ -n "${out_file:-}" ]]; do
     [[ -z "${out_file:-}" ]] && continue
     emit_review_finding "${out_file:-$file}" "${line_num:-1}" "$rule" "$message" "$severity"
-  done < <(python3 - "$report_path" <<'PY'
+  done < <(python3 - "$(_native_path "$report_path")" <<'PY'
 import json
 import sys
 
@@ -738,7 +744,7 @@ scan_dupehound() {
     if is_scanned_file "$out_file"; then
       emit_review_finding "$out_file" "${line_num:-1}" "$rule" "$message" "$severity"
     fi
-  done < <(python3 - "$report_path" <<'PY'
+  done < <(python3 - "$(_native_path "$report_path")" <<'PY'
 import json
 import sys
 

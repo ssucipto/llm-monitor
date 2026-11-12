@@ -61,7 +61,7 @@ _ci_step_review_measure() {
   if [[ -z "$baseline" ]]; then
     # Time the finding-free floor: scan a trivial clean file that yields no findings.
     local probe
-    probe="$(mktemp.XXXXXX.ts)"
+    probe="$(mktemp "${TMPDIR:-/tmp}/acp-ci-probe.XXXXXX")"
     printf 'const x = 1;\nexport function f(a: number): number {\n  return a;\n}\n' > "$probe"
     local t0 t1 best=999999999
     for _rep in 1 2 3; do

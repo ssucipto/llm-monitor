@@ -11,6 +11,16 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SCAN_SCRIPT="${SCRIPT_DIR}/acp.review-scan.sh"
 CORPUS_DIR="${PROJECT_ROOT}/tests/fixtures/review-corpus"
 EXPECTED_FILE="${CORPUS_DIR}/expected.yaml"
+# Native Windows python cannot open MSYS (/d/...) paths; hand it the Windows form.
+if command -v cygpath >/dev/null 2>&1; then
+  SCAN_SCRIPT_ARG="$(cygpath -m "${SCAN_SCRIPT}")"
+  CORPUS_DIR_ARG="$(cygpath -m "${CORPUS_DIR}")"
+  EXPECTED_FILE_ARG="$(cygpath -m "${EXPECTED_FILE}")"
+else
+  SCAN_SCRIPT_ARG="${SCAN_SCRIPT}"
+  CORPUS_DIR_ARG="${CORPUS_DIR}"
+  EXPECTED_FILE_ARG="${EXPECTED_FILE}"
+fi
 CI_MODE=false
 MIN_RECALL=90
 MIN_PRECISION=90
@@ -69,9 +79,9 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
-SCAN_SCRIPT="${SCAN_SCRIPT}" \
-CORPUS_DIR="${CORPUS_DIR}" \
-EXPECTED_FILE="${EXPECTED_FILE}" \
+SCAN_SCRIPT="${SCAN_SCRIPT_ARG}" \
+CORPUS_DIR="${CORPUS_DIR_ARG}" \
+EXPECTED_FILE="${EXPECTED_FILE_ARG}" \
 CI_MODE="${CI_MODE}" \
 MIN_RECALL="${MIN_RECALL}" \
 MIN_PRECISION="${MIN_PRECISION}" \
