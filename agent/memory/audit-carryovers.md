@@ -331,10 +331,10 @@ carryovers:
     finding: "DECISION B (S4U boot task) unimplementable/unverified — New-ScheduledTaskTrigger -AtStartup registration is Access denied from this shell and the reboot test never ran"
     location: agent/milestones/milestone-76-service-robustness.md
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: 25
-    notes: "DECISION B. Still pending: the startup trigger needs a real reboot with the user present. audit-27 ran the S4U task without a reboot (Start-ScheduledTask LLMMonitorBoot, 18:08 and 18:14): python.exe and LOCALAPPDATA resolve in session 0, the chain serves 8090, the gate attests it via the state file, sign-in exits already served, and the desktop restart moves it back via the stop request."
+    status: fixed
+    fix_applied_date: 2026-11-12
+    verified_in_audit: 40
+    notes: "CLOSED 2026-11-12 on a real reboot. The machine rebooted 2026-11-11 22:54:28 (Win32_OperatingSystem.LastBootUpTime). service-8090.state.json: supervisor pid 3656 SESSION 0 started 22:54:39 (+11 s after boot, before any login), server pid 9040 started 22:54:41, heartbeat alive 39 h later. service-8090.log lines 461-462 record the session-0 chain; at 23:08:57 (first login) the desktop LLMMonitor supervisor logged 'port 8090 is already served by our server.py; this supervisor exits' with exit 0 — the stop-request/state-file design working exactly as designed. GET /api/stats HTTP 200 verified 2026-11-12 with the boot-chain server answering (netstat: pid 9040). audit-27's no-reboot S4U run plus this reboot complete T6/DECISION B verification."
 
   - id: a26-01
     audit: review-012
@@ -940,3 +940,21 @@ carryovers:
     fix_applied_date: 2026-11-06
     verified_in_audit: 36
     notes: "Fixed in M82-T2: gather_config() extracts drafting, kv, kv_resident, conversation_cache_mib, prefill_cap, and stream_all_min from Strata metrics. UI updated with cfg-drafting and cfg-kv fields in engine card."
+  - id: a40-01
+    audit: 40
+    finding: "gpu_temp and PCIe have no real counter source on Windows even on the current Adrenalin driver 32.0.32015.7029 (2026-10-18): no NVML, no MSAcpi_ThermalZoneTemperature instances, no AMD WMI namespace, no installable ADL SDK, GFXINFO unloadable standalone"
+    location: agent/reports/audit-40-gpu-temp-pcie-counter-probe-2026-11-12.md
+    severity: low
+    status: wontfix
+    fix_applied_date: null
+    verified_in_audit: 40
+    notes: "Verdict: keep the honest '--' rendering (M81-T2). Re-check triggers: an Adrenalin release shipping an installable ADL SDK or WMI provider, or moving the engine to Linux amdgpu hwmon. Probe table with every command and result is in audit-40."
+  - id: a40-02
+    audit: 40
+    finding: "M83 records say the rig's second adapter is a 'GTX 1660 6GB'; live /api/stats and Win32_VideoController both enumerate RX 7900 XTX (24560 MiB) + RX 6800 XT (16368 MiB, DEV_73BF) with no NVIDIA device present"
+    location: agent/memory/sessions.md
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-11-12
+    verified_in_audit: 40
+    notes: "Records-only defect; the VRAM-descending sort is correct either way (7900 XTX first). Correction recorded in audit-40 and in the 2026-11-12 sessions.md entry rather than editing the historical M83 entry."

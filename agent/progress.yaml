@@ -761,7 +761,25 @@ recent_work:
       empty agent/scratch-* folders reported open on 2026-10-29 no longer exist on disk.
     items:
       - "gates at this tree before commit: [tests/ui] PASS (browser 31/31 + static 20/20) · tests/telemetry rc_all=0 · tests/usage rc_all=0 · acp.ci.sh --fast (running, result recorded in the same session)"
-      - "note: acp.ci.sh resolves agent/configurables/ci.yml through an MSYS path that native python cannot open; run it with ACP_CI_CONFIG=D:/Project/llm-monitor/agent/configurables/ci.yml (no script change — env override exists for this)"
+      - "note superseded: acp.ci.sh's MSYS-path failure was fixed properly on 2026-11-12 (cygpath _native_path across 10 harness scripts, commit a6b988f) — no ACP_CI_CONFIG override is needed anymore"
+  - date: "2026-11-12"
+    description: |
+      /acp-proceed --complete --yes run 2: items 3-5 of the user list + records.
+      GPU probe closed as audit-40: no real gpu_temp/PCIe counter exists on Windows with
+      driver 32.0.32015.7029 (no NVML, no WMI thermal instances, no AMD namespace, no ADL
+      SDK, GFXINFO unloadable) — honest '--' stays; a40-01 wontfix-until-trigger. The
+      probe also caught records drift: the second adapter is an RX 6800 XT, not the
+      'GTX 1660' M83 notes claimed (a40-02 fixed). a25-02 CLOSED without a new reboot:
+      the machine rebooted 2026-11-11 22:54:28 and the state file + service log prove the
+      session-0 boot chain brought :8090 up +13 s post-boot, pre-login, heartbeat alive
+      39 h, first-login supervisor exiting 'already served' — plus HTTP 200 today.
+      Housekeeping: weekly-code-review recurring fields populated (overdue surfaced);
+      wiki/architecture.md and the scratch folders were already closed (stale notes).
+      sessions.md auto-compacted 19 -> 9 entries (11 oldest folded into one summary block).
+    items:
+      - "audit-40 report: agent/reports/audit-40-gpu-temp-pcie-counter-probe-2026-11-12.md"
+      - "carryovers: a40-01 wontfix (re-check triggers), a40-02 fixed (records correction), a25-02 fixed with receipt chain — pending count back to 0/102"
+      - "lessons.md: +2 entries (MSYS->native-python path rule; re-check 'still open' claims against the machine-readable source)"
   - date: 2026-10-29
     description: |
       Service cycle then a full /acp-validate + /acp-sync pass. The :8090 monitor was stopped and
@@ -1331,8 +1349,7 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probe real-counter paths (driver version, ADL/amdihkbrt, NVML for the secondary GTX 1660); util/power stay modelled and VRAM derived until a counter exists"
-  - "Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in"
+  - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probed 2026-11-12 in audit-40 — no counter source exists on Windows with driver 32.0.32015.7029; honest '--' stays. Re-check if Adrenalin ships an installable ADL SDK/WMI provider or the engine moves to Linux amdgpu (a40-01)"
   - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"
   - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
 
@@ -1356,9 +1373,9 @@ recurring_tasks:
     frequency: weekly
     executor: copilot
     description: "Weekly code quality review"
-    # last_run: 2026-01-01
-    # next_due: 2026-01-08
-    # status: current
+    last_run: 2026-10-28
+    next_due: 2026-11-04
+    status: overdue
 
   - id: weekly-integrity-scan
     command: /acp-integrity --self --report --carryover
