@@ -61,12 +61,18 @@
       </span>
       <span class="topbar__tok" hidden><data class="topbar__value" id="top-tok" value="0">--</data><span class="topbar__unit">decode tok/s</span></span>
     </p>
-    <div class="topbar__gauge" id="top-gauge" role="img" aria-label="prefill speed gauge">
-      <span class="topbar__gauge__fill" id="top-gauge-fill"></span>
-      <span class="topbar__gauge__knob" id="top-gauge-knob"></span>
+    <div class="topbar__gauges">
+      <div class="topbar__gauge topbar__gauge--tok" id="top-gauge-tok" role="img" aria-label="decode speed gauge">
+        <span class="topbar__gauge__fill" id="top-gauge-tok-fill"></span>
+        <span class="topbar__gauge__knob" id="top-gauge-tok-knob"></span>
+      </div>
+      <div class="topbar__gauge topbar__gauge--prefill" id="top-gauge" role="img" aria-label="prefill speed gauge">
+        <span class="topbar__gauge__fill" id="top-gauge-fill"></span>
+        <span class="topbar__gauge__knob" id="top-gauge-knob"></span>
+      </div>
     </div>
     <div class="kpi-strip" role="group" aria-label="At a glance">
-      <div class="kpi"><data class="kpi__value" id="hero-tok" value="0">--</data><span class="kpi__unit">decode tok/s</span></div>
+      <div class="kpi"><data class="kpi__value" id="hero-tok" value="0">--</data><span class="kpi__unit">decode tok/s</span><span class="kpi__scale kpi__unit--scale" id="hero-tok-ceiling">gauge to --</span></div>
       <div class="kpi"><data class="kpi__value" id="top-prefill" value="0">--</data><span class="kpi__unit" id="top-gauge-scale">prefill tok/s</span><span class="kpi__unit kpi__unit--scale" id="top-gauge-ceiling">gauge to --</span></div>
       <div class="kpi"><span class="kpi__orb" id="hero-orb" aria-hidden="true"></span><span class="kpi__state" id="hero-state">idle</span><span class="kpi__unit">model state</span></div>
       <div class="kpi"><data class="kpi__value" id="hero-power" value="0">--</data><span class="kpi__unit">watts</span></div>
@@ -80,34 +86,36 @@
        first, in the new default order. Static markup (not JS-generated) so it works before app.js
        runs; the toc-covers-panels static check fails if a panel ever loses its link. -->
   <nav class="toc" aria-label="Jump to a section">
-    <ul class="toc__group">
-      <li class="toc__heading">Engine performance</li>
-      <li><a href="#live">Live inference</a></li>
-      <li><a href="#throughput">Throughput</a></li>
-      <li><a href="#context">Context</a></li>
-      <li><a href="#cache">Cache</a></li>
-      <li><a href="#spec">Speculative</a></li>
-      <li><a href="#analysis">Telemetry</a></li>
-    </ul>
-    <ul class="toc__group">
-      <li class="toc__heading">Activity</li>
-      <li><a href="#charts">Performance charts</a></li>
-      <li><a href="#requests">Requests</a></li>
-      <li><a href="#history">History</a></li>
-      <li><a href="#usage">Usage ledger</a></li>
-    </ul>
-    <ul class="toc__group">
-      <li class="toc__heading">Hardware</li>
-      <li><a href="#gpu">GPU</a></li>
-      <li><a href="#power">Power</a></li>
-      <li><a href="#hardware">Hardware</a></li>
-    </ul>
-    <ul class="toc__group">
-      <li class="toc__heading">Reference</li>
-      <li><a class="toc__link--detail" href="#engine">Engine</a></li>
-      <li><a class="toc__link--detail" href="#switch">Switch</a></li>
-      <li><a class="toc__link--detail" href="#log">System log</a></li>
-    </ul>
+    <div class="toc__wrapper">
+      <ul class="toc__group">
+        <li class="toc__heading">Engine performance</li>
+        <li><a class="toc__pill" href="#live">Live inference</a></li>
+        <li><a class="toc__pill" href="#throughput">Throughput</a></li>
+        <li><a class="toc__pill" href="#context">Context</a></li>
+        <li><a class="toc__pill" href="#cache">Cache</a></li>
+        <li><a class="toc__pill" href="#spec">Speculative</a></li>
+        <li><a class="toc__pill" href="#analysis">Telemetry</a></li>
+      </ul>
+      <ul class="toc__group">
+        <li class="toc__heading">Activity</li>
+        <li><a class="toc__pill" href="#charts">Performance charts</a></li>
+        <li><a class="toc__pill" href="#requests">Requests</a></li>
+        <li><a class="toc__pill" href="#history">History</a></li>
+        <li><a class="toc__pill" href="#usage">Usage ledger</a></li>
+      </ul>
+      <ul class="toc__group">
+        <li class="toc__heading">Hardware</li>
+        <li><a class="toc__pill" href="#gpu">GPU</a></li>
+        <li><a class="toc__pill" href="#power">Power</a></li>
+        <li><a class="toc__pill" href="#hardware">Hardware</a></li>
+      </ul>
+      <ul class="toc__group">
+        <li class="toc__heading">Reference</li>
+        <li><a class="toc__pill toc__link--detail" href="#engine">Engine</a></li>
+        <li><a class="toc__pill toc__link--detail" href="#switch">Switch</a></li>
+        <li><a class="toc__pill toc__link--detail" href="#log">System log</a></li>
+      </ul>
+    </div>
   </nav>
 
   <main id="main" class="layout">
@@ -526,6 +534,8 @@
         <div class="fact"><dt>Model path</dt><dd id="engine-path">--</dd></div>
       </dl>
       <dl class="engine__config">
+        <div class="fact"><dt>Drafting</dt><dd id="cfg-drafting">--</dd></div>
+        <div class="fact"><dt>KV cache</dt><dd id="cfg-kv">--</dd></div>
         <div class="fact"><dt>Pool workers</dt><dd id="cfg-pool">--</dd></div>
         <div class="fact"><dt>PCIe fraction</dt><dd id="cfg-pcie">--</dd></div>
         <div class="fact"><dt>Draft depth</dt><dd id="cfg-spec">--</dd></div>

@@ -44,18 +44,21 @@ function Test-StateAttest([int]$ownerPid) {
     # A session-0 chain (boot task, S4U) hides its command lines from the desktop. A fresh state file
     # written by our supervisor, naming this PID as its server, attests it instead.
     try { $s = Get-Content -LiteralPath $stateFile -Raw -ErrorAction Stop | ConvertFrom-Json } catch { return $false }
-    if ($s.server_pid -ne $ownerPid) { return $false }
+    $pidOk = ($s.server_pid -eq $ownerPid) -or ($ownerPid -eq 0 -and (Get-CimInstance Win32_Process -Filter "ProcessId=$($s.server_pid)" -ErrorAction SilentlyContinue))
+    if (-not $pidOk) { return $false }
     return (((Get-Date) - [datetime]$s.heartbeat).TotalSeconds -le 30)
 }
 
 function Get-OurOwner {
     # Returns the PIDs listening on the port. Throws if any owner is not our server.py.
-    $owners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+    $owners = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq 'Listen' -or ($_.RemoteAddress -eq '0.0.0.0' -and $_.RemotePort -eq 0) } |
         Select-Object -ExpandProperty OwningProcess -Unique)
+    $serverPattern = if ($server.Length -gt 2 -and $server[1] -eq ':') { [regex]::Escape($server.Substring(2)) } else { [regex]::Escape($server) }
     $ours = @()
     foreach ($o in $owners) {
         $p = Get-CimInstance Win32_Process -Filter "ProcessId=$o" -ErrorAction SilentlyContinue
-        if ($p -and $p.CommandLine -match [regex]::Escape($server)) {
+        if ($p -and $p.CommandLine -match $serverPattern) {
             $ours += $o
         } elseif ($p -and -not $p.CommandLine -and (Test-StateAttest $o)) {
             $script:crossSession = $true

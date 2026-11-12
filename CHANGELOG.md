@@ -4,6 +4,24 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [0.4.0] - 2026-11-12
+
+### Added
+- **Telemetry survives the browser closing (M82).** `server.py` runs an autonomous 15s daemon thread with `_TELEMETRY_LOCK` and rate limiting, so poll rows keep accumulating with zero UI clients. Previously ingestion only happened on `GET /api/stats`.
+- **Live Strata log tailing (M82-T2, closes a33-37).** The System log panel reads `engine-active.txt` and discovers the active engine log automatically (`C:\ai\Strata\strata-*.log`, newest by mtime), parsing `[strata] ...` lines into level/iso/msg entries merged with the watchdog tail. Before this the panel tailed only llama.cpp logs while Strata ran.
+- **Strata architectural knobs** (`tail_role_token` and friends) surfaced in the API and the engine card; engine branding corrected from "Strata Coder" to "Strata" everywhere (M83).
+- **Dual live gauges in the header (M83):** decode tok/s and prefill tok/s side by side with distinct gradients, a dynamic p95-derived decode ceiling with hysteresis, and scale labels. Contract ids `#top-gauge*`/`#top-tok`/`#hero-tok` preserved for the suites.
+- **Multi-GPU honesty (M83):** detected adapters are sorted by VRAM descending, so the 24 GiB RX 7900 XTX drives primary metrics and derived VRAM even when the OS enumerates the 6 GiB GTX 1660 first; `#hw-gpu` formats the full adapter list.
+- **Navigation modernized (M83):** `.toc` is an elevated HUD pill bar; all 16 panel anchor ids are preserved and still enforced by `toc-covers-panels`.
+
+### Fixed
+- **The CI harness now runs from a git-bash shell on Windows.** Scripts passed MSYS paths (`/d/...`) to native Windows python, which cannot open them: `acp.ci.sh` failed on `ci.yml`, `review-measure` scored recall 16.7% because the TS/JS analyzers died silently (stderr swallowed by `2>/dev/null`), and `run-e2e-tests.sh` crashed on the first `py` invocation. All python path arguments now go through a `_native_path()` cygpath helper (`acp.ci.sh`, `scripts/ci-validate.sh`, `acp.review-measure.sh`, `acp.review-scan.sh`, `acp.integrity-output.sh`, `acp.entropy-scan.sh`, `acp.pattern-scan.sh`, `acp.taint-scan.sh`, `run-e2e-tests.sh`).
+- **`acp.ci-steps.sh` perf-baseline probe:** `probe="$(mktemp.XXXXXX.ts)"` ran a nonexistent command and wrote to an empty path; now `mktemp "${TMPDIR:-/tmp}/acp-ci-probe.XXXXXX"`. The bug was invisible on CI because `ACP_REVIEW_PERF_BASELINE_MS` is set there and skips the probe block.
+- `scripts/ci-validate.sh` shipped with CRLF line endings, which made shellcheck (error severity) fail on it; normalized to LF.
+
+### Records
+- M83 task rows in `progress.yaml` corrected from `not_started` to `completed 2026-11-06` with actual hours — the milestone block and session memory already recorded all four done.
+
 ## [0.3.0] - 2026-10-27
 
 ### Changed

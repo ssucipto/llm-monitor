@@ -336,6 +336,7 @@ def detect_host_hardware():
     # only when nothing bigger exists. Untested on this PC (the 5600X has no iGPU).
     big = [a for a in live if (a["vram_mib"] or 0) >= 2048]
     chosen = big or live
+    chosen.sort(key=lambda a: a.get("vram_mib") or 0, reverse=True)
     if not chosen:
         return {"name": None, "vram_mib": None, "source": "unavailable",
                 "adapters": adapters, "stale": stale}
@@ -496,6 +497,12 @@ def gather_config():
         "spec_min_p": eng.get("spec_min_p"),
         "mtp_max": eng.get("mtp_max"),
         "lookup": eng.get("lookup"),
+        "drafting": eng.get("drafting"),
+        "kv": eng.get("kv"),
+        "kv_resident": eng.get("kv_resident"),
+        "conversation_cache_mib": eng.get("conversation_cache_mib"),
+        "prefill_cap": eng.get("prefill_cap"),
+        "stream_all_min": eng.get("stream_all_min"),
         "expert_slots": eng.get("expert_slots"),
         "expert_slots_primary": eng.get("expert_slots_primary"),
         "expert_cache_mib": eng.get("expert_cache_mib"),
@@ -524,6 +531,28 @@ def gather_switch():
 def gather_log(limit=14):
     """Merge the tails of the log files into one feed, newest first."""
     entries = []
+
+    # Strata active engine log tail
+    if _read_text("engine_active") == "strata":
+        strata_log = r"C:\ai\Strata\strata-unsloth-ud-iq4_xs-v31.log"
+        if not os.path.isfile(strata_log):
+            strata_dir = r"C:\ai\Strata"
+            if os.path.isdir(strata_dir):
+                candidates = [os.path.join(strata_dir, f) for f in os.listdir(strata_dir) if f.startswith("strata-") and f.endswith(".log")]
+                if candidates:
+                    candidates.sort(key=os.path.getmtime, reverse=True)
+                    strata_log = candidates[0]
+                else:
+                    strata_log = None
+            else:
+                strata_log = None
+        if strata_log and os.path.isfile(strata_log):
+            for ln in _tail(strata_log, 10):
+                m = re.match(r"\[strata\]\s+([\d\-]+ [\d:]+)\s+(.*)", ln)
+                if m:
+                    entries.append({"level": _level(m.group(2)), "iso": _iso(m.group(1)), "msg": m.group(2), "source": "strata"})
+                else:
+                    entries.append({"level": _level(ln), "iso": None, "msg": ln, "source": "strata"})
 
     # watchdog.log: [yyyy-MM-dd HH:MM:SS] msg (new format) or the legacy [HH:MM:SS] msg: both are parsed (CR-12), because
     # old lines stay in the file and an older watchdog keeps writing the short form until it is restarted
@@ -1850,6 +1879,8 @@ def db_rows(con, limit=240):
 # (ProgrammingError on the second poll). The write counter decides when to prune; it
 # stays 0 if sqlite cannot be used, and every use is guarded.
 _DB_WRITES = 0
+_LAST_TELEMETRY_WRITE = 0.0
+_TELEMETRY_LOCK = threading.RLock()
 
 
 def telemetry(stats):
@@ -1860,30 +1891,44 @@ def telemetry(stats):
     part of the payload so a disabled DB is visible on the dashboard, not just in the
     server's console — an empty trend is otherwise indistinguishable from a quiet engine.
     """
-    global _DB_WRITES
+    global _DB_WRITES, _LAST_TELEMETRY_WRITE
     con = None
     try:
-        con = db_init()
-        _DB_WRITES += 1
-        db_record(con, stats)
-        db_finalize_days(con)  # before pruning, so a closed day is captured
-        db_prune_days(con)     # keep the rollup to ~3 months (day rows are tiny)
-        if _DB_WRITES % DB_PRUNE_EVERY == 0:
-            db_prune(con)
-        rows = db_rows(con)
-        now_ts = datetime.now(timezone.utc).timestamp()
-        cur_h_start = (int(now_ts) // 3600) * 3600
-        prev_h_start = cur_h_start - 3600
-        hour_cur = db_hour_aggregates(con, cur_h_start, now_ts + 1)
-        hour_prev = db_hour_aggregates(con, prev_h_start, cur_h_start)
-        hourly = {"current": hour_cur, "previous": hour_prev}
-        return rows, db_analysis(con), {"ok": True, "rows": len(rows)}, db_daily(con), hourly
+        with _TELEMETRY_LOCK:
+            con = db_init()
+            _DB_WRITES += 1
+            db_record(con, stats)
+            db_finalize_days(con)  # before pruning, so a closed day is captured
+            db_prune_days(con)     # keep the rollup to ~3 months (day rows are tiny)
+            if _DB_WRITES % DB_PRUNE_EVERY == 0:
+                db_prune(con)
+            rows = db_rows(con)
+            now_ts = datetime.now(timezone.utc).timestamp()
+            cur_h_start = (int(now_ts) // 3600) * 3600
+            prev_h_start = cur_h_start - 3600
+            hour_cur = db_hour_aggregates(con, cur_h_start, now_ts + 1)
+            hour_prev = db_hour_aggregates(con, prev_h_start, cur_h_start)
+            hourly = {"current": hour_cur, "previous": hour_prev}
+            _LAST_TELEMETRY_WRITE = time.time()
+            return rows, db_analysis(con), {"ok": True, "rows": len(rows)}, db_daily(con), hourly
     except Exception as err:
         print(f"[telemetry] disabled: {err}")
         return None, None, {"ok": False, "error": f"{type(err).__name__}: {err}"}, None, None
     finally:
         if con is not None:
             con.close()
+
+
+def telemetry_poll_daemon():
+    """Autonomous background daemon: records telemetry rows even when client tabs are closed."""
+    while True:
+        try:
+            time.sleep(15)
+            if (time.time() - _LAST_TELEMETRY_WRITE) >= 15.0:
+                with _TELEMETRY_LOCK:
+                    build_stats()
+        except Exception as err:
+            print(f"[telemetry-daemon] error: {err}")
 
 
 def build_stats():
@@ -2054,6 +2099,7 @@ def build_stats():
         # derived from the engine's live vram_free_mib.
         "history_available": any(k in gpu_hist for k in (
             "gpu_util", "gpu_temp", "gpu_power", "gpu_mem_used")),
+        "adapters": HOST_GPU.get("adapters", []),
     }
 
     stats = {
@@ -2118,6 +2164,7 @@ def build_stats():
             "cpu_name": static.get("cpu_name"),
             "cores": static.get("cores"),
             "threads": static.get("threads"),
+            "gpus": HOST_GPU.get("adapters", []),
         },
         "throughput": {
             "now": tok_now,
@@ -2331,6 +2378,7 @@ def serve(port):
     root = str(Path(__file__).resolve().parent)
     handler = partial(_Handler, directory=root)
     threading.Thread(target=usage_thread, name="usage-ingest", daemon=True).start()
+    threading.Thread(target=telemetry_poll_daemon, name="telemetry-poll", daemon=True).start()
     httpd = _Server(("127.0.0.1", port), handler)
     httpd.serve_forever()
 

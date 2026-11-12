@@ -2,6 +2,49 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-11-06
+  executor: antigravity-coordinator
+  branch: main
+  tasks:
+    - task-83-t1
+    - task-83-t2
+    - task-83-t3
+    - task-83-t4
+  done:
+    - dual-live-speed-gauges-in-header-with-dedicated-decode-bar-and-scale-label
+    - dynamic-decode-p95-ceiling-calculation-with-hysteresis
+    - engine-branding-cleanup-from-strata-coder-to-strata
+    - multi-gpu-vram-descending-sorting-selecting-rx-7900-xtx-as-primary
+    - multi-gpu-hardware-formatting-displaying-both-rx-7900-xtx-and-gtx-1660
+    - modern-hud-navigation-pill-bar-preserving-all-16-panel-anchor-ids
+    - audit-37-investigation-and-audit-38-pre-impl-readiness-reports
+    - audit-39-post-impl-audit-and-review-017-coderabbit-style-report
+    - 100-percent-pass-across-ui-telemetry-usage-suites-and-acp-ci-fast-gates
+  deferred: []
+  key_fact: "On multi-adapter rigs, OS enumeration order can place smaller or secondary display cards ahead of primary compute accelerators. Sorting detected adapters by VRAM descending guarantees that the compute card (24 GiB RX 7900 XTX) drives primary metrics and derived VRAM calculations, while formatting the full array surfaces complete system topology. In the UI, dual live bars with distinct color gradients (cyan/purple for decode, emerald/green for prefill) provide immediate visual feedback during inference."
+
+- date: 2026-11-06
+  executor: antigravity-coordinator
+  branch: main
+  tasks:
+    - task-82-t1
+    - task-82-t2
+    - task-82-t3
+    - task-82-t4
+  done:
+    - autonomous-15s-telemetry-background-daemon-with-lock-and-cooldown
+    - live-strata-log-autodiscovery-and-tailing-per-engine-active-txt
+    - strata-architectural-knobs-surfaced-in-api-and-engine-card
+    - gate-service-session0-pid-resolution-and-empty-state-listening-socket-handling
+    - cross-volume-drive-agnostic-server-commandline-matching
+    - test-telemetry-days-dynamic-utc-month-anchor-drift-fix
+    - test-telemetry-analysis-sqlite-delete-commit-and-daemon-assertions
+    - audit-34-investigation-report-and-audit-35-pre-impl-report
+    - audit-36-post-impl-audit-and-review-016-coderabbit-style-report
+    - acp-ci-fast-tier-pass-6-of-6-gates
+  deferred: []
+  key_fact: "Telemetry ingestion ceased when client browser closed because telemetry() was only triggered on GET /api/stats. Adding a 15s daemon thread with _TELEMETRY_LOCK and rate limiting guarantees 24/7 background telemetry rows without UI dependence or lock contention. Furthermore, non-elevated Get-NetTCPConnection queries mask Session-0 listening sockets as OwningProcess 0 with empty State, requiring state-file fallback and 0.0.0.0:0 checks."
+
 - date: 2026-10-29
   executor: zed
   branch: main

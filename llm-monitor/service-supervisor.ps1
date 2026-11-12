@@ -116,7 +116,8 @@ function Test-StateAttest([int]$ownerPid) {
     # True when a fresh state file names this PID as the server. Used only when the owner's command
     # line cannot be read (a session-0 chain seen from the desktop).
     $s = Read-State
-    if (-not $s -or $s.server_pid -ne $ownerPid) { return $false }
+    $pidOk = $s -and (($s.server_pid -eq $ownerPid) -or ($ownerPid -eq 0 -and (Get-CimInstance Win32_Process -Filter "ProcessId=$($s.server_pid)" -ErrorAction SilentlyContinue)))
+    if (-not $pidOk) { return $false }
     $age = ((Get-Date) - [datetime]$s.heartbeat).TotalSeconds
     if ($age -gt $stateMaxAge) { return $false }
     $sup = Get-CimInstance Win32_Process -Filter "ProcessId=$($s.supervisor_pid)" -ErrorAction SilentlyContinue
@@ -131,13 +132,15 @@ function Get-PortState {
     #            ($script:orphans holds those PIDs)
     # "other"  = anything else. Never touched.
     $script:orphans = @()
-    $owners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+    $owners = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue |
+        Where-Object { $_.State -eq 'Listen' -or ($_.RemoteAddress -eq '0.0.0.0' -and $_.RemotePort -eq 0) } |
         Select-Object -ExpandProperty OwningProcess -Unique)
     if ($owners.Count -eq 0) { return "free" }
+    $serverPattern = if ($server.Length -gt 2 -and $server[1] -eq ':') { [regex]::Escape($server.Substring(2)) } else { [regex]::Escape($server) }
     foreach ($owner in $owners) {
         $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue
         if ($proc -and -not $proc.CommandLine -and (Test-StateAttest $owner)) { continue }
-        if (-not $proc -or $proc.CommandLine -notmatch [regex]::Escape($server)) { return "other" }
+        if (-not $proc -or $proc.CommandLine -notmatch $serverPattern) { return "other" }
         if (-not (Test-Supervised $proc)) { $script:orphans += $owner }
     }
     if ($script:orphans.Count -gt 0) { return "orphan" }

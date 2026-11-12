@@ -479,6 +479,14 @@ function renderEngine(engine, config) {
   // Engine configuration knobs: static for the session, so they read as facts
   // rather than gauges. Fractional knobs arrive as strings from the engine.
   const cfg = config || {};
+  setText("cfg-drafting", cfg.drafting != null ? String(cfg.drafting) : "--");
+  let kvStr = "--";
+  if (cfg.kv != null || cfg.kv_resident != null) {
+    const kvType = cfg.kv != null ? String(cfg.kv) : "";
+    const kvRes = cfg.kv_resident != null ? `${fmtInt(cfg.kv_resident)} resident` : "";
+    kvStr = [kvType, kvRes].filter(Boolean).join(" · ") || "--";
+  }
+  setText("cfg-kv", kvStr);
   setText("cfg-pool", cfg.pool_workers);
   setText("cfg-pcie", cfg.pcie_frac);
   setText("cfg-spec", cfg.spec != null ? `${fmtInt(cfg.spec)} deep · MTP ${fmtInt(cfg.mtp_max)} · lookup ${fmtInt(cfg.lookup)}` : "--");
@@ -804,12 +812,19 @@ function renderHardware(hw) {
   setText("hw-ram-hint", hw.ram_used != null && hw.ram_total != null ? `${fmtBytes(hw.ram_used)} / ${fmtBytes(hw.ram_total)}` : "used / total");
   setText("hw-vram", hw.vram_free_mib != null ? `${hw.vram_free_mib} MiB free` : "--");
   setText("hw-disk", hw.disk_read_mb != null ? `${hw.disk_read_mb.toFixed(1)} / ${fmtNum(hw.disk_write_mb, "", 1)} MB` : "--");
-  // M81-T1 (a33-06): this row used to read the engine's raw field, which could print "1 GPU(s)"
-  // or name a card that is not installed. The server now resolves gpu_name the same way the GPU
-  // panel gets it, so the two panels cannot disagree.
-  setText("hw-gpu", hw.gpu_name
-    ? `${hw.gpu_name} ×${hw.gpu_count ?? 1}${NAME_SOURCE_TAG[hw.gpu_name_source] ? ` (${NAME_SOURCE_TAG[hw.gpu_name_source]})` : ""}`
-    : (hw.gpu_count ? `${hw.gpu_count} GPU(s)` : "--"));
+  if (hw.gpus && hw.gpus.length > 1) {
+    const formatted = hw.gpus.map((g, idx) => {
+      const vramGb = g.vram_mib ? (g.vram_mib >= 10240 ? `${Math.round(g.vram_mib / 1024)} GiB` : `${(g.vram_mib / 1024).toFixed(1)} GiB`) : "";
+      const vramPart = vramGb ? ` (${vramGb})` : "";
+      const role = idx === 0 ? " · primary" : "";
+      return `${g.name}${vramPart}${role}`;
+    }).join(" + ");
+    setText("hw-gpu", formatted);
+  } else {
+    setText("hw-gpu", hw.gpu_name
+      ? `${hw.gpu_name} ×${hw.gpu_count ?? 1}${NAME_SOURCE_TAG[hw.gpu_name_source] ? ` (${NAME_SOURCE_TAG[hw.gpu_name_source]})` : ""}`
+      : (hw.gpu_count ? `${hw.gpu_count} GPU(s)` : "--"));
+  }
   setText("hw-cpu-name", hw.cpu_name ? `${hw.cpu_name} · ${hw.cores}c/${hw.threads}t` : "--");
 }
 
@@ -1083,6 +1098,41 @@ function renderHero(throughput, power, context, cache, status) {
 // happening", while one bad sample still pegged it at 100%. The ceiling now tracks the
 // recent peak of the published series. history.prefill is already bounded server-side at
 // PREFILL_CEILING_TOK_S (M81-T3 / a33-10), so an impossible outlier can never set the scale.
+const TOK_CEILING_MIN = 100;
+let tokCeilingValue = TOK_CEILING_MIN;
+
+function tokCeiling(samples) {
+  const vals = (samples || []).filter((v) => v != null && v > 0).sort((a, b) => a - b);
+  if (vals.length >= 5) {
+    const rank = 0.95 * (vals.length - 1);
+    const lo = Math.floor(rank);
+    const p95 = vals[lo] + (rank - lo) * ((vals[lo + 1] ?? vals[lo]) - vals[lo]);
+    const want = Math.max(TOK_CEILING_MIN, Math.ceil(p95 * 1.25));
+    if (Math.abs(want - tokCeilingValue) / tokCeilingValue > 0.2) {
+      tokCeilingValue = want;
+    }
+  }
+  return tokCeilingValue;
+}
+
+function setDecodeGauge(val, ceiling = TOK_CEILING_MIN) {
+  const gauge = $("top-gauge-tok");
+  if (!gauge) return;
+  const pct = val == null ? 0 : Math.max(0, Math.min(1, val / ceiling));
+  const width = `${(pct * 100).toFixed(1)}%`;
+  gauge.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+  gauge.setAttribute(
+    "aria-label",
+    val == null
+      ? `decode speed gauge — no reading, scale to ${fmtInt(ceiling)} tok/s`
+      : `decode speed gauge — ${val.toFixed(1)} of ${fmtInt(ceiling)} tok/s`,
+  );
+  const fill = $("top-gauge-tok-fill");
+  if (fill) fill.style.width = width;
+  const knob = $("top-gauge-tok-knob");
+  if (knob) knob.style.left = width;
+}
+
 const PREFILL_CEILING_MIN = 600;
 let prefillCeilingValue = PREFILL_CEILING_MIN;
 
@@ -1137,21 +1187,19 @@ function stateName(state) {
   }[state || ""] || "--";
 }
 
-// The prefill speed meter lives in the sticky top bar (not the hero) so it stays
-// pinned at the top while the page scrolls. renderTopbar takes throughput too.
-//
-// M81-T7 (a33-26/27/28): the header used to print throughput.now twice (once here as
-// "decode tok/s", once in the KPI strip) and the gauge had no visible label. The decode
-// figure now lives only in the strip; #top-tok stays updated but hidden, so the id contract
-// and any consumer of it survive. The prefill figure moved into the strip next to the text
-// that names the gauge's scale.
+// The prefill and decode speed meters live in the sticky top bar so they stay
+// pinned at the top while the page scrolls.
 function renderTopbar(engine, throughput, history) {
   const pre = throughput && throughput.prefill;
   const ceiling = prefillCeiling(history && history.prefill);
   setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
   setPrefillGauge(pre, ceiling);
   setText("top-gauge-ceiling", `gauge to ${fmtInt(ceiling)}`);
+
   const tok = throughput && throughput.now;
+  const tokCeil = tokCeiling(history && history.tok_s);
+  setText("hero-tok-ceiling", `gauge to ${fmtInt(tokCeil)}`);
+  setDecodeGauge(tok, tokCeil);
   setText("top-tok", tok != null ? `${tok.toFixed(1)}` : "--");
   const host = $("top-identity");
   if (!host) return;
@@ -1169,7 +1217,7 @@ function renderTopbar(engine, throughput, history) {
     else if (svc === "vulkan") mark.classList.add("vulkan");
   }
   if (engineEl) {
-    engineEl.textContent = known ? (svc === "strata" ? "Strata Coder" : "Vulkan llama.cpp") : String(svc || "unknown");
+    engineEl.textContent = known ? (svc === "strata" ? "Strata" : "Vulkan llama.cpp") : String(svc || "unknown");
     engineEl.classList.remove("strata", "vulkan", "down");
     if (!engine.port_open) engineEl.classList.add("down");
     else if (svc === "strata") engineEl.classList.add("strata");
@@ -2257,7 +2305,7 @@ function renderHud(data) {
 
   // Identity & state
   const engine = data.engine || {};
-  setText("hud-engine", engine.service || engine.active ? (engine.service === "strata" ? "Strata Coder" : engine.service === "vulkan" ? "Vulkan llama.cpp" : engine.service) : "--");
+  setText("hud-engine", engine.service || engine.active ? (engine.service === "strata" ? "Strata" : engine.service === "vulkan" ? "Vulkan llama.cpp" : engine.service) : "--");
   setText("hud-model", engine.model || "--");
 
   const orb = $("hud-status-orb");

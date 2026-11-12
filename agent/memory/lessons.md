@@ -2,6 +2,18 @@
 # Populated automatically when developer says "log it" or "wrong, log this"
 # Max 5 entries loaded per session, filtered to current task_type + priority:high
 
+- date: 2026-11-06
+  task_type: bug-fix-architectural
+  mistake: "Relied on client UI GET /api/stats to populate SQLite telemetry, resulting in massive telemetry voids and wiped rolling trends when the interface was closed overnight."
+  correction: "Background monitoring telemetry must run on an autonomous background thread with its own timer and rate limiting, completely decoupled from frontend requests."
+  priority: high
+
+- date: 2026-11-06
+  task_type: bug-fix-simple
+  mistake: "Assumed Get-NetTCPConnection -State Listen would match all listening sockets and provide owning PIDs across sessions."
+  correction: "In Windows, non-elevated Get-NetTCPConnection reports OwningProcess = 0 and blank State for Session-0 processes. Check RemoteAddress 0.0.0.0 and fall back to attested supervisor state files."
+  priority: high
+
 - date: 2026-10-17
   task_type: bug-fix-simple
   mistake: "PowerShell `$flag = false` (bare word) is a command call, not a boolean. Under $ErrorActionPreference = Stop it throws and ends the script. Found in service-supervisor.ps1 line 155."

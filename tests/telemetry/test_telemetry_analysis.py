@@ -47,6 +47,7 @@ def row(t, *, tok_s=None, prefill=None, hit_pct=None, accept_pct=None, reqs=0,
 def fresh():
     con = server.db_init()
     con.execute("DELETE FROM poll")
+    con.commit()
     return con
 
 
@@ -419,6 +420,25 @@ expect("a lone row with no baseline reports a zero span, not a 1e-9 sentinel",
 expect("a zero span yields no req/min and no weighted rate in the hour path",
        h["req_per_min"] is None and h["tok_s_weighted"] is None,
        (h["req_per_min"], h["tok_s_weighted"]))
+
+# ---------- telemetry_poll_daemon verification ----------
+con_test = fresh()
+count_before = con_test.execute("SELECT count(*) FROM poll").fetchone()[0]
+con_test.close()
+
+server._LAST_TELEMETRY_WRITE = 0.0
+with server._TELEMETRY_LOCK:
+    server.build_stats()
+
+con_check = server.db_init()
+count_after = con_check.execute("SELECT count(*) FROM poll").fetchone()[0]
+con_check.close()
+
+expect("telemetry poll writes a row to the DB under _TELEMETRY_LOCK",
+       count_after == count_before + 1, (count_before, count_after))
+expect("_LAST_TELEMETRY_WRITE is updated to a recent timestamp",
+       server._LAST_TELEMETRY_WRITE > 0 and (server.time.time() - server._LAST_TELEMETRY_WRITE) < 5.0,
+       server._LAST_TELEMETRY_WRITE)
 
 con.close()
 print("ALL PASSED (simulated)" if not fails else f"{len(fails)} FAILED")

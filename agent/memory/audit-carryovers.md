@@ -720,10 +720,10 @@ carryovers:
     finding: "the System log panel tails only Hermes llama.cpp logs while the engine actually running is Strata, so the panel shows nothing from the live engine"
     location: llm-monitor/server.py:41
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Recorded during M81-T3 work, not fixed. LOG_FILES lists watchdog.log / autostart.log / server.log.err, whose last writes are 2026-10-25 and 2026-10-09, while engine-active.txt says strata. The live engine log is C:\\Project\\Strata\\strata-iq3_s.log: 6,196,001 bytes, refreshed the same day, containing 'conversation cache:' x8534, 'resident RAM:' x5360, 'KV streaming:' x5360, 'expert tiers:' x5360, 'decode expert cache hit rate:' x5355, 'lookup chain:' x5315, 'suffix drafts:' x4391, WARNING x5. Strata exposes no /log, /logs or /events (all 404), so tailing the file is the only route. Fix: include the active engine's log path per engine-active.txt alongside the launcher tails. Not planned into M81; needs its own task"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T2: server.py now reads engine_active.txt and dynamically discovers and tails active Strata logs from C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log (or newest active strata-*.log). Verified via live API and gate checks."
   - id: a33-34
     audit: 33
     finding: "the browser UI suite writes synthetic poll rows into the production telemetry.sqlite3 on every run"
@@ -900,43 +900,43 @@ carryovers:
     finding: "telemetry poll rows are not collected in telemetry.sqlite3 while the interface is closed, causing all rolling trends and 1h timeseries to blank on re-opening"
     location: llm-monitor/server.py:2157
     severity: high
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Proven in audit 34: telemetry() is only called in build_stats() on GET /api/stats. While usage_ledger has usage_thread daemon, telemetry has no background polling thread. When the browser tab closes, collection stops (verified: 16.5-hour gap 2026-11-05 16:55 to 2026-11-06 09:27). On re-opening, db_analysis rolling 1h/2h windows have <2 samples -> recent: null -> UI sets an-trend: -- and 'awaiting history'; timeseries 1h has 50+ empty buckets. Fix: add a background telemetry daemon thread in server.py (polling every 15-30s) independent of client requests"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T1: added autonomous telemetry_poll_daemon background thread running every 15s in server.py, synchronized via _TELEMETRY_LOCK and _LAST_TELEMETRY_WRITE. Confirmed empirically recording rows while UI is closed (rows incrementing 54 -> 55 without client requests)."
   - id: a34-02
     audit: 34
     finding: "LOG_FILES in server.py tails obsolete llama.cpp files in Hermes while Strata is the active engine; live Strata log path is C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log"
     location: llm-monitor/server.py:41
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Audit 34 verified: active engine is Strata 0.1.57 (port 8081, upstreamed on 8080). Server tails watchdog.log / autostart.log / server.log.err in C:\\Project\\hermes\\tools\\llama-cpp, so System Log shows only stale autostart lines from Nov 5. The active Strata log is C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log (correcting stale path C:\\Project\\Strata in a33-37). Fix: tail the active engine log dynamically per engine-active.txt"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T2: gather_log() checks engine_active.txt and autodiscovers live Strata log at C:\\ai\\Strata\\strata-unsloth-ud-iq4_xs-v31.log (or newest strata-*.log). Real engine output is now returned to System Log panel."
   - id: a34-03
     audit: 34
     finding: "gate-service.ps1:G3 reports false failure on Session 0 sockets because Get-NetTCPConnection without elevation reports OwningProcess = 0"
     location: agent/scripts/gate-service.ps1:81
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Audit 34 verified: server PID 14428 is supervised by PID 2900 in Session 0 (LLMMonitorBoot) with valid 10s heartbeats in service-8090.state.json. Get-NetTCPConnection returns OwningProcess = 0 from desktop PowerShell, causing $st.server_pid -eq $srvPid (14428 -eq 0) to evaluate false and fail G3. netstat -ano correctly resolves PID 14428. Fix: fall back to netstat or the verified state file PID when OwningProcess is 0"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T3: G3 gate checks service-8090.state.json heartbeat when OwningProcess is 0, detects listening socket via RemoteAddress 0.0.0.0, and matches server path drive-agnostically across C: and D: volumes. Gate G1-G9 OVERALL: PASS."
   - id: a34-04
     audit: 34
     finding: "tests/telemetry/test_telemetry_days.py line 211 calendar drift failure: hardcoded DAY = 1792512000 (October 22, 2026) fails when executed in November 2026"
     location: tests/telemetry/test_telemetry_days.py:211
     severity: medium
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Audit 34 verified: test asserts cur.get('tok_s_mean') == 40.0 for the 'current' month. In November 2026, DAY (October 2026) falls into the previous month, so db_periods().get('month').get('current') is empty and returns None. Fix: anchor DAY relative to current UTC month in the test fixture"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T3: dynamically anchored DAY_MONTH to the 1st of the current UTC calendar month in test_telemetry_days.py. All 25/25 assertions pass reliably."
   - id: a34-05
     audit: 34
     finding: "Strata engine knobs (drafting: dflash2, kv: k8v4, kv_resident, conversation_cache_mib, prefill_cap, stream_all_min) are omitted from gather_config()"
     location: llm-monitor/server.py:481
     severity: low
-    status: pending
-    fix_applied_date: null
-    verified_in_audit: null
-    notes: "Audit 34 verified: Strata /metrics reports rich architecture metadata (DFlash2 drafting with 82% acceptance, k8v4 KV cache, 32k resident KV tokens, 4 GB conversation cache), but gather_config() does not extract drafting, kv, kv_resident, conversation_cache_mib, prefill_cap, or stream_all_min"
+    status: fixed
+    fix_applied_date: 2026-11-06
+    verified_in_audit: 36
+    notes: "Fixed in M82-T2: gather_config() extracts drafting, kv, kv_resident, conversation_cache_mib, prefill_cap, and stream_all_min from Strata metrics. UI updated with cfg-drafting and cfg-kv fields in engine card."

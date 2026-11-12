@@ -75,26 +75,31 @@ else { Add-Gate "G2" "FAIL" ($parseErr -join '; ') }
 
 # ---- G3: owner chain for 8090 ------------------------------------------------------------
 $g3 = $null; $g3Ev = ""
-$listen = @(Get-NetTCPConnection -LocalPort 8090 -State Listen -ErrorAction SilentlyContinue)
+$listen = @(Get-NetTCPConnection -LocalPort 8090 -ErrorAction SilentlyContinue |
+    Where-Object { $_.State -eq 'Listen' -or ($_.RemoteAddress -eq '0.0.0.0' -and $_.RemotePort -eq 0) })
 if ($listen.Count -eq 0) { $g3Ev = "nothing listens on 8090" }
 else {
     $srvPid = $listen[0].OwningProcess
+    $st = $null
+    try { $st = Get-Content -LiteralPath (Join-Path $logDir "service-8090.state.json") -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $st = $null }
+    $age = if ($st) { [int]((Get-Date) - [datetime]$st.heartbeat).TotalSeconds } else { -1 }
+    if (($srvPid -eq 0 -or -not $srvPid) -and $st -and $st.server_pid -and $age -ge 0 -and $age -le 30) {
+        $srvPid = [int]$st.server_pid
+    }
     $srv = Get-CimInstance Win32_Process -Filter "ProcessId=$srvPid"
     $wrap = if ($srv) { Get-CimInstance Win32_Process -Filter "ProcessId=$($srv.ParentProcessId)" } else { $null }
     $sup  = if ($wrap) { Get-CimInstance Win32_Process -Filter "ProcessId=$($wrap.ParentProcessId)" } else { $null }
     if ($srv -and -not $srv.CommandLine) {
         # Session-0 chain (boot task, S4U): command lines are hidden from the desktop. Accept it only
         # when the supervisor's fresh state file names exactly this server, wrapper and a live supervisor.
-        $st = $null
-        try { $st = Get-Content -LiteralPath (Join-Path $logDir "service-8090.state.json") -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $st = $null }
-        $age = if ($st) { [int]((Get-Date) - [datetime]$st.heartbeat).TotalSeconds } else { -1 }
         $g3 = [bool]($st -and $st.server_pid -eq $srvPid -and $st.wrapper_pid -eq $srv.ParentProcessId -and
             $wrap -and $wrap.ParentProcessId -eq $st.supervisor_pid -and $sup -and $sup.Name -match '^powershell' -and
             $age -ge 0 -and $age -le 30)
         $g3Ev = "server $srvPid -> wrapper $($srv.ParentProcessId) -> supervisor $($wrap.ParentProcessId), session $($srv.SessionId): command lines hidden; state file attests=$g3 (heartbeat ${age}s)"
         $script:g3State = $st
     } else {
-        $okServer = $srv -and ($srv.CommandLine -match [regex]::Escape($server))
+        $serverPattern = if ($server.Length -gt 2 -and $server[1] -eq ':') { [regex]::Escape($server.Substring(2)) } else { [regex]::Escape($server) }
+        $okServer = $srv -and ($srv.CommandLine -match $serverPattern)
         $okWrap   = $wrap -and ($wrap.CommandLine -match 'run-server-8090\.cmd')
         $okSup    = $sup -and ($sup.Name -match '^powershell') -and ($sup.CommandLine -match 'service-supervisor\.ps1')
         $g3Ev = "server $srvPid(ok=$okServer) -> wrapper $($srv.ParentProcessId)(ok=$okWrap) -> supervisor $($wrap.ParentProcessId)(ok=$okSup)"

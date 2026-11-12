@@ -198,10 +198,12 @@ expect("and the same bounded prefill (a 1.2M sample cannot reach an hourly peak)
 # ---------- db_periods must not inherit ghost rates across days ----------
 # Two rollup days plus a marker poll on a third day, so both are "ended" and get frozen.
 con = fresh()
-quiet = [row(DAY + i * 60, tok_s=48.9, reqs=0, prompt=0, output=0, busy=0) for i in range(10)]
-busy_rows = [row(DAY + 86400 + i * 60, tok_s=40.0, reqs=1 + i, prompt=1000 + i * 100,
+now_dt = server.datetime.now(server.timezone.utc)
+DAY_MONTH = int(server.datetime(now_dt.year, now_dt.month, 1, tzinfo=server.timezone.utc).timestamp())
+quiet = [row(DAY_MONTH + i * 60, tok_s=48.9, reqs=0, prompt=0, output=0, busy=0) for i in range(10)]
+busy_rows = [row(DAY_MONTH + 86400 + i * 60, tok_s=40.0, reqs=1 + i, prompt=1000 + i * 100,
                  reused=500 + i * 50, output=20 + i * 5, busy=1) for i in range(10)]
-insert(con, quiet + busy_rows + [row(DAY + 2 * 86400 + 60, reqs=1, prompt=10, output=1)])
+insert(con, quiet + busy_rows + [row(DAY_MONTH + 2 * 86400 + 60, reqs=1, prompt=10, output=1)])
 server.db_finalize_days(con)
 dlist = server.db_daily(con)
 expect("both ended days were frozen (the quiet one included)", len(dlist) == 2,

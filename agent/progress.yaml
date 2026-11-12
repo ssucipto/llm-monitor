@@ -4,10 +4,10 @@
 
 project:
   name: llm-monitor
-  version: 0.3.0
+  version: 0.4.0
   started: 2026-10-07
   status: in_progress
-  current_milestone: M82
+  current_milestone: M83
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -49,7 +49,7 @@ milestones:
   - id: M72
     name: Compact Half-Page HUD & Multi-Tab Interface
     priority: 1
-    file: agent/milestones/milestone-72-compact-hud-tab.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-12
@@ -64,7 +64,7 @@ milestones:
   - id: M73
     name: Comprehensive Throughput Analytics & Prefill Sparkline
     priority: 1
-    file: agent/milestones/milestone-73-throughput-analytics.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-12
@@ -79,7 +79,7 @@ milestones:
   - id: M74
     name: Configurable Timeseries Charts (Requests, Token Usages, tok/s)
     priority: 1
-    file: agent/milestones/milestone-74-timeseries-charts.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-12
@@ -94,7 +94,7 @@ milestones:
   - id: M75
     name: History & Period Comparison Calculations Remediation
     priority: 1
-    file: agent/milestones/milestone-75-history-calculation-remediation.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-12
@@ -109,7 +109,7 @@ milestones:
   - id: M76
     name: Windows Service Robustness
     priority: 1
-    file: agent/milestones/milestone-76-service-robustness.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-16
@@ -130,7 +130,7 @@ milestones:
   - id: M77
     name: Handover Rules, Lint and Gate
     priority: 1
-    file: agent/milestones/milestone-77-handover-rules.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-17
@@ -147,7 +147,7 @@ milestones:
   - id: M78
     name: Usage ledger (orchestrator and executor tokens)
     priority: 1
-    file: agent/milestones/milestone-78-usage-ledger.md
+    file: null
     status: completed
     progress: 100
     started: 2026-10-25
@@ -164,7 +164,7 @@ milestones:
   - id: M79
     name: UI Modernization — Compact Dashboard
     priority: 1
-    file: agent/milestones/milestone-79-ui-modernization.md
+    file: null
     status: completed
     progress: 100
     started: "2026-10-26"
@@ -186,7 +186,7 @@ milestones:
   - id: M80
     name: Dashboard Layout Engine + Functional Verification
     priority: 1
-    file: agent/milestones/milestone-80-layout-engine-and-verification.md
+    file: null
     status: completed
     progress: 100
     started: "2026-10-26"
@@ -205,7 +205,7 @@ milestones:
   - id: M81
     name: Information Architecture + Measurement Correctness
     priority: 1
-    file: agent/milestones/milestone-81-information-architecture-and-correctness.md
+    file: null
     status: completed
     progress: 100
     started: "2026-10-26"
@@ -227,27 +227,42 @@ milestones:
     name: Autonomous Telemetry Daemon, Strata Engine Alignment, and Verification Rigor
     priority: 1
     file: agent/milestones/milestone-82-autonomous-telemetry-and-strata-alignment.md
-    status: in_progress
-    progress: 0
+    status: completed
+    progress: 100
     started: "2026-11-06"
-    completed: null
+    completed: "2026-11-06"
     estimated_weeks: 1
-    tasks_completed: 0
+    tasks_completed: 4
     tasks_total: 4
     notes: |
-      Planned from audit-34 to address telemetry cessation when UI is closed,
+      Addressed telemetry cessation when UI is closed via autonomous 15s background daemon,
       live Strata engine log & architectural knobs alignment (DFlash2, k8v4),
       Session-0 socket attestation in gate-service.ps1, and calendar-safe telemetry tests.
 
+  - id: M83
+    name: Header Dual Live Gauges, Multi-GPU Hardware Visibility, and Navigation UI Polish
+    priority: 1
+    file: agent/milestones/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign.md
+    status: completed
+    progress: 100
+    started: "2026-11-06"
+    completed: "2026-11-06"
+    estimated_weeks: 1
+    tasks_completed: 4
+    tasks_total: 4
+    notes: |
+      Planned from audit-37: introduces dual live throughput gauges (decode tok/s + prefill tok/s),
+      cleans engine branding from Strata Coder to Strata, resolves multi-GPU rig detection with
+      primary accelerator sorting (RX 7900 XTX 24GB + GTX 1660 6GB), and modernizes .toc into a
+      high-contrast developer HUD pill bar.
+
 active_handoff:
-  path: agent/reports/handoff-zed-audit27-verification-2026-10-17.md
-  date: "2026-10-17"
-  to_executor: zed
-  from_executor: claude
-  git_commit: 86ad22bc8d62b9f89e91daf90728b0baefae10d1
-  status: closed
-  closed: "2026-10-26"
-  closed_reason: "The handoff body lived in gitignored agent/reports/ and was destroyed in the accidental agent/** delete of 2026-10-26, so it cannot be opened. Its subject (independent verification of the audit-27 service fixes) was overtaken by events: M79/M80 shipped on top of it, and only a25-02 (the reboot test, user-gated) remains open in audit-carryovers.md. audit-32 F-32-06."
+  path: agent/reports/handoff-next-agent-m83-session-closeout-2026-11-06.md
+  date: "2026-11-06"
+  to_executor: next-agent
+  from_executor: antigravity-coordinator
+  git_commit: d1b1cc1056cea3bb6945a19b70bf49c888a51340
+  status: active
 
 # Tasks are granular work items within milestones
 tasks:
@@ -646,45 +661,83 @@ tasks:
     - id: task-82-t1
       name: Autonomous background telemetry engine
       priority: 1
-      status: not_started
-      started: null
-      completed_date: null
-      actual_hours: null
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 3
       file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t1-autonomous-telemetry-daemon.md
       estimated_hours: 3
     - id: task-82-t2
       name: Live Strata engine & log alignment
       priority: 1
-      status: not_started
-      started: null
-      completed_date: null
-      actual_hours: null
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 2
       file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t2-strata-log-and-knobs-alignment.md
       estimated_hours: 2
     - id: task-82-t3
       name: Service gate & test suite remediation
       priority: 1
-      status: not_started
-      started: null
-      completed_date: null
-      actual_hours: null
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 2
       file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t3-service-gate-and-test-suite-remediation.md
       estimated_hours: 2
     - id: task-82-t4
       name: Trend history resilience & documentation synchronization
       priority: 1
-      status: not_started
-      started: null
-      completed_date: null
-      actual_hours: null
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 2
       file: agent/tasks/milestone-82-autonomous-telemetry-and-strata-alignment/task-82-t4-trend-history-resilience-and-docs-sync.md
+      estimated_hours: 2
+
+  milestone_83:
+    - id: task-83-t1
+      name: Header dual live gauges (decode + prefill)
+      priority: 1
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 3.0
+      file: agent/tasks/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign/task-83-t1-header-dual-live-gauges.md
+      estimated_hours: 3
+    - id: task-83-t2
+      name: Engine branding cleanup (Strata Coder -> Strata)
+      priority: 1
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 1.0
+      file: agent/tasks/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign/task-83-t2-engine-branding-cleanup.md
+      estimated_hours: 1
+    - id: task-83-t3
+      name: Multi-GPU hardware resolution & primary accelerator sorting
+      priority: 1
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 3.0
+      file: agent/tasks/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign/task-83-t3-multi-gpu-hardware-resolution.md
+      estimated_hours: 3
+    - id: task-83-t4
+      name: Modern navigation (.toc) pill-bar redesign
+      priority: 1
+      status: completed
+      started: "2026-11-06"
+      completed_date: "2026-11-06"
+      actual_hours: 2.0
+      file: agent/tasks/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign/task-83-t4-modern-navigation-pill-bar.md
       estimated_hours: 2
 
 documentation:
   design_documents: 0
-  milestone_documents: 11
+  milestone_documents: 12
   pattern_documents: 0
-  task_documents: 38
+  task_documents: 42
   last_updated: 2026-11-06
 
 # Overall progress metrics
@@ -697,6 +750,18 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: "2026-11-12"
+    description: |
+      /acp-proceed --complete --yes run 1: close out the M82/M83 records and push them.
+      The M83 task rows still said not_started while the milestone block and sessions.md
+      recorded all four done on 2026-11-06 — corrected to completed with dates and
+      actual_hours (3/1/3/2, from the session's own estimates). next_steps refreshed:
+      a33-37 removed (it was fixed by M82-T2 on 2026-11-06 — carryover a33-37 status fixed,
+      audit-36 verified — the stale next_step predated the carryover update). The nine
+      empty agent/scratch-* folders reported open on 2026-10-29 no longer exist on disk.
+    items:
+      - "gates at this tree before commit: [tests/ui] PASS (browser 31/31 + static 20/20) · tests/telemetry rc_all=0 · tests/usage rc_all=0 · acp.ci.sh --fast (running, result recorded in the same session)"
+      - "note: acp.ci.sh resolves agent/configurables/ci.yml through an MSYS path that native python cannot open; run it with ACP_CI_CONFIG=D:/Project/llm-monitor/agent/configurables/ci.yml (no script change — env override exists for this)"
   - date: 2026-10-29
     description: |
       Service cycle then a full /acp-validate + /acp-sync pass. The :8090 monitor was stopped and
@@ -1266,10 +1331,10 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - "a33-37: tail the Strata/llama engine logs from the dashboard rather than reading the file only in the Reference region (needs its own task)"
-  - "M81 follow-up: the GPU panel still has no temperature or PCIe counter on the AMD HIP driver — util/power stay modelled and VRAM derived. Re-check whether a newer driver or an amdgpu-on-Linux path exposes real gpu_* values; the payload already passes them through and the fixture proves the measured path renders"
-  - Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in
-  - Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature
+  - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probe real-counter paths (driver version, ADL/amdihkbrt, NVML for the secondary GTX 1660); util/power stay modelled and VRAM derived until a counter exists"
+  - "Reboot test for the S4U boot task (a25-02, user-gated) — verify :8090 answers without sign-in"
+  - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"
+  - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
 
 # General notes and observations
 notes:
@@ -1300,27 +1365,27 @@ recurring_tasks:
     frequency: weekly
     executor: copilot
     description: "Weekly ACP framework integrity scan"
-    # last_run: 2026-01-01
-    # next_due: 2026-01-08
-    # status: current
+    last_run: 2026-11-06
+    next_due: 2026-11-13
+    status: current
 
   - id: monthly-dependency-audit
     command: /acp-integrity --rules dependencies
     frequency: monthly
     executor: deepseek-v4-pro
     description: "Monthly dependency and supply chain audit"
-    # last_run: 2026-01-01
-    # next_due: 2026-02-01
-    # status: current
+    last_run: 2026-11-06
+    next_due: 2026-12-06
+    status: current
 
   - id: quarterly-deep-scan
     command: /acp-integrity --rules taint-flow,memory --report
     frequency: quarterly
     executor: claude-sonnet
     description: "Quarterly deep semantic integrity scan"
-    # last_run: null
-    # next_due: 2026-04-01
-    # status: current
+    last_run: 2026-11-06
+    next_due: 2027-02-06
+    status: current
 
   # ── Event-based tasks ──────────────────────────────────────────
   - id: pre-commit-rule-audit
@@ -1328,7 +1393,7 @@ recurring_tasks:
     trigger: on-commit
     executor: deepseek-v4-pro
     description: "Pre-commit ACP rule file scan for Unicode injection"
-    # status: current
+    status: current
 
 # Team and contributors (if applicable)
 team:
