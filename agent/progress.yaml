@@ -1353,9 +1353,10 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
+  - "M84 UI facelift (audit-41 planned): T1 mobile containment (scrollWidth==innerWidth at 390px, a41-01/06) -> T2 chart redesign (small multiples + crosshair, a41-02) -> T3 hero-metric hierarchy (a41-03) -> T4 fmt()/status/palette system (a41-04/05/07). Run /acp-plan to open it"
+  - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
   - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probed 2026-11-12 in audit-40 — no counter source exists on Windows with driver 32.0.32015.7029; honest '--' stays. Re-check if Adrenalin ships an installable ADL SDK/WMI provider or the engine moves to Linux amdgpu (a40-01)"
   - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"
-  - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
 
 # General notes and observations
 notes:
