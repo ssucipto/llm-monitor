@@ -115,9 +115,11 @@ milestones:
     started: 2026-10-16
     completed: 2026-10-17
     estimated_weeks: 1
-    tasks_completed: 7
+    tasks_completed: 8
     tasks_total: 8
     notes: |
+      Counter corrected 2026-11-13 (/acp-status): the tasks.milestone_76 block shows 8/8 rows
+      completed and a25-02 (the last open verification, T6) closed 2026-11-12 on reboot receipts.
       Implemented by Zed (T1-T5, T7-T8, Fixes 1-5), install by the user 2026-10-17 06:06, round 2 by
       Claude Haiku (supervision restored, end log, simplification), remediated in audit-27 (Claude Opus).
       Supervisor: backoff, per-port logs service-<port>.*, rotation to .1, kill-on-close job (no orphans),
@@ -136,9 +138,11 @@ milestones:
     started: 2026-10-17
     completed: 2026-10-17
     estimated_weeks: 1
-    tasks_completed: 7
+    tasks_completed: 8
     tasks_total: 8
     notes: |
+      Counter corrected 2026-11-13 (/acp-status): notes record T0-T7 (8 tasks) all landed and
+      audit-27/review-013 remediation closed the last gaps same day; no open M77 work remains.
       Implemented by Claude Haiku 2026-10-17 (T0-T7). audit-27 + review-013 (Claude Opus) found and fixed:
       G10 stopped an unchecked PID, L8/G8 missed piped name kills, fixtures pinned to HEAD, G7 missed
       probe scripts, L9/L12 gaps. Gate OVERALL PASS with -SmokeTest; lint suite 11/11.
