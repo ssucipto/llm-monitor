@@ -2,6 +2,20 @@
 # Format: YAML blocks, last 3 loaded per session, auto-compacted at 15 entries
 # DO NOT edit manually — updated by /acp-commit
 
+- date: 2026-11-13
+  executor: hermes
+  branch: main
+  tasks:
+    - "/acp-audit: design-skill stack vetting + llm-monitor UI facelift readiness (audit-41)"
+  done:
+    - "skill stack: installed official/creative/impeccable v4.8.2 (existing-product-UI audit/polish doctrine, dashboard-scoped, live-browser verify scripts) — committed cb84845 to hermes-skills and pushed; reviewed auteur v1.3.1 (cinematic marketing register — wrong for a Monitor surface, not installed); declined 8+ clawhub community design skills (unvetted trust tier, duplicative of claude-design's slop doctrine); preferred stack now impeccable + popular-web-designs (Linear/Sentry/Kraken refs) + design-md"
+    - "evidence captured: stdlib-CDP full-page screenshots via the pinned :9333 Chromium (:9333 was down — healed with skills/auction-watch/scripts/watcher_preflight.py); desktop 1440x3797 + mobile 390->594 at agent/reports/audit-41-assets/"
+    - "audit-41 written: 7 findings a41-01..07 (pending). HIGH: mobile horizontal overflow measured scrollWidth 594 at 390px viewport — grid never collapses (panels 527px), request-table escapes container, topbar__identity 572px. Chart spaghetti, no hero metric, false precision (310.188 Wh), missing status colours on RAM/CPU, sub-44px touch targets, overloaded green"
+    - "verified-good inventory recorded so the facelift keeps it: sticky header + sticky thead, tabular-nums on readouts, is-ok/warn/bad classes wired for VRAM/power/context, --sp/--fs token set exists, UI suite 31 browser + 20 static guards the redesign"
+    - "M84 task shape recorded in next_steps (T1 mobile containment -> T2 charts -> T3 hierarchy -> T4 fmt/status/palette); /acp-plan recommended as the opener"
+  deferred: []
+  key_fact: "hermes skills install needs --yes in non-interactive shells (silent 'Installation cancelled' otherwise). The repo's own agent/tests/ui/test_ui_browser.py WS class is the fastest stdlib path to script the pinned :9333 Chromium for one-off captures — and vision critique of screenshots must be grounded against code greps + a measured CDP probe before anything goes in a report (the model invented an OCR'd GPU name and misjudged already-tabular figures)."
+
 - date: 2026-11-12
   executor: hermes
   branch: main
