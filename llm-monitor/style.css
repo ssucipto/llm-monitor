@@ -521,13 +521,13 @@ body {
 /* M84-T3 (a41-03): three-step hierarchy on existing tokens — hero >> pills >> units.
  * The decode rate is the one number this Monitor surface exists to show; the media
  * queries' --fs-base override below stays for the quiet pills, the hero clamps own. */
-.hero-metric__value {
+.topstat__value {
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1;
   letter-spacing: -0.02em;
 }
 
-.hero-metric__delta {
+.topstat__delta {
   font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
