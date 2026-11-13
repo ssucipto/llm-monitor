@@ -963,9 +963,10 @@ carryovers:
     finding: "Mobile broken: at a 390px viewport document scrollWidth is 594 — masonry grid never collapses (every section.panel measures 527px), request-table escapes its container at 588px, topbar__identity 572px; Requests and Usage-ledger columns clip on phone"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: high
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
+    resolution: "task-84-t1 shipped: min-width:0 containment on grid/flex items, history table self-scrolls, request table pans inside its existing tile with sticky TIME column. New pinned check viewport-no-hoverflow asserts scrollWidth==clientWidth at 390px (was RED at the measured 594, now GREEN at 375). Suite 32+20."
     notes: "Fix shape: single-column collapse <=700px + contained table scrollers + sticky first column; guard with a new static check asserting scrollWidth==innerWidth at 390px in the existing CDP suite. Planned as task-84-t1 (M84 opened 2026-11-13)."
   - id: a41-02
     audit: 41
@@ -1008,9 +1009,10 @@ carryovers:
     finding: "Tab pills and time-range chips measure ~24-30px tall with no min-height rules — below the 44px touch-target floor, mis-tap-prone"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: low
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
+    resolution: "task-84-t1 shipped: @media (max-width:700px),(pointer:coarse) min-height:44px on .view-tab/.chart-tab/.chart-range-btn; asserted in viewport-no-hoverflow at 390px."
     notes: "min-height >=44px on interactive pills/chips at narrow widths. Planned inside task-84-t1 (M84 opened 2026-11-13)."
   - id: a41-07
     audit: 41
