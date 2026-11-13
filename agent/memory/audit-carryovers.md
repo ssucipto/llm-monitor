@@ -983,9 +983,10 @@ carryovers:
     finding: "No hero metric: ~40 near-equal-weight numbers on the first screen; decode tok/s appears 3x at equal weight; KPI strip duplicates the cards below it"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: medium
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
+    resolution: "task-84-t3 shipped: one oversized decode tok/s (clamp 2.25-3rem, tabular) leads the strip with an honest delta chip vs window mean (hidden when no baseline or |Δ|<3%, a33-16); quiet pills demoted via .kpi:not(.kpi--hero). Pinned browser check hero-hierarchy (>=36px AND >=1.5x pill, chip self-consistent), suite 34+20. Vision pass on live :8090 at 1440/390 confirmed dominance with no clipping; phone nits fixed (model-id ellipsis, gauge-caption nowrap)."
     notes: "Monitor-surface hierarchy: one oversized vital + delta chip, demote strip to muted pills, use existing --fs-* scale tokens. Planned as task-84-t3 (M84 opened 2026-11-13)."
   - id: a41-04
     audit: 41

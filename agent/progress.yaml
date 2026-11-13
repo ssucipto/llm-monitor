@@ -265,11 +265,11 @@ milestones:
     priority: 1
     file: agent/milestones/milestone-84-ui-facelift.md
     status: in_progress
-    progress: 50
+    progress: 75
     started: "2026-11-13"
     completed: null
     estimated_weeks: 1
-    tasks_completed: 2
+    tasks_completed: 3
     tasks_total: 4
     notes: |
       Planned from audit-41 (carryovers a41-01..a41-07): fix measured mobile horizontal
@@ -280,12 +280,12 @@ milestones:
       UI suite guards every task commit; DOM id contracts preserved.
 
 active_handoff:
-  path: agent/reports/handoff-next-agent-m83-session-closeout-2026-11-06.md
-  date: "2026-11-06"
-  to_executor: next-agent
-  from_executor: antigravity-coordinator
-  git_commit: d1b1cc1056cea3bb6945a19b70bf49c888a51340
-  status: active
+  path: agent/reports/handoff-m84-t3-resume-2026-11-13.md
+  date: "2026-11-13"
+  to_executor: hermes-coordinator
+  from_executor: hermes-coordinator
+  git_commit: f6b3006
+  status: closed — t3 resume steps executed and committed 2026-11-13 (/acp-proceed --complete --yes); t4 continues under the standing directive
 
 # Tasks are granular work items within milestones
 tasks:
@@ -778,7 +778,10 @@ tasks:
     - id: task-84-t3
       name: Hero-metric hierarchy
       priority: 2
-      status: not_started
+      status: completed
+      started: "2026-11-13"
+      completed_date: "2026-11-13"
+      actual_hours: 2.5
       estimated_hours: 3
       file: agent/tasks/milestone-84-ui-facelift/task-84-t3-hero-metric-hierarchy.md
     - id: task-84-t4
@@ -805,6 +808,17 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: "2026-11-13"
+    description: |
+      M84-T3 hero-metric hierarchy closed (verification of the pushed WIP + fixes).
+      The new pinned hero-hierarchy check caught the WIP CSS losing the cascade —
+      the hero computed 15.2px, not the intended clamp.
+    items:
+      - "✅ cascade fix: data.kpi__value.topstat__value compound selector beats the foot-of-file responsive .kpi__value overrides; clamp floor 2rem->2.25rem so the >=36px contract holds at the suite viewport (48px desktop / 36px phone measured live)"
+      - "✅ pinned check hero-hierarchy: #hero-tok >=36px AND >=1.5x #top-prefill computed; delta chip text=>visible, empty=>hidden+display:none; expected.txt browser 33->34"
+      - "✅ vision pass live :8090 via CDP :9333: desktop ratio 2.9 (48 vs 16.32px), phone hero dominant, no h-overflow either width; two phone nits found+fixed (model-id mid-glyph cut -> ellipsis; 'gauge to 100' orphan wrap -> nowrap)"
+      - "✅ gates: ui 34+20 PASS · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS 6/6 · acp-validate.ts PASS 0 warnings"
+      - "📋 records: a41-03 closed; active_handoff pointer corrected (was the superseded M83 closeout); lesson logged (computed-style check beats static grep)"
   - date: "2026-11-12"
     description: |
       /acp-proceed --complete --yes run 1: close out the M82/M83 records and push them.

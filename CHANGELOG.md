@@ -4,6 +4,14 @@ All notable changes to the **llm-monitor** dashboard are documented here.
 Version numbers track the project (not the ACP Enhanced framework, which is
 versioned separately at 6.40.0). This project follows [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Changed
+- **Mobile containment and 44px touch targets (M84-T1, closes a41-01/a41-06).** The page measured scrollWidth 594 at a 390px viewport because grid items default to `min-width:auto`; tables now sit in real `.table-scroll` wrappers with a sticky TIME column, grid items are contained, and view tabs / chart tabs / range chips reach `min-height:44px` under `(max-width:700px),(pointer:coarse)`. Pinned by `viewport-no-hoverflow`.
+- **The flagship chart is small multiples (M84-T2, closes a41-02).** "All Combined" is three stacked bands (tok/s, requests, tokens), each with its own labelled axis inside `#chart-svg`; solid lines draw from `--series-1..4` tokens and one shared crosshair + tooltip spans every band. Pinned by `chart-small-multiples`.
+- **One number now dominates the header (M84-T3, closes a41-03).** Decode tok/s leads the strip as a single oversized readout (`clamp(2.25rem, 4vw, 3rem)`, tabular) with an honest delta chip vs the window mean — hidden when there is no baseline or the move is within 3% (a33-16). The other strip entries demote to quiet muted pills. Pinned by `hero-hierarchy` (hero >= 36px AND >= 1.5x the largest pill, computed). Phone fixes from the same vision pass: model id ellipsis-truncates instead of a mid-glyph cut; "gauge to N" captions no longer orphan their number.
+- UI suite grew to **browser 34 / static 20**; `expected.txt` bumped in the same commits.
+
 ## [0.4.0] - 2026-11-12
 
 ### Added
