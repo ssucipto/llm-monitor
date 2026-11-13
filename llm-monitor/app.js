@@ -38,15 +38,61 @@ function stagger(node, i) {
 
 // Severity of a reading. higherBetter=true for reuse/accept rates (bigger is good);
 // false for utilisation gauges (context, cpu, ram — smaller is good).
+// M84-T4 (a41-05): utilisation gauges alarm at warn >= 80%, bad >= 92% — the audit
+// found RAM/CPU never coloured while VRAM/power/context did, and the old 60/85 band
+// alarmed far too early to be trusted. Colour the VALUE only; labels stay neutral.
+// higherBetter readings (cache hit, spec accept) are NOT coloured: green is reserved
+// for semantic status (a41-07), and a decorative good-% tint dilutes the alarm.
+const SEV_WARN_PCT = 80;
+const SEV_BAD_PCT = 92;
 function severity(pct, higherBetter) {
-  if (higherBetter) {
-    if (pct >= 70) return "ok";
-    if (pct >= 40) return "warn";
-    return "bad";
-  }
-  if (pct >= 85) return "bad";
-  if (pct >= 60) return "warn";
+  if (higherBetter) return "ok";
+  if (pct >= SEV_BAD_PCT) return "bad";
+  if (pct >= SEV_WARN_PCT) return "warn";
   return "ok";
+}
+
+// M84-T4 (a41-04): one formatting policy for every rendered number. The old scatter
+// of 82 ad-hoc toFixed/toLocaleString sites produced false precision (310.188 Wh,
+// 51.78%) and raw 8-digit integers (90,607,381). Rules, in priority order:
+//   fmtCount — counts/tokens: exact below 10k, compact with <=3 significant digits above
+//   fmtRate  — tok/s-style rates: one decimal only below 10, whole numbers at or above
+//   fmtPct   — percentages: integer unless the value is below 10 (one decimal)
+//   fmtEnergy— Wh rounded to the unit; kWh from 1000 Wh up
+//   fmtSpan  — ms below a second, seconds (<=3 significant digits) above
+// Units belong in markup (.kpi__unit / .unit spans), never concatenated into value
+// strings by these helpers unless the site is a dense composite caption.
+// Exemptions (deliberate, pinned): gauge aria-labels and the two ceiling captions
+// keep fmtInt — an assistive-tech label must give the EXACT ceiling (1,291, not
+// "1.3k"), and both stay far below the 8-digit floor. SVG coordinates, axis tick
+// labels and the usage ledger's own compact fmtTok are separate policies.
+function fmtCount(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "--";
+  const a = Math.abs(n);
+  if (a < 1e4) return String(Math.round(n));
+  if (a < 1e6) return `${(n / 1e3).toFixed(a < 1e5 ? 1 : 0)}k`;
+  if (a < 1e9) return `${(n / 1e6).toFixed(a < 1e7 ? 1 : 0)}M`;
+  return `${(n / 1e9).toFixed(1)}G`;
+}
+
+function fmtRate(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "--";
+  return Math.abs(n) < 10 ? n.toFixed(1) : String(Math.round(n));
+}
+
+function fmtPct(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return "--";
+  return Math.abs(n) < 10 ? n.toFixed(1) : String(Math.round(n));
+}
+
+function fmtEnergy(wh) {
+  if (wh === null || wh === undefined || Number.isNaN(wh)) return "--";
+  return Math.abs(wh) >= 1000 ? `${(wh / 1000).toFixed(2)} kWh` : `${Math.round(wh)} Wh`;
+}
+
+function fmtSpan(ms) {
+  if (ms === null || ms === undefined || Number.isNaN(ms)) return "--";
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(ms < 1e4 ? 2 : 1)} s`;
 }
 
 function fmtInt(n) {
@@ -126,7 +172,9 @@ function setGauge(valueId, gaugeId, pct, higherBetter) {
   }
 
   value.classList.remove("is-ok", "is-warn", "is-bad");
-  value.classList.add(`is-${severity(pct, higherBetter)}`);
+  // M84-T4 (a41-07): only utilisation gauges carry semantic colour; a higher-is-better
+  // rate renders in neutral ink so green keeps meaning "status OK" alone.
+  if (!higherBetter) value.classList.add(`is-${severity(pct, false)}`);
 }
 
 // An absent reading must not look like a reading. Setting the meter's value to "" is only half
@@ -483,13 +531,13 @@ function renderEngine(engine, config) {
   let kvStr = "--";
   if (cfg.kv != null || cfg.kv_resident != null) {
     const kvType = cfg.kv != null ? String(cfg.kv) : "";
-    const kvRes = cfg.kv_resident != null ? `${fmtInt(cfg.kv_resident)} resident` : "";
+    const kvRes = cfg.kv_resident != null ? `${fmtCount(cfg.kv_resident)} resident` : "";
     kvStr = [kvType, kvRes].filter(Boolean).join(" · ") || "--";
   }
   setText("cfg-kv", kvStr);
   setText("cfg-pool", cfg.pool_workers);
   setText("cfg-pcie", cfg.pcie_frac);
-  setText("cfg-spec", cfg.spec != null ? `${fmtInt(cfg.spec)} deep · MTP ${fmtInt(cfg.mtp_max)} · lookup ${fmtInt(cfg.lookup)}` : "--");
+  setText("cfg-spec", cfg.spec != null ? `${fmtCount(cfg.spec)} deep · MTP ${fmtCount(cfg.mtp_max)} · lookup ${fmtCount(cfg.lookup)}` : "--");
   setText("cfg-min-p", cfg.spec_min_p);
   setText("cfg-arena", cfg.arena_mib != null ? `${cfg.arena_mib} MiB` : "--");
   setText("cfg-elastic", cfg.vram_elastic != null ? (cfg.vram_elastic ? "on" : "off") : "--");
@@ -514,21 +562,21 @@ function renderLive(live, status) {
     state.classList.add(processing ? "processing" : "idle");
   }
   setText("live-phase", live && live.phase);
-  setText("live-prompt", live ? fmtInt(live.prompt_tokens) : "--");
-  setText("live-generated", live ? fmtInt(live.generated) : "--");
-  setText("live-elapsed", live && live.elapsed_s != null ? `${live.elapsed_s.toFixed(0)}s` : "--");
-  setText("live-queued", live ? fmtInt(live.queued) : "--");
-  setText("live-max", live ? fmtInt(live.max_tokens) : "--");
+  setText("live-prompt", live ? fmtCount(live.prompt_tokens) : "--");
+  setText("live-generated", live ? fmtCount(live.generated) : "--");
+  setText("live-elapsed", live && live.elapsed_s != null ? fmtSpan(live.elapsed_s * 1000) : "--");
+  setText("live-queued", live ? fmtCount(live.queued) : "--");
+  setText("live-max", live ? fmtCount(live.max_tokens) : "--");
 }
 
 // ---------- Context ----------
 function renderContext(ctx) {
   setGauge("ctx-pct", "ctx-gauge", ctx.pct, false);
   const label = ctx.source === "last" ? "last request" : ctx.source === "live" ? "live" : "used / max tokens";
-  setText("ctx-hint", ctx.used != null && ctx.max ? `${fmtInt(ctx.used)} / ${fmtInt(ctx.max)} tokens · ${label}` : label);
-  setText("ctx-slots", ctx.slots != null ? `${fmtInt(ctx.slots)} slot(s)` : "--");
-  setText("ctx-kv-resident", ctx.kv_resident != null ? `${fmtInt(ctx.kv_resident)} tok` : "--");
-  setText("ctx-max", ctx.max ? fmtInt(ctx.max) : "--");
+  setText("ctx-hint", ctx.used != null && ctx.max ? `${fmtCount(ctx.used)} / ${fmtCount(ctx.max)} tokens · ${label}` : label);
+  setText("ctx-slots", ctx.slots != null ? `${fmtCount(ctx.slots)} slot(s)` : "--");
+  setText("ctx-kv-resident", ctx.kv_resident != null ? `${fmtCount(ctx.kv_resident)} tok` : "--");
+  setText("ctx-max", ctx.max ? fmtCount(ctx.max) : "--");
 }
 
 // ---------- Throughput ----------
@@ -536,7 +584,7 @@ function renderThroughput(throughput, history, analysis, totals) {
   const now = $("thr-now");
   if (now) {
     const t = throughput && throughput.now;
-    now.textContent = t != null ? `${t.toFixed(1)} tok/s decode` : "idle";
+    now.textContent = t != null ? `${fmtRate(t)} tok/s decode` : "idle";
     now.classList.remove("is-ok", "is-warn", "is-bad");
   }
   const mean = throughput && throughput.mean;
@@ -544,34 +592,34 @@ function renderThroughput(throughput, history, analysis, totals) {
   // Average tok/s is a session figure while Peak tok/s is the last hour. Printing
   // the window inline stops two numbers reading as if they described the same span.
   const meanWin = (throughput && throughput.mean_window) || "session";
-  setText("thr-mean", mean != null ? `${mean.toFixed(1)} tok/s \u00b7 ${meanWin}` : "--");
+  setText("thr-mean", mean != null ? `${fmtRate(mean)} tok/s \u00b7 ${meanWin}` : "--");
 
   const rec = analysis && analysis.recent;
   const peak = (throughput && throughput.peak) ?? (rec && rec.tok_s_max);
   const peakWin = (throughput && throughput.peak_window) || (rec && rec.window_s ? `last ${Math.round(rec.window_s / 60)} min` : "");
-  setText("thr-peak", peak != null ? `${peak.toFixed(1)} tok/s${peakWin ? ` \u00b7 ${peakWin}` : ""}` : "--");
+  setText("thr-peak", peak != null ? `${fmtRate(peak)} tok/s${peakWin ? ` \u00b7 ${peakWin}` : ""}` : "--");
 
   const pre = throughput && throughput.prefill;
-  setText("thr-prefill", pre != null ? `${pre.toFixed(0)} tok/s${throughput.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
+  setText("thr-prefill", pre != null ? `${fmtRate(pre)} tok/s${throughput.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
 
   let preMean = throughput && (throughput.prefill_mean ?? throughput.recent_prefill_mean);
   if (preMean == null && rec && rec.prefill_mean != null) preMean = rec.prefill_mean;
   if (preMean == null && totals && totals.prompt_tokens && totals.prompt_ms && totals.prompt_ms > 0) {
     preMean = Math.max(0, totals.prompt_tokens - (totals.reused || 0)) / (totals.prompt_ms / 1000);
   }
-  setText("thr-prefill-mean", preMean != null ? `${preMean.toFixed(0)} tok/s${throughput?.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
+  setText("thr-prefill-mean", preMean != null ? `${fmtRate(preMean)} tok/s${throughput?.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
 
   const prePeak = (throughput && throughput.prefill_peak) ?? (rec && rec.prefill_max);
-  setText("thr-prefill-peak", prePeak != null ? `${prePeak.toFixed(0)} tok/s` : "--");
+  setText("thr-prefill-peak", prePeak != null ? `${fmtRate(prePeak)} tok/s` : "--");
 
   let ttft = throughput && throughput.prompt_latency_ms;
   if (ttft == null && totals && totals.requests && totals.prompt_ms) {
     ttft = totals.prompt_ms / totals.requests;
   }
-  setText("thr-ttft", ttft != null ? (ttft >= 1000 ? `${(ttft / 1000).toFixed(2)}s` : `${ttft.toFixed(0)}ms`) : "--");
+  setText("thr-ttft", fmtSpan(ttft));
 
   const reqRate = (throughput && throughput.req_per_min) ?? (rec && rec.req_per_min);
-  setText("thr-req-rate", reqRate != null ? `${reqRate.toFixed(1)} req/min` : "--");
+  setText("thr-req-rate", reqRate != null ? `${fmtRate(reqRate)} req/min` : "--");
 
   const psrc = throughput && throughput.prefill_source === "last" ? "last request"
     : throughput && throughput.prefill_source === "live" ? "live"
@@ -640,7 +688,7 @@ function drawSpark(prefix, samples, unit, windowMs) {
     const span = per * vals.length;
     const perLabel = per >= 60000 ? `${(per / 60000).toFixed(0)} min` : `${(per / 1000).toFixed(0)} s`;
     const spanLabel = span >= 60000 ? `≈${(span / 60000).toFixed(0)} min` : `≈${(span / 1000).toFixed(0)} s`;
-    caption.textContent = `${unit}, last ${vals.length} samples · ${perLabel}/sample (${spanLabel}) · peak ${max.toFixed(0)} · min ${min.toFixed(0)}`;
+    caption.textContent = `${unit}, last ${vals.length} samples · ${perLabel}/sample (${spanLabel}) · peak ${fmtRate(max)} · min ${fmtRate(min)}`;
   }
 }
 
@@ -711,7 +759,7 @@ function renderGpu(gpu, history, power) {
   setText("gpu-power", gpuW != null
     ? `${gpuW} W${gpu.power_limit_w ? ` / ${gpu.power_limit_w} limit` : ""}${gpu.power_source === "modelled" ? " · modelled" : ""}`
     : "--");
-  setText("gpu-pcie", gpu.pcie_rx_mb != null ? `${gpu.pcie_rx_mb.toFixed(1)} MB${gpu.pcie_gen ? ` · gen ${gpu.pcie_gen}/${gpu.pcie_gen_max ?? gpu.pcie_gen} · ${gpu.pcie_width ?? "--"}G` : ""}` : "--");
+  setText("gpu-pcie", gpu.pcie_rx_mb != null ? `${fmtRate(gpu.pcie_rx_mb)} MB${gpu.pcie_gen ? ` · gen ${gpu.pcie_gen}/${gpu.pcie_gen_max ?? gpu.pcie_gen} · ${gpu.pcie_width ?? "--"}G` : ""}` : "--");
   // M81-T1 (a33-01): name + where the name came from. "(rated)" used to be the only tag; an
   // engine-supplied string is no longer shown as if it were measured, because it is not.
   setText("gpu-name", gpu.name
@@ -756,20 +804,20 @@ function renderAnalysis(analysis, telemetry, totals) {
   // too short to support one, which is a different fact from "the engine served nothing".
   setText("an-requests", recent.requests != null
     ? (recent.req_per_min != null
-        ? `${fmtInt(recent.requests)} · ${recent.req_per_min}/min`
-        : `${fmtInt(recent.requests)} · rate n/a`)
+        ? `${fmtCount(recent.requests)} · ${recent.req_per_min}/min`
+        : `${fmtCount(recent.requests)} · rate n/a`)
     : "--");
-  setText("an-tok", recent.tok_s_mean != null ? `${recent.tok_s_mean.toFixed(1)} mean · ${(recent.tok_s_max ?? 0).toFixed(1)} peak` : "--");
-  setText("an-prefill", recent.prefill_mean != null ? `${recent.prefill_mean.toFixed(0)} tok/s${recent.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
+  setText("an-tok", recent.tok_s_mean != null ? `${fmtRate(recent.tok_s_mean)} mean \u00b7 ${fmtRate(recent.tok_s_max ?? 0)} peak` : "--");
+  setText("an-prefill", recent.prefill_mean != null ? `${fmtRate(recent.prefill_mean)} tok/s${recent.prefill_bounded ? " \u00b7 bounded" : ""}` : "--");
   // M81-T3 (a33-08): the window's OWN ratio, not a mean of session-cumulative per-poll
   // ratios. hit_pct_mean answers "since the engine started", which is not what this
   // panel's label claims; on this PC that was 65.96% shown against a true 88.19%.
   const hitW = recent.hit_pct_window ?? recent.hit_pct_mean;
   const accW = recent.accept_pct_window ?? recent.accept_pct_mean;
-  setText("an-hit", hitW != null ? `${hitW.toFixed(0)}%` : "--");
-  setText("an-accept", accW != null ? `${accW.toFixed(0)}%` : "--");
-  setText("an-idle", recent.idle_pct != null ? `${recent.idle_pct.toFixed(0)}% idle` : "--");
-  setText("an-energy", recent.energy_wh != null ? `${recent.energy_wh} Wh` : "--");
+  setText("an-hit", hitW != null ? `${fmtPct(hitW)}%` : "--");
+  setText("an-accept", accW != null ? `${fmtPct(accW)}%` : "--");
+  setText("an-idle", recent.idle_pct != null ? `${fmtPct(recent.idle_pct)}% idle` : "--");
+  setText("an-energy", fmtEnergy(recent.energy_wh));
 
   // Trend: compare this window to the one before it, so the reading says whether the
   // engine is working more or less than it was an hour ago. A prior window can
@@ -788,7 +836,7 @@ function renderAnalysis(analysis, telemetry, totals) {
 // useful even before the SQLite window has enough samples to analyse.
 function renderSession(totals) {
   const t = totals || {};
-  setText("an-session", `session totals — since ${fmtSince(t.since)} · ${fmtInt(t.requests)} requests · ${fmtInt(t.prompt_tokens)} prompt · ${fmtInt(t.output_tokens)} output`);
+  setText("an-session", `session totals — since ${fmtSince(t.since)} · ${fmtCount(t.requests)} requests · ${fmtCount(t.prompt_tokens)} prompt · ${fmtCount(t.output_tokens)} output`);
 }
 
 // The engine's `since` is an epoch (seconds or ms) or an ISO string depending on
@@ -811,7 +859,7 @@ function renderHardware(hw) {
   setGauge("hw-ram", "hw-ram-gauge", hw.ram_pct, false);
   setText("hw-ram-hint", hw.ram_used != null && hw.ram_total != null ? `${fmtBytes(hw.ram_used)} / ${fmtBytes(hw.ram_total)}` : "used / total");
   setText("hw-vram", hw.vram_free_mib != null ? `${hw.vram_free_mib} MiB free` : "--");
-  setText("hw-disk", hw.disk_read_mb != null ? `${hw.disk_read_mb.toFixed(1)} / ${fmtNum(hw.disk_write_mb, "", 1)} MB` : "--");
+  setText("hw-disk", hw.disk_read_mb != null ? `${fmtNum(hw.disk_read_mb, "", 1)} / ${fmtNum(hw.disk_write_mb, "", 1)} MB` : "--");
   if (hw.gpus && hw.gpus.length > 1) {
     const formatted = hw.gpus.map((g, idx) => {
       const vramGb = g.vram_mib ? (g.vram_mib >= 10240 ? `${Math.round(g.vram_mib / 1024)} GiB` : `${(g.vram_mib / 1024).toFixed(1)} GiB`) : "";
@@ -833,20 +881,20 @@ function renderCache(cache) {
   setGauge("cache-hit", "cache-gauge", cache.hit_rate != null ? cache.hit_rate * 100 : null, true);
   setText("cache-hint", "prompt-token reuse");
   setText("cache-kv", cache.kv_type);
-  setText("cache-expert", cache.expert_slots != null ? fmtInt(cache.expert_slots) : "--");
+  setText("cache-expert", cache.expert_slots != null ? fmtCount(cache.expert_slots) : "--");
   setText("cache-expert-mib", cache.expert_cache_mib != null ? `${cache.expert_cache_mib} MiB` : "--");
-  setText("cache-reused", cache.reused_tokens != null ? `${fmtInt(cache.reused_tokens)} / ${fmtInt(cache.prompt_tokens)}` : "--");
+  setText("cache-reused", cache.reused_tokens != null ? `${fmtCount(cache.reused_tokens)} / ${fmtCount(cache.prompt_tokens)}` : "--");
   const conv = cache.conversation_cache || {};
-  setText("cache-conv", conv.enabled ? `on · ${fmtBytes(conv.bytes)} · ${fmtInt(conv.parked)} parked` : conv.enabled === false ? "off" : "--");
-  setText("cache-parks", conv.parks != null ? `${fmtInt(conv.parks)} / ${fmtInt(conv.restores)}` : "--");
-  setText("cache-evictions", conv.evictions != null ? fmtInt(conv.evictions) : "--");
+  setText("cache-conv", conv.enabled ? `on · ${fmtBytes(conv.bytes)} · ${fmtCount(conv.parked)} parked` : conv.enabled === false ? "off" : "--");
+  setText("cache-parks", conv.parks != null ? `${fmtCount(conv.parks)} / ${fmtCount(conv.restores)}` : "--");
+  setText("cache-evictions", conv.evictions != null ? fmtCount(conv.evictions) : "--");
 }
 
 // ---------- Speculative decode ----------
 function renderSpec(spec) {
   setGauge("spec-accept", "spec-gauge", spec.accept_rate != null ? spec.accept_rate * 100 : null, true);
   setText("spec-hint", "draft accept rate");
-  setText("spec-drafts", spec.drafts_offered != null ? `${fmtInt(spec.drafts_accepted)} / ${fmtInt(spec.drafts_offered)}` : "--");
+  setText("spec-drafts", spec.drafts_offered != null ? `${fmtCount(spec.drafts_accepted)} / ${fmtCount(spec.drafts_offered)}` : "--");
   setText("spec-mtp", spec.mtp_max != null ? `MTP ${spec.mtp_max} · lookup ${spec.lookup ?? 0}` : "--");
   setText("spec-min-p", spec.min_p != null ? `${spec.min_p}` : "--");
 }
@@ -862,16 +910,16 @@ function renderRequests(requests, kept) {
     stagger(tr, i);
     const cells = [
       fmtTime(r.time),
-      r.duration_s != null ? `${r.duration_s.toFixed(1)}s` : "--",
+      r.duration_s != null ? fmtSpan(r.duration_s * 1000) : "--",
       r.finish || "--",
-      fmtInt(r.total_tokens ?? ((r.prompt_tokens ?? 0) + (r.output_tokens ?? 0))),
-      fmtInt(r.prompt_tokens),
-      r.prompt_read != null ? fmtInt(r.prompt_read) : "--",
-      r.reused != null ? fmtInt(r.reused) : "--",
-      fmtInt(r.output_tokens),
-      r.decode_tok_s != null ? r.decode_tok_s.toFixed(1) : "--",
-      r.hit_rate != null ? `${(r.hit_rate * 100).toFixed(0)}%` : "--",
-      r.drafts_offered ? `${((r.drafts_accepted ?? 0) / r.drafts_offered * 100).toFixed(0)}%` : "--",
+      fmtCount(r.total_tokens ?? ((r.prompt_tokens ?? 0) + (r.output_tokens ?? 0))),
+      fmtCount(r.prompt_tokens),
+      r.prompt_read != null ? fmtCount(r.prompt_read) : "--",
+      r.reused != null ? fmtCount(r.reused) : "--",
+      fmtCount(r.output_tokens),
+      r.decode_tok_s != null ? fmtRate(r.decode_tok_s) : "--",
+      r.hit_rate != null ? `${fmtPct(r.hit_rate * 100)}%` : "--",
+      r.drafts_offered ? `${fmtPct((r.drafts_accepted ?? 0) / r.drafts_offered * 100)}%` : "--",
     ];
     cells.forEach((val, c) => {
       const td = document.createElement("td");
@@ -882,7 +930,7 @@ function renderRequests(requests, kept) {
     tbody.appendChild(tr);
   });
 
-  let countText = kept ? `${requests.length} recent · ${fmtInt(kept)} kept` : `${requests.length} recent`;
+  let countText = kept ? `${requests.length} recent · ${fmtCount(kept)} kept` : `${requests.length} recent`;
   if (requests.length >= 2) {
     const r0 = requests[0], r1 = requests[1];
     const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
@@ -891,13 +939,13 @@ function renderRequests(requests, kept) {
       const diff = t0 - t1;
       const pct = t1 > 0 ? ((diff / t1) * 100) : 0;
       const sign = diff >= 0 ? "+" : "";
-      countText += ` · last vs prev: ${fmtInt(t0)} vs ${fmtInt(t1)} (${sign}${fmtInt(diff)} tok, ${fmtDelta(pct)})`;
+      countText += ` · last vs prev: ${fmtCount(t0)} vs ${fmtCount(t1)} (${sign}${fmtCount(diff)} tok, ${fmtDelta(pct)})`;
     }
   } else if (requests.length === 1) {
     const r0 = requests[0];
     const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
     if (t0 != null) {
-      countText += ` · last: ${fmtInt(t0)} tokens`;
+      countText += ` · last: ${fmtCount(t0)} tokens`;
     }
   }
   setText("requests-count", countText);
@@ -1067,7 +1115,7 @@ function renderEndpoints(endpoints) {
 
 function renderHero(throughput, power, context, cache, status, analysis) {
   const tok = throughput && throughput.now;
-  setText("hero-tok", tok != null ? `${tok.toFixed(1)}` : "--");
+  setText("hero-tok", tok != null ? fmtRate(tok) : "--");
   // M84-T3 (a41-03): the hero earns its size by carrying meaning — the delta against
   // the window mean says whether NOW is typical. No baseline or a within-noise move
   // hides the chip entirely; it never prints an empty or invented percentage (a33-16).
@@ -1077,7 +1125,7 @@ function renderHero(throughput, power, context, cache, status, analysis) {
     if (tok != null && mean != null && mean > 0 && Math.abs(tok - mean) / mean >= 0.03) {
       const pct = Math.round((tok - mean) / mean * 100);
       deltaEl.textContent = `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs mean`;
-      deltaEl.title = `now ${tok.toFixed(1)} vs window mean ${mean.toFixed(1)} tok/s`;
+      deltaEl.title = `now ${fmtRate(tok)} vs window mean ${fmtRate(mean)} tok/s`;
       deltaEl.classList.toggle("is-ok", pct > 0);
       deltaEl.classList.toggle("is-warn", pct < 0);
       deltaEl.hidden = false;
@@ -1098,11 +1146,11 @@ function renderHero(throughput, power, context, cache, status, analysis) {
     else if (status && status.ok === false) orb.classList.add("is-down");
     else orb.classList.add("is-idle");
   }
-  setText("hero-power", power && power.total_w != null ? `${power.total_w}` : "--");
+  setText("hero-power", power && power.total_w != null ? fmtCount(power.total_w) : "--");
   // Two decimals: the gauge rounds to whole percents, but the headline reading
   // should not hide a 0.4-point change in a 200k-token window.
-  setText("hero-ctx", context && context.pct != null ? `${context.pct.toFixed(2)}` : "--");
-  setText("hero-hit", cache && cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}` : "--");
+  setText("hero-ctx", context && context.pct != null ? fmtPct(context.pct) : "--");
+  setText("hero-hit", cache && cache.hit_rate != null ? fmtPct(cache.hit_rate * 100) : "--");
 }
 
 // The prefill speed gauge lives in the sticky top bar as its own full-width band
@@ -1210,15 +1258,15 @@ function stateName(state) {
 function renderTopbar(engine, throughput, history) {
   const pre = throughput && throughput.prefill;
   const ceiling = prefillCeiling(history && history.prefill);
-  setText("top-prefill", pre != null ? `${pre.toFixed(0)}` : "--");
+  setText("top-prefill", pre != null ? fmtRate(pre) : "--");
   setPrefillGauge(pre, ceiling);
-  setText("top-gauge-ceiling", `gauge to ${fmtInt(ceiling)}`);
+  setText("top-gauge-ceiling", `ceiling ${fmtInt(ceiling)}`);
 
   const tok = throughput && throughput.now;
   const tokCeil = tokCeiling(history && history.tok_s);
-  setText("hero-tok-ceiling", `gauge to ${fmtInt(tokCeil)}`);
+  setText("hero-tok-ceiling", `ceiling ${fmtInt(tokCeil)}`);
   setDecodeGauge(tok, tokCeil);
-  setText("top-tok", tok != null ? `${tok.toFixed(1)}` : "--");
+  setText("top-tok", tok != null ? fmtRate(tok) : "--");
   const host = $("top-identity");
   if (!host) return;
   const svc = engine.service || engine.active;
@@ -1276,8 +1324,8 @@ function cmp(cur, prev, key) {
 function periodLine(p) {
   if (!p || !p.current) return "--";
   const c = p.current;
-  const bits = [`${fmtInt(c.requests)} req`, `${fmtNum(c.tok_s_mean, " tok/s", 1)}`];
-  if (c.energy_wh != null) bits.push(`${fmtNum(c.energy_wh, " Wh", 1)}`);
+  const bits = [`${fmtCount(c.requests)} req`, `${fmtRate(c.tok_s_mean)} tok/s`];
+  if (c.energy_wh != null) bits.push(fmtEnergy(c.energy_wh));
   const line = `${p.current_label} ${bits.join(" · ")}`;
   return `${line}${cmp(c, p.previous, "requests")}${cmp(c, p.previous, "tok_s_mean")}`;
 }
@@ -1308,12 +1356,12 @@ function renderHistory(periods, daily, requests) {
     ? th.last_request
     : (reqPeriod?.current?.total_tokens ?? (requests && requests[0] ? (requests[0].total_tokens ?? ((requests[0].prompt_tokens ?? 0) + (requests[0].output_tokens ?? 0))) : null));
 
-  setText("hist-tokens-request", lastTok != null ? `${fmtInt(lastTok)} tokens` : "--");
-  setText("hist-tokens-hour", th && th.this_hour != null ? `${fmtInt(th.this_hour)} tokens` : (periods?.hour?.current?.total_tokens != null ? `${fmtInt(periods.hour.current.total_tokens)} tokens` : "--"));
-  setText("hist-tokens-today", th && th.today != null ? `${fmtInt(th.today)} tokens` : (periods?.day?.current?.total_tokens != null ? `${fmtInt(periods.day.current.total_tokens)} tokens` : "--"));
-  setText("hist-tokens-yesterday", th && th.yesterday != null ? `${fmtInt(th.yesterday)} tokens` : (periods?.day?.previous?.total_tokens != null ? `${fmtInt(periods.day.previous.total_tokens)} tokens` : "--"));
-  setText("hist-tokens-week", th && th.this_week != null ? `${fmtInt(th.this_week)} tokens` : (periods?.week?.current?.total_tokens != null ? `${fmtInt(periods.week.current.total_tokens)} tokens` : "--"));
-  setText("hist-tokens-month", th && th.this_month != null ? `${fmtInt(th.this_month)} tokens` : (periods?.month?.current?.total_tokens != null ? `${fmtInt(periods.month.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-request", lastTok != null ? `${fmtCount(lastTok)} tokens` : "--");
+  setText("hist-tokens-hour", th && th.this_hour != null ? `${fmtCount(th.this_hour)} tokens` : (periods?.hour?.current?.total_tokens != null ? `${fmtCount(periods.hour.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-today", th && th.today != null ? `${fmtCount(th.today)} tokens` : (periods?.day?.current?.total_tokens != null ? `${fmtCount(periods.day.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-yesterday", th && th.yesterday != null ? `${fmtCount(th.yesterday)} tokens` : (periods?.day?.previous?.total_tokens != null ? `${fmtCount(periods.day.previous.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-week", th && th.this_week != null ? `${fmtCount(th.this_week)} tokens` : (periods?.week?.current?.total_tokens != null ? `${fmtCount(periods.week.current.total_tokens)} tokens` : "--"));
+  setText("hist-tokens-month", th && th.this_month != null ? `${fmtCount(th.this_month)} tokens` : (periods?.month?.current?.total_tokens != null ? `${fmtCount(periods.month.current.total_tokens)} tokens` : "--"));
 
   const tbody = $("history-comparison-tbody");
   if (tbody) {
@@ -1342,7 +1390,7 @@ function renderHistory(periods, daily, requests) {
             // M81-T3 (a33-16): a percentage out of an empty prior period is not a
             // number — +100% implied the prior period was half this size. Say what
             // actually happened instead.
-            tokenDelta = `new (+${fmtInt(cur.total_tokens)} tok)`;
+            tokenDelta = `new (+${fmtCount(cur.total_tokens)} tok)`;
             deltaClass = "is-warn";
           } else {
             tokenDelta = "\u00b10%";
@@ -1356,12 +1404,12 @@ function renderHistory(periods, daily, requests) {
 
       let reqDelta = "--";
       if (cur && cur.requests != null) {
-        reqDelta = fmtInt(cur.requests);
+        reqDelta = fmtCount(cur.requests);
         if (prev && prev.requests != null && (cur.requests !== 1 || prev.requests !== 1)) {
           if (prev.requests === 0) {
             if (cur.requests > 0) {
               // M81-T3 (a33-16): same reason as the token delta above.
-              reqDelta += ` (new, +${fmtInt(cur.requests)})`;
+              reqDelta += ` (new, +${fmtCount(cur.requests)})`;
             }
           } else {
             const d = ((cur.requests - prev.requests) / prev.requests) * 100;
@@ -1383,8 +1431,8 @@ function renderHistory(periods, daily, requests) {
 
       const cells = [
         { text: row.label, num: false },
-        { text: cur && cur.total_tokens != null ? fmtInt(cur.total_tokens) : "--", num: true },
-        { text: prev && prev.total_tokens != null ? fmtInt(prev.total_tokens) : "--", num: true },
+        { text: cur && cur.total_tokens != null ? fmtCount(cur.total_tokens) : "--", num: true },
+        { text: prev && prev.total_tokens != null ? fmtCount(prev.total_tokens) : "--", num: true },
         { text: tokenDelta, num: true, cls: deltaClass },
         { text: reqDelta, num: true },
         { text: tokDelta, num: true },
@@ -1592,10 +1640,10 @@ function selectDay(idx, force) {
     });
   }
   const prev = scrubIdx > 0 ? days[scrubIdx - 1] : null;
-  const bits = [`${fmtInt(x.requests)} req`, `${fmtInt(x.total_tokens || 0)} tok`, `${fmtNum(x.tok_s_mean, " tok/s", 1)}`];
-  if (x.energy_wh != null) bits.push(`${fmtNum(x.energy_wh, " Wh", 1)}`);
-  if (x.hit_mean != null) bits.push(`hit ${Math.round(x.hit_mean)}%`);
-  if (x.idle_pct != null) bits.push(`idle ${Math.round(x.idle_pct)}%`);
+  const bits = [`${fmtCount(x.requests)} req`, `${fmtCount(x.total_tokens || 0)} tok`, `${fmtRate(x.tok_s_mean)} tok/s`];
+  if (x.energy_wh != null) bits.push(fmtEnergy(x.energy_wh));
+  if (x.hit_mean != null) bits.push(`hit ${fmtPct(x.hit_mean)}%`);
+  if (x.idle_pct != null) bits.push(`idle ${fmtPct(x.idle_pct)}%`);
   let line = `${dayName(x, scrubIdx)} · ${bits.join(" · ")}`;
   if (prev && prev.requests) {
     const d = ((x.requests - prev.requests) / prev.requests) * 100;
@@ -1793,17 +1841,17 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   const buckets = data.buckets;
   const sum = data.summary || {};
 
-  setText("chart-sum-reqs", fmtInt(sum.total_requests));
-  setText("chart-sum-tokens", fmtInt(sum.total_tokens));
-  setText("chart-sum-breakdown", `${fmtInt(sum.prompt_tokens)} / ${fmtInt(sum.output_tokens)}`);
-  setText("chart-sum-tok", sum.tok_s_mean != null ? `${sum.tok_s_mean.toFixed(1)} tok/s` : "--");
-  setText("chart-sum-tok-hint", sum.tok_s_max != null ? `mean · peak ${sum.tok_s_max.toFixed(1)}` : "mean / peak");
-  setText("chart-sum-prefill", sum.prefill_mean != null ? `${sum.prefill_mean.toFixed(0)} tok/s` : "--");
+  setText("chart-sum-reqs", fmtCount(sum.total_requests));
+  setText("chart-sum-tokens", fmtCount(sum.total_tokens));
+  setText("chart-sum-breakdown", `${fmtCount(sum.prompt_tokens)} / ${fmtCount(sum.output_tokens)}`);
+  setText("chart-sum-tok", sum.tok_s_mean != null ? `${fmtRate(sum.tok_s_mean)} tok/s` : "--");
+  setText("chart-sum-tok-hint", sum.tok_s_max != null ? `mean · peak ${fmtRate(sum.tok_s_max)}` : "mean / peak");
+  setText("chart-sum-prefill", sum.prefill_mean != null ? `${fmtRate(sum.prefill_mean)} tok/s` : "--");
   // a33-19: "mean / peak" used to be printed whether or not a peak existed. Days rolled
   // up before the prefill_max column has none, and saying so is better than a blank.
   setText("chart-sum-prefill-hint",
     sum.prefill_max != null
-      ? `mean · peak ${sum.prefill_max.toFixed(0)}${sum.prefill_bounded ? " · bounded" : ""}`
+      ? `mean · peak ${fmtRate(sum.prefill_max)}${sum.prefill_bounded ? " · bounded" : ""}`
       // M81-review (A12): the shown mean can be bounded even when no peak exists, so the
       // tag belongs on this branch too rather than vanishing with the peak.
       : (sum.prefill_mean != null ? `mean · peak n/a${sum.prefill_bounded ? " · bounded" : ""}` : "mean / peak"));
@@ -2123,7 +2171,7 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     if (!peakEl) return;
     if (!st.on) { peakEl.textContent = ""; return; }
     if (st.ownsAxis) { peakEl.textContent = banded ? "\u00b7 own scale" : "\u00b7 left axis"; return; }
-    const p = st.peak > 0 ? (st.unit === "tok/s" ? st.peak.toFixed(1) : fmtInt(st.peak)) : null;
+    const p = st.peak > 0 ? (st.unit === "tok/s" ? fmtRate(st.peak) : fmtCount(st.peak)) : null;
     peakEl.textContent = p != null ? `\u00b7 scaled to peak ${p}${st.unit ? " " + st.unit : ""}` : "\u00b7 no data";
   });
 
@@ -2203,8 +2251,8 @@ function wireCharts() {
     crosshair.setAttribute("x2", bucketX.toFixed(1));
     crosshair.style.display = "";
 
-    const tokStr = b.tok_s_mean != null ? `${b.tok_s_mean.toFixed(1)} tok/s` : "--";
-    const prefStr = b.prefill_mean != null ? `${b.prefill_mean.toFixed(0)} tok/s` : "--";
+    const tokStr = b.tok_s_mean != null ? `${fmtRate(b.tok_s_mean)} tok/s` : "--";
+    const prefStr = b.prefill_mean != null ? `${fmtRate(b.prefill_mean)} tok/s` : "--";
     // a33-21: hovering an unobserved bucket must not present zeros as measurements.
     if (!b.samples) {
       tooltip.innerHTML = `
@@ -2214,10 +2262,10 @@ function wireCharts() {
     } else {
       tooltip.innerHTML = `
       <div class="chart-tip__head">${b.time ? b.time.replace("T", " ").replace("Z", "") : b.label} (${b.label})</div>
-      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#58a6ff;"></span>Decode: <b>${tokStr}</b></div>
-      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#3fb950;"></span>Prefill: <b>${prefStr}</b></div>
-      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#bc8cff;"></span>Tokens: <b>${fmtInt(b.total_tokens)}</b> (${fmtInt(b.prompt_tokens)} in / ${fmtInt(b.output_tokens)} out)</div>
-      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:#d29922;"></span>Requests: <b>${fmtInt(b.requests)}</b></div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:var(--series-1);"></span>Decode: <b>${tokStr}</b></div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:var(--series-2);"></span>Prefill: <b>${prefStr}</b></div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:var(--series-4);"></span>Tokens: <b>${fmtCount(b.total_tokens)}</b> (${fmtCount(b.prompt_tokens)} in / ${fmtCount(b.output_tokens)} out)</div>
+      <div class="chart-tip__row"><span class="chart-tip__dot" style="background:var(--series-3);"></span>Requests: <b>${fmtCount(b.requests)}</b></div>
       ${b.prefill_note ? `<div class="chart-tip__row chart-tip__sub">Prefill not shown: this day was recorded before readings were bounded, and its samples are no longer kept, so its figure cannot be recomputed.</div>` : ""}
       <div class="chart-tip__row chart-tip__sub">${b.samples} sample${b.samples === 1 ? "" : "s"}</div>
     `;
@@ -2423,25 +2471,25 @@ function renderHud(data) {
 
   // Hero Speed
   const thr = data.throughput;
-  setText("hud-tok", thr && thr.now != null ? thr.now.toFixed(1) : "0.0");
-  const meanSpeed = thr && thr.mean != null ? `${thr.mean.toFixed(1)} tok/s` : "--";
+  setText("hud-tok", thr && thr.now != null ? fmtRate(thr.now) : "0.0");
+  const meanSpeed = thr && thr.mean != null ? `${fmtRate(thr.mean)} tok/s` : "--";
   const an = data.analysis && data.analysis.recent;
-  const peakSpeed = an && an.tok_s_max != null ? `${an.tok_s_max.toFixed(1)} tok/s` : (thr && thr.now != null ? `${thr.now.toFixed(1)} tok/s` : "--");
+  const peakSpeed = an && an.tok_s_max != null ? `${fmtRate(an.tok_s_max)} tok/s` : (thr && thr.now != null ? `${fmtRate(thr.now)} tok/s` : "--");
   setText("hud-tok-sub", `peak ${peakSpeed} · mean ${meanSpeed}`);
-  setText("hud-prefill", thr && thr.prefill != null ? thr.prefill.toFixed(0) : "--");
+  setText("hud-prefill", thr && thr.prefill != null ? fmtRate(thr.prefill) : "--");
   let hudPreMean = thr && (thr.prefill_mean ?? thr.recent_prefill_mean);
   if (hudPreMean == null && an && an.prefill_mean != null) hudPreMean = an.prefill_mean;
   if (hudPreMean == null && data.totals && data.totals.prompt_tokens && data.totals.prompt_ms && data.totals.prompt_ms > 0) {
     hudPreMean = Math.max(0, data.totals.prompt_tokens - (data.totals.reused || 0)) / (data.totals.prompt_ms / 1000);
   }
-  setText("hud-prefill-sub", hudPreMean != null ? `avg ${hudPreMean.toFixed(0)}` : "avg --");
+  setText("hud-prefill-sub", hudPreMean != null ? `avg ${fmtRate(hudPreMean)}` : "avg --");
 
   // VRAM Card
   const gpu = data.gpu || {};
   // M81-T2 (a33-04): report the source the server sent; inventing one hides the difference
   // between "derived from vram_free_mib" and "we have no idea".
   setText("hud-vram-source", gpu.mem_source || "not reported");
-  setText("hud-vram-val", gpu.mem_pct != null ? `${gpu.mem_pct.toFixed(0)}%` : "--");
+  setText("hud-vram-val", gpu.mem_pct != null ? `${fmtPct(gpu.mem_pct)}%` : "--");
   setMeter("hud-vram-gauge", gpu.mem_pct);
   const vramVal = $("hud-vram-val");
   if (vramVal && gpu.mem_pct != null) {
@@ -2458,7 +2506,7 @@ function renderHud(data) {
   // Power Card
   const pw = data.power || {};
   setText("hud-power-source", pw.source || "not reported");
-  setText("hud-power-val", pw.total_w != null ? `${pw.total_w} W` : "--");
+  setText("hud-power-val", pw.total_w != null ? `${fmtCount(pw.total_w)} W` : "--");
   // rated_w is the server's alias of peak_w; before M81-T2 it did not exist, so this gauge was
   // permanently zero. Guard with != null: a genuine 0 W reading must still size the gauge.
   const pwPct = pw.total_w != null && pw.rated_w ? (pw.total_w / pw.rated_w) * 100 : null;
@@ -2468,33 +2516,33 @@ function renderHud(data) {
     pwVal.classList.remove("is-ok", "is-warn", "is-bad");
     pwVal.classList.add(`is-${severity(pwPct, false)}`);
   }
-  setText("hud-power-hint", pwPct != null ? `${pwPct.toFixed(0)}% of ${pw.rated_w}W peak` : "of rated peak");
+  setText("hud-power-hint", pwPct != null ? `${fmtPct(pwPct)}% of ${fmtCount(pw.rated_w)}W peak` : "of rated peak");
 
   // Context Card
   const ctx = data.context || {};
   // M81-T2 (audit-33 a33-36): context.pct is already a percentage (server.py multiplies by 100),
   // so multiplying again rendered 7417.0% where the real figure was 74.2%. The full dashboard
   // passes ctx.pct straight to setGauge; the HUD now matches it.
-  setText("hud-ctx-pct", ctx.pct != null ? `${ctx.pct.toFixed(1)}%` : "--");
+  setText("hud-ctx-pct", ctx.pct != null ? `${fmtPct(ctx.pct)}%` : "--");
   // used/max are the payload's keys; used_tokens/max_tokens never existed, so this row was always "--".
-  setText("hud-ctx-val", ctx.used != null ? fmtInt(ctx.used) : "--");
+  setText("hud-ctx-val", ctx.used != null ? fmtCount(ctx.used) : "--");
   setMeter("hud-ctx-gauge", ctx.pct);
   const ctxVal = $("hud-ctx-val");
   if (ctxVal && ctx.pct != null) {
     ctxVal.classList.remove("is-ok", "is-warn", "is-bad");
     ctxVal.classList.add(`is-${severity(ctx.pct, false)}`);
   }
-  setText("hud-ctx-hint", ctx.used != null && ctx.max != null ? `${fmtInt(ctx.used)} / ${fmtInt(ctx.max)} max` : "used / max tokens");
+  setText("hud-ctx-hint", ctx.used != null && ctx.max != null ? `${fmtCount(ctx.used)} / ${fmtCount(ctx.max)} max` : "used / max tokens");
 
   // Cache & Spec Card
   const cache = data.cache || {};
-  setText("hud-cache-hit", cache.hit_rate != null ? `${(cache.hit_rate * 100).toFixed(0)}% hit` : "--");
+  setText("hud-cache-hit", cache.hit_rate != null ? `${fmtPct(cache.hit_rate * 100)}% hit` : "--");
   const firstReq = (data.requests || [])[0];
-  setText("hud-reuse-val", cache.reused_tokens != null ? fmtInt(cache.reused_tokens) : (firstReq?.reused != null ? fmtInt(firstReq.reused) : "--"));
+  setText("hud-reuse-val", cache.reused_tokens != null ? fmtCount(cache.reused_tokens) : (firstReq?.reused != null ? fmtCount(firstReq.reused) : "--"));
   const spec = data.spec || {};
   const draftPct = spec.accept_rate != null
-    ? (spec.accept_rate * 100).toFixed(0)
-    : (firstReq?.drafts_offered ? ((firstReq.drafts_accepted ?? 0) / firstReq.drafts_offered * 100).toFixed(0) : null);
+    ? fmtPct(spec.accept_rate * 100)
+    : (firstReq?.drafts_offered ? fmtPct((firstReq.drafts_accepted ?? 0) / firstReq.drafts_offered * 100) : null);
   setText("hud-draft-val", draftPct != null ? `${draftPct}%` : "--");
   setText("hud-cache-hint", cache.kv_type ? `KV: ${cache.kv_type}` : "prompt-token reuse");
 
@@ -2504,11 +2552,11 @@ function renderHud(data) {
   const r1 = reqs.length >= 2 ? reqs[1] : null;
   if (r0) {
     const t0 = r0.total_tokens ?? ((r0.prompt_tokens ?? 0) + (r0.output_tokens ?? 0));
-    setText("hud-req-total", t0 != null ? fmtInt(t0) : "--");
-    setText("hud-req-prompt", r0.prompt_tokens != null ? fmtInt(r0.prompt_tokens) : "--");
-    setText("hud-req-out", r0.output_tokens != null ? fmtInt(r0.output_tokens) : "--");
-    setText("hud-req-dur", r0.duration_s != null ? `${r0.duration_s.toFixed(1)}s` : "--");
-    setText("hud-req-speed", r0.decode_tok_s != null ? `${r0.decode_tok_s.toFixed(1)} tok/s` : "--");
+    setText("hud-req-total", t0 != null ? fmtCount(t0) : "--");
+    setText("hud-req-prompt", r0.prompt_tokens != null ? fmtCount(r0.prompt_tokens) : "--");
+    setText("hud-req-out", r0.output_tokens != null ? fmtCount(r0.output_tokens) : "--");
+    setText("hud-req-dur", r0.duration_s != null ? fmtSpan(r0.duration_s * 1000) : "--");
+    setText("hud-req-speed", r0.decode_tok_s != null ? `${fmtRate(r0.decode_tok_s)} tok/s` : "--");
 
     if (r1) {
       const t1 = r1.total_tokens ?? ((r1.prompt_tokens ?? 0) + (r1.output_tokens ?? 0));
@@ -2535,12 +2583,12 @@ function renderHud(data) {
   const periods = data.periods;
   const curH = periods?.hour?.current;
   const prevH = periods?.hour?.previous;
-  setText("hud-trend-hour", curH ? `${fmtInt(curH.total_tokens)} tok · ${curH.requests ?? 0} req` : "--");
+  setText("hud-trend-hour", curH ? `${fmtCount(curH.total_tokens)} tok · ${curH.requests ?? 0} req` : "--");
   if (curH && prevH && curH.total_tokens != null && prevH.total_tokens != null) {
     if (prevH.total_tokens === 0) {
       // M81-T3 (a33-16): same rule as the History table — a percentage out of an
       // empty prior period is not a number. State the absolute movement instead.
-      const txt = curH.total_tokens > 0 ? `new (+${fmtInt(curH.total_tokens)})` : "±0%";
+      const txt = curH.total_tokens > 0 ? `new (+${fmtCount(curH.total_tokens)})` : "±0%";
       setText("hud-delta-hour", txt);
       const elH = $("hud-delta-hour");
       if (elH) elH.className = "hud-trend-delta " + (curH.total_tokens > 0 ? "is-warn" : "");
@@ -2556,11 +2604,11 @@ function renderHud(data) {
 
   const curD = periods?.day?.current;
   const prevD = periods?.day?.previous;
-  setText("hud-trend-today", curD ? `${fmtInt(curD.total_tokens)} tok · ${curD.requests ?? 0} req` : "--");
+  setText("hud-trend-today", curD ? `${fmtCount(curD.total_tokens)} tok · ${curD.requests ?? 0} req` : "--");
   if (curD && prevD && curD.total_tokens != null && prevD.total_tokens != null) {
     if (prevD.total_tokens === 0) {
       // M81-T3 (a33-16): see the hour row above.
-      const txt = curD.total_tokens > 0 ? `new (+${fmtInt(curD.total_tokens)})` : "±0%";
+      const txt = curD.total_tokens > 0 ? `new (+${fmtCount(curD.total_tokens)})` : "±0%";
       setText("hud-delta-today", txt);
       const elD = $("hud-delta-today");
       if (elD) elD.className = "hud-trend-delta " + (curD.total_tokens > 0 ? "is-warn" : "");

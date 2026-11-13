@@ -8,19 +8,31 @@
 
   /* M84-T2 (a41-02): one source of truth for chart series hues. The "All Combined"
    * view is small multiples now, but the hues stay stable so muscle memory and the
-   * legend dots survive. task-84-t4 owns semantic colours + accent and may extend. */
-  --series-1: #58a6ff; /* decode tok/s — primary throughput */
-  --series-2: #3fb950; /* prefill tok/s — secondary throughput */
-  --series-3: #d29922; /* requests */
-  --series-4: #bc8cff; /* token volume */
+   * legend dots survive. task-84-t4 owns semantic colours + accent and may extend.
+   * M84-T4 (a41-07) re-cut the set: green/warn-amber are RESERVED for semantic
+   * status, so no series may wear them; four hues, one per band, all tokenised
+   * (the tooltip dots and gauge gradients used to hard-code the old hexes). */
+  --series-1: #79c0ff; /* decode tok/s — primary throughput (sky) */
+  --series-2: #3bc9db; /* prefill tok/s — secondary throughput (teal) */
+  --series-3: #f778ba; /* requests (pink) */
+  --series-4: #bc8cff; /* token volume (violet) */
 
   --bg: #0b0f14;
   --bg-elev: #141a22;
   --bg-elev-2: #1b2430;
   --border: #29323f;
   --text: #e6edf3;
-  --text-dim: #8b949e;
-  --accent: #58a6ff;
+  /* M84-T4 (a41-07): AA fix for secondary text. NOTE this file's inverted
+   * light-dark() convention — every pair is written light-dark(DARK, LIGHT)
+   * and `color-scheme: dark light` + OS-light resolves to the FIRST arg, so
+   * the dark look runs under used-scheme=light on this machine. Old #8b949e
+   * measured 3.6:1 on --bg-elev (fail AA); #9ba7b4 measures 7.1:1 dark-look,
+   * and #57606a measures 4.7:1 on the light-look surfaces. */
+  --text-dim: #9ba7b4;
+  /* M84-T4 (a41-07): accent chosen deliberately — cool cyan, the one hue reserved
+   * to nothing else, replacing the GitHub-dark default blue. NOT indigo/violet
+   * (the model-default tell). Green stays semantic OK only. */
+  --accent: #22b8cf;
   --ok: #3fb950;
   --warn: #d29922;
   --down: #f85149;
@@ -56,7 +68,7 @@
     --bg-elev-2: light-dark(#1b2430, #eaeef2);
     --border: light-dark(#29323f, #d0d7de);
     --text: light-dark(#e6edf3, #0d1117);
-    --text-dim: light-dark(#8b949e, #57606a);
+    --text-dim: light-dark(#9ba7b4, #57606a);
     --shadow: 0 4px 14px light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.08));
     --shadow-1: 0 2px 10px light-dark(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.08));
     --shadow-2: 0 10px 24px light-dark(rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.16));
@@ -456,13 +468,14 @@ body {
 }
 
 .topbar__gauge--tok .topbar__gauge__fill {
-  background: linear-gradient(90deg, #58a6ff, #bc8cff);
-  box-shadow: 0 0 8px rgba(88, 166, 255, 0.55);
+  /* M84-T4: tokenised (was hard-coded #58a6ff/#bc8cff) — decode runs accent->violet. */
+  background: linear-gradient(90deg, var(--accent), var(--series-4));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .topbar__gauge--prefill .topbar__gauge__fill {
-  background: linear-gradient(90deg, #2ea043, #3fb950);
-  box-shadow: 0 0 8px rgba(63, 185, 80, 0.55);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--series-2) 70%, #000), var(--series-2));
+  box-shadow: 0 0 8px color-mix(in srgb, var(--series-2) 55%, transparent);
 }
 
 .topbar__gauge__knob {
@@ -1823,7 +1836,11 @@ body::before {
   gap: 16px;
   align-items: center;
   padding: 12px 14px;
+  /* M84-T4 (a41-07): a dark chip on a light surface crushes --text-dim to 3.3:1;
+   * the light look gets a fainter tint. Second declaration wins where
+   * light-dark() is supported; the first stays as the fallback. */
   background: rgba(0, 0, 0, 0.18);
+  background: light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.05));
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 10px;
 }
@@ -1928,6 +1945,7 @@ body::before {
 .hud-card {
   padding: 10px 12px;
   background: rgba(0, 0, 0, 0.12);
+  background: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.04));
   border: 1px solid var(--border);
   border-radius: 8px;
   display: flex;
@@ -2115,6 +2133,7 @@ body::before {
   gap: 4px;
   padding: 8px 12px;
   background: rgba(0, 0, 0, 0.12);
+  background: light-dark(rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.04));
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -2371,6 +2390,7 @@ body[data-view="compact"] .topbar__meta {
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--sp-2);
   background: rgba(0, 0, 0, 0.18);
+  background: light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.05));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: var(--sp-2) var(--sp-3);

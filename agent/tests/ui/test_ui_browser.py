@@ -799,11 +799,17 @@ def main():
         # 12. hud-context-scale — audit-33 a33-36: context.pct is already a percentage, so the
         #     HUD's extra *100 rendered 7417.0% for a real 74.2%, and the token rows read keys
         #     the payload never sends so they were always "--".
-        assert gauges["hudCtx"] == "74.2%", (
-            f"HUD context reads {gauges['hudCtx']!r}, expected '74.2%' for a pinned pct of "
-            f"74.16954 (audit-33 a33-36 double scaling)"
+        #     M84-T4 (a41-04) re-cuts the expected string: percentages >= 10 round to whole
+        #     numbers, so 74.16954 reads "74%". The anti-double-scaling guard is unchanged —
+        #     any *100 slip would read "7417%", which this pin still rejects.
+        assert gauges["hudCtx"] == "74%", (
+            f"HUD context reads {gauges['hudCtx']!r}, expected '74%' for a pinned pct of "
+            f"74.16954 (audit-33 a33-36 double scaling; M84-T4 whole-number pct policy)"
         )
-        assert gauges["hudCtxVal"] == "194,431" or gauges["hudCtxVal"] == "194431", (
+        #     M84-T4 (a41-04): token counts route through fmtCount — 194431 reads "194k".
+        #     The pin's purpose is unchanged: the row must show the payload's used/max,
+        #     and a *100-style scaling slip would read "19.4M", which this still rejects.
+        assert gauges["hudCtxVal"] == "194k", (
             f"HUD context tokens reads {gauges['hudCtxVal']!r}; the payload sends used/max, "
             f"not used_tokens/max_tokens"
         )
@@ -1483,7 +1489,11 @@ def main():
         assert head["build"] == "Strata 9.9.99-test", (
             f"the header build string reads {head['build']!r}"
         )
-        assert re.search(r"gauge to 1,?291", head["scale"] or ""), (
+        #     M84-T4 (a41-04) copy pass: the caption was dev vocabulary ("gauge to N",
+        #     audit-41) and now reads "ceiling 1,291". The pin's purpose is unchanged —
+        #     the number must still be derived from the series, and the old hardcoded
+        #     2000 is still rejected by the assertion below.
+        assert re.search(r"ceiling 1,?291", head["scale"] or ""), (
             f"the gauge scale is not derived from the series ({head['scale']!r}); it must follow "
             f"the interpolated p95 of the fixture series (1,032.5 tok/s), not a hardcoded constant"
         )
@@ -1719,13 +1729,14 @@ def main():
             f"a sampled bucket with a null value drew a point on the plot floor ({floor[:4]!r})"
         )
         # A3: the prefill line is drawn from prefill_mean, so its disclosure must name the peak
-        # of THAT line (3 x 100 = 300.0), never the undrawn prefill_max (900).
+        # of THAT line (3 x 100 = 300), never the undrawn prefill_max (900).
+        # M84-T4 (a41-04): rates >= 10 render whole, so the string is "300", not "300.0".
         thr_stamp = js(ws, "window.__lastChartRender || 0")
         js(ws, "document.querySelector('#chart-metric-tabs .chart-tab[data-metric=throughput]').click()")
         settle(ws, "(window.__lastChartRender || 0) > %d" % int(thr_stamp),
                "the throughput legend under the timeseries fixture")
         peak = js(ws, "(document.querySelector('#chart-legend .legend-prefill .legend-peak') || {}).textContent || ''")
-        assert "300.0" in peak and "900" not in peak, (
+        assert "300" in peak and "900" not in peak, (
             f"the prefill legend discloses a peak that is not the drawn line's ({peak!r})"
         )
         # The disclosure must be more than text: the privately scaled line has to actually be
@@ -2119,6 +2130,172 @@ def main():
                 f"display={hero['chipDisplay']}) — an empty chip must not occupy the header"
             )
         print("PASS hero-hierarchy")
+
+        # 35. vitals-status-colour (M84-T4 / audit-41 a41-05, a41-07) — semantic colour is
+        #     reserved: utilisation gauges alarm at warn >= 80% and bad >= 92%, applied ONLY to
+        #     utilisation; higher-is-better rates stay neutral ink even when their value would
+        #     cross the same threshold. Two fixture-backed servers carry fixed hardware
+        #     readings so both sides of each boundary are deterministic: HIGH (cpu 85 -> warn,
+        #     ram 92.5 -> bad) and LOW (cpu 30, ram 40 -> ok). The base fixture's cache-hit
+        #     gauge sits at exactly 80.0% — the warn threshold itself — which proves the rate
+        #     carries no semantic class even when the number would qualify.
+        def fx_variant(name, cpu_pct, ram_used):
+            doc = json.loads(open(os.path.join(HERE, "fixtures", "engine.json"),
+                                  encoding="utf-8").read())
+            doc["/metrics"]["hardware"]["cpu"] = cpu_pct
+            doc["/metrics"]["hardware"]["ram_used"] = ram_used
+            path = os.path.join(profile, f"{name}.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            return path
+
+        def boot_fixture_server(fx_path, tag):
+            port = free_port()
+            proc = subprocess.Popen(
+                [sys.executable, os.path.join(UI, "server.py"), str(port)],
+                cwd=UI, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=dict(os.environ, LLM_MONITOR_DB=os.path.join(profile, f"sev-{tag}.sqlite3"),
+                         LLM_MONITOR_FIXTURE=fx_path))
+            for _ in range(40):
+                try:
+                    urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=1)
+                    return proc, port
+                except (urllib.error.URLError, ConnectionError, OSError):
+                    time.sleep(0.25)
+            raise AssertionError(f"the sev-{tag} fixture server did not come up")
+
+        def nav_to(url, sentinel):
+            js(ws, f"window.{sentinel} = 1")
+            ws.call("Page.navigate", {"url": url})
+            for _ in range(60):
+                state = js(ws, f"({{sentinel: window.{sentinel}, ready: document.readyState}})")
+                if state and state.get("sentinel") is None and state.get("ready") == "complete":
+                    return True
+                time.sleep(0.25)
+            return False
+
+        def read_vitals():
+            return js(ws, """(() => {
+              const cls = (id) => { const e = document.getElementById(id);
+                return e ? [...e.classList].filter(c => c.startsWith('is-')) : null; };
+              const col = (id) => { const e = document.getElementById(id);
+                return e ? getComputedStyle(e).color : null; };
+              // Default page ink: a fresh unstyled element inherits exactly what an
+              // uncoloured readout computes, without depending on any particular panel.
+              const probe = document.createElement('span');
+              document.body.appendChild(probe);
+              const ink = getComputedStyle(probe).color;
+              probe.remove();
+              const rs = getComputedStyle(document.documentElement);
+              return {cpu: cls('hw-cpu'), ram: cls('hw-ram'), cache: cls('cache-hit'),
+                      cacheColor: col('cache-hit'), ink,
+                      ok: rs.getPropertyValue('--ok').trim(), warn: rs.getPropertyValue('--warn').trim(),
+                      bad: rs.getPropertyValue('--down').trim()};
+            })()""")
+
+        def srgb(hexcol):
+            # '#rrggbb' -> 'rgb(r, g, b)' the way getComputedStyle reports colours.
+            h = hexcol.lstrip('#')
+            return f"rgb({int(h[0:2],16)}, {int(h[2:4],16)}, {int(h[4:6],16)})"
+
+        high_proc = low_proc = None
+        try:
+            high_proc, high_port = boot_fixture_server(
+                fx_variant("sev-high", 85.0, 63_554_693_120), "high")   # 92.5% of 64 GiB
+            assert nav_to(f"http://127.0.0.1:{high_port}/", "__m84_pre_sev_high"), \
+                "never observed a fresh document on the HIGH-severity fixture page"
+            settle_render(ws, 0, "the first poll against the HIGH-severity fixture")
+            hi = read_vitals()
+            assert hi["cpu"] == ["is-warn"], (
+                f"cpu at 85% renders classes {hi['cpu']!r}; the gauge must alarm is-warn "
+                "(audit-41 a41-05: RAM/CPU never coloured while VRAM/power did)"
+            )
+            assert hi["ram"] == ["is-bad"], (
+                f"ram at 92.5% renders classes {hi['ram']!r}; >= 92% must alarm is-bad"
+            )
+            assert hi["cache"] == [], (
+                f"cache-hit gauge carries semantic classes {hi['cache']!r} at 80% — "
+                "higher-is-better rates stay neutral ink (audit-41 a41-07: green means "
+                "status OK, not 'a good percentage')"
+            )
+            assert hi["cacheColor"] == hi["ink"], (
+                f"cache-hit value colour {hi['cacheColor']!r} differs from the page's neutral "
+                f"ink {hi['ink']!r} — the rate is tinted through some other rule"
+            )
+
+            low_proc, low_port = boot_fixture_server(
+                fx_variant("sev-low", 30.0, 27_487_790_694), "low")     # 40% of 64 GiB
+            assert nav_to(f"http://127.0.0.1:{low_port}/", "__m84_pre_sev_low"), \
+                "never observed a fresh document on the LOW-severity fixture page"
+            settle_render(ws, 0, "the first poll against the LOW-severity fixture")
+            lo = read_vitals()
+            assert lo["cpu"] == ["is-ok"] and lo["ram"] == ["is-ok"], (
+                f"quiet vitals render classes cpu={lo['cpu']!r} ram={lo['ram']!r}; below the "
+                "warn threshold both must be is-ok (not warn/bad colour)"
+            )
+        finally:
+            for p in (high_proc, low_proc):
+                if p is None:
+                    continue
+                try:
+                    p.terminate()
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+        print("PASS vitals-status-colour")
+
+        # 36. number-precision (M84-T4 / audit-41 a41-04) — the fmt() policy must hold at the
+        #     render boundary, not just in the helpers: no live text node may carry a raw run
+        #     of 7+ digits (the 90,607,381 class), more than two decimal places (the 310.188 Wh
+        #     class), or a grouped integer into the millions (the comma-hidden form of the same
+        #     lie). Runs against the base fixture server so every number is deterministic; the
+        #     digit-node census proves the sweep actually saw rendered numbers (an empty scan
+        #     must not pass vacuously).
+        prec_proc = None
+        try:
+            prec_proc, prec_port = boot_fixture_server(
+                os.path.join(HERE, "fixtures", "engine.json"), "prec")
+            assert nav_to(f"http://127.0.0.1:{prec_port}/", "__m84_pre_precision"), \
+                "never observed a fresh document on the precision fixture page"
+            settle_render(ws, 0, "the first poll against the precision fixture")
+            sweep = js(ws, """(() => {
+              const bad = [], seen = [];
+              const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+              while (walker.nextNode()) {
+                const n = walker.currentNode;
+                const p = n.parentElement;
+                if (!p || p.closest('script,style')) continue;
+                // Allowlist: quoted engine log lines (#log-list) stay verbatim — the policy
+                // governs dashboard-composed numbers, and rewriting a quote falsifies it.
+                // (Caught live during authoring: the engine's own "97.17% of 222885468
+                // block reads" line — honest as a quote, non-deterministic across machines.)
+                if (p.closest('#log-list')) continue;
+                const t = n.nodeValue.trim();
+                if (!t) continue;
+                if (/\\d/.test(t)) seen.push(t);
+                let why = null;
+                if (/\\d{7,}/.test(t)) why = 'raw 7+ digit run';
+                else if (/\\.\\d{3,}/.test(t)) why = '>2 decimal places';
+                else if (/\\d,\\d{3},\\d{3}/.test(t)) why = 'grouped integer into the millions';
+                if (why) bad.push(`${why}: #${p.id || p.className} "${t.slice(0, 60)}"`);
+              }
+              return {bad, seen: seen.length};
+            })()""")
+            assert sweep["seen"] >= 20, (
+                f"the precision sweep only found {sweep['seen']} digit-bearing text nodes; the "
+                "page did not render enough numbers to prove anything"
+            )
+            assert not sweep["bad"], (
+                "false precision reached the DOM:\n  " + "\n  ".join(sweep["bad"])
+            )
+        finally:
+            if prec_proc is not None:
+                try:
+                    prec_proc.terminate()
+                    prec_proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    prec_proc.kill()
+        print("PASS number-precision")
         return 0
     finally:
         for p in (proc, server):
