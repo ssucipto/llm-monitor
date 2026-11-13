@@ -993,19 +993,21 @@ carryovers:
     finding: "Numeric precision/unit discipline: false precision on live values (310.188 Wh, raw 90,607,381/102,522,079), units as loose tokens, dev vocabulary in copy ('gauge to 100', 'S created')"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: medium
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
     notes: "Central fmt() policy in app.js: compact notation, sig-digit caps, unit span at lighter weight, human labels. Planned as task-84-t4 (M84 opened 2026-11-13)."
+    resolution: "task-84-t4: fmtCount/fmtRate/fmtPct/fmtEnergy/fmtSpan policy over all rendered numbers (70 sites migrated; 6 exact-value exemptions documented in app.js). Pinned by ui check #36 number-precision sweep (#log-list allowlisted for verbatim engine quotes)."
   - id: a41-05
     audit: 41
     finding: "Semantic status colours (is-ok/is-warn/is-bad) exist and fire for VRAM/power/context/HUD but not for RAM/CPU hardware vitals — a monitor should alarm without being asked"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: low
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
     notes: "Threshold classes on all vitals; fold into the fmt()/status pass. Planned as task-84-t4 (M84 opened 2026-11-13)."
+    resolution: "task-84-t4: severity() at SEV_WARN_PCT=80/SEV_BAD_PCT=92 applied to every utilisation gauge (shared vitals path covers RAM/CPU; VRAM/power/context/HUD explicit). higher-is-better rates render neutral ink so green means status-OK only."
   - id: a41-06
     audit: 41
     finding: "Tab pills and time-range chips measure ~24-30px tall with no min-height rules — below the 44px touch-target floor, mis-tap-prone"
@@ -1021,10 +1023,11 @@ carryovers:
     finding: "Colour semantics overloaded: green means good-percent AND a chart series AND the speculative rate; accent is the GitHub-dark default rather than a chosen identity"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: low
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
     notes: "One accent + dedicated calibrated series palette in :root; consider authoring the set as DESIGN.md via the design-md skill. Planned as task-84-t4 (stretch)."
+    resolution: "task-84-t4: chosen cyan accent + series palette in :root, green reserved for semantic OK; contrast AA verified live via CDP both looks (dark 7.2-8.0:1, light 5.4-6.4:1) incl. chip-tint fix (a41-07 pair); 'gauge to' copy -> 'ceiling'. DESIGN.md authoring NOT done (stretch left open as follow-up)."
   - id: a42-01
     audit: 42
     finding: "task-84-t1 planned a media query that already exists (900px collapse, style.css:2199); real overflow mechanism is grid items' min-width:auto letting table/identity content widen the single track; no scroll-wrapper elements exist around either table"

@@ -7,7 +7,7 @@ project:
   version: 0.4.0
   started: 2026-10-07
   status: in_progress
-  current_milestone: M83
+  current_milestone: M84
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -264,12 +264,12 @@ milestones:
     name: UI Facelift — Mobile Containment, Chart System, Hero Hierarchy, Number/Status/Palette
     priority: 1
     file: agent/milestones/milestone-84-ui-facelift.md
-    status: in_progress
-    progress: 75
+    status: completed
+    progress: 100
     started: "2026-11-13"
-    completed: null
+    completed: "2026-11-13"
     estimated_weeks: 1
-    tasks_completed: 3
+    tasks_completed: 4
     tasks_total: 4
     notes: |
       Planned from audit-41 (carryovers a41-01..a41-07): fix measured mobile horizontal
@@ -280,12 +280,12 @@ milestones:
       UI suite guards every task commit; DOM id contracts preserved.
 
 active_handoff:
-  path: agent/reports/handoff-m84-t3-resume-2026-11-13.md
+  path: agent/reports/handoff-m84-close-2026-11-13.md
   date: "2026-11-13"
   to_executor: hermes-coordinator
   from_executor: hermes-coordinator
-  git_commit: f6b3006
-  status: closed — t3 resume steps executed and committed 2026-11-13 (/acp-proceed --complete --yes); t4 continues under the standing directive
+  git_commit: 7732f14
+  status: active — M84 CLOSED 4/4 2026-11-13; resume at overdue recurring reviews (weekly-code-review since 2026-11-04, weekly-integrity-scan due 2026-11-13)
 
 # Tasks are granular work items within milestones
 tasks:
@@ -787,7 +787,10 @@ tasks:
     - id: task-84-t4
       name: Number / status / palette system
       priority: 2
-      status: not_started
+      status: completed
+      started: "2026-11-13"
+      completed_date: "2026-11-13"
+      actual_hours: 3.5
       estimated_hours: 3
       file: agent/tasks/milestone-84-ui-facelift/task-84-t4-number-status-palette-system.md
 
@@ -808,6 +811,17 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: "2026-11-13"
+    description: |
+      M84-T4 number/status/palette system closed — M84 COMPLETE (4/4). One fmt policy over every rendered
+      number, severity colours on all utilisation vitals, chosen accent + series palette, AA contrast verified live.
+    items:
+      - "✅ fmt policy (a41-04): fmtCount/fmtRate/fmtPct/fmtEnergy/fmtSpan over 70 sites; 6 exact-value exemptions (gauge aria-labels, ceiling captions) documented in app.js; pinned by new ui check #36 number-precision sweep (#log-list allowlisted — engine log quotes are verbatim and machine-non-deterministic)"
+      - "✅ severity colours (a41-05): SEV_WARN_PCT=80/SEV_BAD_PCT=92 on every utilisation gauge incl. RAM/CPU via the shared vitals path; higher-is-better rates stay neutral ink so green means status-OK only"
+      - "✅ palette + contrast (a41-07): chosen cyan accent + --series-* tokens in :root; --text-dim AA fix BOTH looks — file's inverted light-dark(DARK,LIGHT) convention caught live (OS-light resolves first arg); chip tints made scheme-aware; CDP-measured 7.2-8.0:1 dark / 5.4-6.4:1 light incl. HUD view"
+      - "✅ copy: 'gauge to N' -> 'ceiling N' (dev vocabulary, a41-07); test pins migrated #12 (194k) #33 (ceiling regex) + cache-hit colour now asserts neutral ink; expected.txt 35->36"
+      - "✅ gates: ui 36+20 PASS · run-e2e-tests.sh 5 passed · acp.ci.sh --fast PASS 6/6 · vision review of dark/light screenshots (accent cyan, green status-only, captions legible both looks)"
+      - "📋 records: a41-04/05/07 closed; M84 milestone block completed 4/4; current_milestone drift M83->M84 fixed; DESIGN.md authoring (a41-07 stretch) left as follow-up"
   - date: "2026-11-13"
     description: |
       M84-T3 hero-metric hierarchy closed (verification of the pushed WIP + fixes).
@@ -1418,7 +1432,8 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - "M84 UI Facelift OPENED 2026-11-13 (/acp-plan): task-84-t1 mobile containment (a41-01/06) -> t2 chart small multiples + crosshair (a41-02) -> t3 hero-metric hierarchy (a41-03) -> t4 fmt/status/palette (a41-04/05/07). Start with /acp-proceed"
+  - "M84 UI Facelift CLOSED 2026-11-13 (4/4, a41-01..07 all closed). No open milestone — next engineering step is clearing the overdue recurring reviews below, then plan M85 from whatever they surface"
+  - "a41-07 stretch follow-up: author the accent/series palette as DESIGN.md via the design-md skill (tokens exist in :root; not yet spec'd)"
   - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
   - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probed 2026-11-12 in audit-40 — no counter source exists on Windows with driver 32.0.32015.7029; honest '--' stays. Re-check if Adrenalin ships an installable ADL SDK/WMI provider or the engine moves to Linux amdgpu (a40-01)"
   - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"

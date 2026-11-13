@@ -6,6 +6,24 @@
   executor: hermes
   branch: main
   tasks:
+    - "/acp-proceed --complete --yes: task-84-t4 (last pending task) + M84 close-out"
+  done:
+    - "fmt policy over all rendered numbers (a41-04): fmtCount/fmtRate/fmtPct/fmtEnergy/fmtSpan; 70 sites migrated, 6 exact-value exemptions documented in app.js; new ui check #36 number-precision sweep pins it (#log-list allowlisted — engine log quotes are verbatim and non-deterministic across machines)"
+    - "severity colours on every utilisation gauge incl. RAM/CPU (a41-05), SEV_WARN_PCT=80/SEV_BAD_PCT=92; higher-is-better rates neutral so green = status-OK only"
+    - "chosen cyan accent + --series-* tokens, green de-overloaded (a41-07); 'gauge to N' copy -> 'ceiling N'; test pins #12/#33 + cache-hit colour assertion migrated; expected.txt 35->36"
+    - "AA contrast fix for --text-dim: CDP probe caught this style.css's INVERTED light-dark(DARK, LIGHT) convention (OS-light + 'color-scheme: dark light' resolves the FIRST arg — the dark look runs under used-scheme=light); first 'spec-order' attempt measured 2.7-3.3:1 and was reverted to repo convention; chip backgrounds rgba(0,0,0,.12/.18) made scheme-aware or light-look captions sat at 3.3:1"
+    - "contrast verified live both looks both views: dark 7.15-7.99:1, light 5.38-6.39:1 (probe composites alpha over the real bg stack — comparing against raw rgba() as if opaque produced garbage ratios)"
+    - "gates: ui browser 36/36 + static 20/20 PASS · run-e2e-tests.sh 5 passed · acp.ci.sh --fast 6/6 · vision review of dark/light screenshots (accent cyan, green status-only, human-formatted numbers)"
+    - "records: a41-04/05/07 closed with resolutions; M84 milestone completed 4/4 same-day; current_milestone drift M83->M84 fixed; CHANGELOG [Unreleased] entry"
+  deferred:
+    - "DESIGN.md authoring of the palette (a41-07 stretch) -> next_steps"
+    - "weekly-code-review OVERDUE since 2026-11-04 + weekly-integrity-scan due 2026-11-13 -> recurring_tasks, first thing next session"
+  key_fact: "Never trust light-dark() argument order across a codebase — grep one existing pair first. This file pairs light-dark(DARK, LIGHT), the opposite of the spec, so a by-the-book fix silently inverted contrast instead of raising it; only a live computed-style probe (with alpha composited over the real background stack) exposed it."
+
+- date: 2026-11-13
+  executor: hermes
+  branch: main
+  tasks:
     - "/acp-audit: design-skill stack vetting + llm-monitor UI facelift readiness (audit-41)"
   done:
     - "skill stack: installed official/creative/impeccable v4.8.2 (existing-product-UI audit/polish doctrine, dashboard-scoped, live-browser verify scripts) — committed cb84845 to hermes-skills and pushed; reviewed auteur v1.3.1 (cinematic marketing register — wrong for a Monitor surface, not installed); declined 8+ clawhub community design skills (unvetted trust tier, duplicative of claude-design's slop doctrine); preferred stack now impeccable + popular-web-designs (Linear/Sentry/Kraken refs) + design-md"
