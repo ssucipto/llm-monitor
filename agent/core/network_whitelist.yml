@@ -1,0 +1,8 @@
+# Network egress whitelist for /acp-integrity IG-01/IG-02 (network-whitelist-validate.sh)
+# llm-monitor is a loopback-only dashboard: it talks to the local engine (:8080)
+# and its own server (:8090). Anything else outbound is a finding.
+approved_hosts:
+  - "localhost"
+  - "127.0.0.1"
+  - "::1"
+  - "0.0.0.0"

@@ -1073,3 +1073,22 @@ carryovers:
     fix_applied_date: 2026-11-13
     verified_in_audit: 42
     notes: "Baseline desktop+mobile PNGs captured to audit-42-assets/ before t1; each task commit attaches before/after pairs."
+
+  - id: a43-01
+    audit: 43
+    finding: "IG-17 entropy threshold (4.5) false-positives on bootstrap-template prose: .github/copilot-instructions.md:198 quoted prompt string scored 4.52"
+    location: agent/reports/audit-43-integrity-weekly-2026-11-13.md
+    severity: low
+    status: noted
+    fix_applied_date: null
+    verified_in_audit: 43
+    notes: "Triaged FALSE POSITIVE (English prose, no secret context, not an assignment). Options if noise grows: secret_context gate for integrity mode, or --baseline file. Do not raise the global threshold."
+  - id: a43-02
+    audit: 43
+    finding: "IG-37 (author email in team_members) never runs: team_members empty in agent/core/identity.yml — provenance author checks are a no-op"
+    location: agent/reports/audit-43-integrity-weekly-2026-11-13.md
+    severity: low
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: 43
+    notes: "Single-maintainer repo — populate team_members with the owner's git identity to activate IG-37, or record an explicit wontfix. Planned for M85 planning intake."

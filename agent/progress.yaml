@@ -1467,8 +1467,8 @@ recurring_tasks:
     frequency: weekly
     executor: copilot
     description: "Weekly ACP framework integrity scan"
-    last_run: 2026-11-06
-    next_due: 2026-11-13
+    last_run: 2026-11-13
+    next_due: 2026-11-20
     status: current
 
   - id: monthly-dependency-audit
