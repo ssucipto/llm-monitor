@@ -1020,4 +1020,49 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "One accent + dedicated calibrated series palette in :root; consider authoring the set as DESIGN.md via the design-md skill. Planned as task-84-t4 (M84 opened 2026-11-13)."
+    notes: "One accent + dedicated calibrated series palette in :root; consider authoring the set as DESIGN.md via the design-md skill. Planned as task-84-t4 (stretch)."
+  - id: a42-01
+    audit: 42
+    finding: "task-84-t1 planned a media query that already exists (900px collapse, style.css:2199); real overflow mechanism is grid items' min-width:auto letting table/identity content widen the single track; no scroll-wrapper elements exist around either table"
+    location: agent/reports/audit-42-m84-pre-impl-grounding-2026-11-13.md
+    severity: high
+    status: fixed
+    fix_applied_date: 2026-11-13
+    verified_in_audit: 42
+    notes: "Planning defect, corrected pre-impl: task doc amended to min-width:0 containment + real .table-scroll wrappers + sticky first column. Implementation still pending as task-84-t1."
+  - id: a42-02
+    audit: 42
+    finding: "task-84-t2 touched the single #chart-svg renderer without documenting the six browser + two static chart checks that pin its contract (axis labels, gap holes, legend truth, impossible-prefill suppression)"
+    location: agent/reports/audit-42-m84-pre-impl-grounding-2026-11-13.md
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-11-13
+    verified_in_audit: 42
+    notes: "Task doc amended with the pinned-check list; every sub-chart must inherit axis/gap/legend/disclosure semantics."
+  - id: a42-03
+    audit: 42
+    finding: "task-84-t4's fmt() sweep changes rendered number strings that checks #25 fixture-engine-values and #18 chart-no-impossible-prefill assert on; the plan lacked an explicit migration path"
+    location: agent/reports/audit-42-m84-pre-impl-grounding-2026-11-13.md
+    severity: medium
+    status: fixed
+    fix_applied_date: 2026-11-13
+    verified_in_audit: 42
+    notes: "Task doc amended: affected checks updated in the same commit with cited reasons; suppression semantics preserved, not reformatted."
+  - id: a42-04
+    audit: 42
+    finding: "--series-* palette tokens had two owners (t2 and t4) — drift risk"
+    location: agent/reports/audit-42-m84-pre-impl-grounding-2026-11-13.md
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-11-13
+    verified_in_audit: 42
+    notes: "Ownership written into both task docs: t2 introduces series hues, t4 owns semantic colours + accent."
+  - id: a42-05
+    audit: 42
+    finding: "No pre-M84 visual baseline existed to prove 'desktop pixel-unchanged' claims"
+    location: agent/reports/audit-42-assets/
+    severity: low
+    status: fixed
+    fix_applied_date: 2026-11-13
+    verified_in_audit: 42
+    notes: "Baseline desktop+mobile PNGs captured to audit-42-assets/ before t1; each task commit attaches before/after pairs."
