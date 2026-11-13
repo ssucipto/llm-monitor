@@ -223,6 +223,11 @@ body {
   font-weight: 600;
   color: var(--text);
   letter-spacing: .02em;
+  /* M84-T3 vision pass (phone): the cluster's overflow:hidden hard-cut the model id
+   * mid-glyph at 390px. Ellipsis on the shrinkable item reads as truncation, not breakage. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* M81-T7 (a33-28): which build is answering. Kept quiet so the engine name stays the
@@ -520,9 +525,15 @@ body {
 
 /* M84-T3 (a41-03): three-step hierarchy on existing tokens — hero >> pills >> units.
  * The decode rate is the one number this Monitor surface exists to show; the media
- * queries' --fs-base override below stays for the quiet pills, the hero clamps own. */
-.topstat__value {
-  font-size: clamp(2rem, 4vw, 3rem);
+ * queries' --fs-base override below stays for the quiet pills, the hero clamps own.
+ * Specificity note (caught by the hero-hierarchy check): the responsive blocks at the
+ * foot of this file set .kpi__value { font-size: var(--fs-base) } — same specificity,
+ * later source — so BOTH hierarchy rules here use compound selectors. A plain single-
+ * class selector loses that cascade silently and flattens the hero to pill size. */
+data.kpi__value.topstat__value {
+  /* Floor raised to 2.25rem: the suite measures at the headless default viewport,
+   * where a 2rem floor resolved to 32px and lost the >=36px hero contract. */
+  font-size: clamp(2.25rem, 4vw, 3rem);
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -579,6 +590,9 @@ body {
  * because the Compact HUD hides the bar and must hide the scale with it. */
 .kpi__unit--scale {
   opacity: .7;
+  /* M84-T3 vision pass (phone): "gauge to 100" orphan-wrapped its number onto a
+   * second line at 390px. These captions are short fixed strings — keep them whole. */
+  white-space: nowrap;
 }
 
 /* M80-T1 (audit-30 F-30-01..03): masonry on a CSS grid. auto-fill keeps the

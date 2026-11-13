@@ -2075,6 +2075,50 @@ def main():
             ws.call("Emulation.clearDeviceMetricsOverride")
             settle_spans(ws, stamp, "after clearing the 390px viewport override")
         print("PASS viewport-no-hoverflow")
+
+        # M84-T3 (audit-41 a41-03): one number must dominate the first screen. Before M84
+        # the strip carried ~40 near-equal-weight numbers and decode tok/s appeared three
+        # times at equal weight. This pins the hierarchy in computed styles: the hero rate
+        # is at least 36px AND at least 1.5x the largest quiet pill, so no future restyle
+        # can silently flatten it back. The delta chip must also agree with itself — when
+        # it carries no text (no baseline, or a within-noise move per a33-16) it is hidden
+        # and unrendered; when it carries text it is visible.
+        stamp = mark_layout(ws)
+        js(ws, "window.dispatchEvent(new Event('resize'))")
+        settle_spans(ws, stamp, "after clearing the viewport override for the hero check")
+        settle_render(ws, 0, "a poll before the hero-hierarchy read")
+        hero = js(ws, """(() => {
+          const px = (sel) => { const el = document.querySelector(sel);
+            return el ? parseFloat(getComputedStyle(el).fontSize) : null; };
+          const chip = document.getElementById('hero-tok-delta');
+          return {hero: px('#hero-tok'), pill: px('#top-prefill'),
+                  chipExists: !!chip,
+                  chipHidden: chip ? chip.hidden : null,
+                  chipDisplay: chip ? getComputedStyle(chip).display : null,
+                  chipText: chip ? (chip.textContent || '').trim() : null};
+        })()""")
+        assert hero["hero"] is not None and hero["pill"] is not None, \
+            "missing #hero-tok or #top-prefill — the header hierarchy has no anchor"
+        assert hero["hero"] >= 36.0, (
+            f"#hero-tok computes {hero['hero']}px; the hero vital must stay >= 36px "
+            "(audit-41 a41-03: one number dominates the first screen)"
+        )
+        assert hero["hero"] >= 1.5 * hero["pill"], (
+            f"#hero-tok {hero['hero']}px is not >= 1.5x the quiet pill #top-prefill "
+            f"{hero['pill']}px — the strip competes with the hero again"
+        )
+        assert hero["chipExists"], "#hero-tok-delta is missing from the header"
+        if hero["chipText"]:
+            assert not hero["chipHidden"] and hero["chipDisplay"] != "none", (
+                f"delta chip carries text {hero['chipText']!r} but is hidden "
+                "(a rendered delta must be visible)"
+            )
+        else:
+            assert hero["chipHidden"] and hero["chipDisplay"] == "none", (
+                f"empty delta chip is still rendered (hidden={hero['chipHidden']}, "
+                f"display={hero['chipDisplay']}) — an empty chip must not occupy the header"
+            )
+        print("PASS hero-hierarchy")
         return 0
     finally:
         for p in (proc, server):
