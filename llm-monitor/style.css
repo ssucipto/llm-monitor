@@ -518,6 +518,29 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* M84-T3 (a41-03): three-step hierarchy on existing tokens — hero >> pills >> units.
+ * The decode rate is the one number this Monitor surface exists to show; the media
+ * queries' --fs-base override below stays for the quiet pills, the hero clamps own. */
+.hero-metric__value {
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.hero-metric__delta {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* Quiet pills: the strip supports the hero, it does not compete with it. */
+.kpi:not(.kpi--hero) .kpi__value {
+  font-size: calc(var(--fs-lg) * 0.85);
+  color: var(--text-dim);
+}
+
 .kpi__state {
   font-size: var(--fs-base);
   font-weight: 600;

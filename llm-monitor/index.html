@@ -71,8 +71,17 @@
         <span class="topbar__gauge__knob" id="top-gauge-knob"></span>
       </div>
     </div>
+    <!-- M84-T3 (a41-03): one number outranks everything else on this surface — the
+         decode rate is what "is my engine fast right now" means. It leads the strip
+         at hero size with an honest delta vs the window mean; the rest of the strip
+         steps down to quiet pills. Ids unchanged: hero-tok/hero-tok-ceiling are pinned. -->
     <div class="kpi-strip" role="group" aria-label="At a glance">
-      <div class="kpi"><data class="kpi__value" id="hero-tok" value="0">--</data><span class="kpi__unit">decode tok/s</span><span class="kpi__scale kpi__unit--scale" id="hero-tok-ceiling">gauge to --</span></div>
+      <div class="kpi kpi--hero hero-metric">
+        <data class="kpi__value hero-metric__value" id="hero-tok" value="0">--</data>
+        <span class="kpi__unit">decode tok/s</span>
+        <span class="hero-metric__delta" id="hero-tok-delta" hidden></span>
+        <span class="kpi__scale kpi__unit--scale" id="hero-tok-ceiling">gauge to --</span>
+      </div>
       <div class="kpi"><data class="kpi__value" id="top-prefill" value="0">--</data><span class="kpi__unit" id="top-gauge-scale">prefill tok/s</span><span class="kpi__unit kpi__unit--scale" id="top-gauge-ceiling">gauge to --</span></div>
       <div class="kpi"><span class="kpi__orb" id="hero-orb" aria-hidden="true"></span><span class="kpi__state" id="hero-state">idle</span><span class="kpi__unit">model state</span></div>
       <div class="kpi"><data class="kpi__value" id="hero-power" value="0">--</data><span class="kpi__unit">watts</span></div>

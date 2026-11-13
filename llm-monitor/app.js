@@ -1065,9 +1065,27 @@ function renderEndpoints(endpoints) {
     .map((k) => `${k} ${mark(ep[k])}`).join(" · ");
 }
 
-function renderHero(throughput, power, context, cache, status) {
+function renderHero(throughput, power, context, cache, status, analysis) {
   const tok = throughput && throughput.now;
   setText("hero-tok", tok != null ? `${tok.toFixed(1)}` : "--");
+  // M84-T3 (a41-03): the hero earns its size by carrying meaning — the delta against
+  // the window mean says whether NOW is typical. No baseline or a within-noise move
+  // hides the chip entirely; it never prints an empty or invented percentage (a33-16).
+  const mean = analysis && analysis.recent && analysis.recent.tok_s_mean;
+  const deltaEl = $("hero-tok-delta");
+  if (deltaEl) {
+    if (tok != null && mean != null && mean > 0 && Math.abs(tok - mean) / mean >= 0.03) {
+      const pct = Math.round((tok - mean) / mean * 100);
+      deltaEl.textContent = `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs mean`;
+      deltaEl.title = `now ${tok.toFixed(1)} vs window mean ${mean.toFixed(1)} tok/s`;
+      deltaEl.classList.toggle("is-ok", pct > 0);
+      deltaEl.classList.toggle("is-warn", pct < 0);
+      deltaEl.hidden = false;
+    } else {
+      deltaEl.textContent = "";
+      deltaEl.hidden = true;
+    }
+  }
   const state = status && status.state;
   setText("hero-state", stateName(state));
   // M81-T7: the state cell gets the same orb the HUD uses, so the header reads its
@@ -2284,7 +2302,7 @@ async function refresh() {
   renderSwitch(data.switch);
   renderLog(data.log);
   renderEndpoints(data.endpoints);
-  renderHero(data.throughput, data.power, data.context, data.cache, data.status);
+  renderHero(data.throughput, data.power, data.context, data.cache, data.status, data.analysis);
   renderTopbar(data.engine, data.throughput, data.history);
   renderLiveness(data.totals);
   renderHistory(data.periods, data.daily, data.requests);
