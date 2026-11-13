@@ -1806,13 +1806,18 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   gPoints.innerHTML = "";
 
   const W = 900;
-  const H = 300;
   const pad = { left: 55, right: 25, top: 25, bottom: 35 };
+  // M84-T2 (a41-02): "All Combined" was five series sharing one axis with private
+  // scales and dashed styles — the flagship chart was the least readable element.
+  // It is small multiples now: three stacked bands, one meaning per y-axis, hues
+  // stable via --series-* tokens, solid lines only (dashes are reserved for
+  // projected series, and there are none). Single-metric tabs keep their existing
+  // 900x300 geometry untouched — the pinned checks measure that plot.
+  const banded = metric === "all";
+  const H = banded ? 640 : 300;
   const chartW = W - pad.left - pad.right;
-  const chartH = H - pad.top - pad.bottom;
   const N = buckets.length;
   const getX = (i) => pad.left + (N > 1 ? (i / (N - 1)) * chartW : chartW / 2);
-  const getY = (val, maxVal) => pad.top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / maxVal)));
 
   if (N === 0) {
     const emptyText = svgElem("text", {
@@ -1873,59 +1878,86 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     primaryMax = Math.max(maxTokens * 1.15, 100);
   }
 
+  // Every drawn series lives in exactly one band; each band owns its y-axis and
+  // states its unit on the top gridline AND in its title (a33-18 holds per band).
+  const BANDS = banded
+    ? [
+        { top: 24,  h: 176, title: "tok/s",   unit: "tok/s", kind: "flow",
+          series: [{ v: SERIES.tok,     c: "var(--series-1)", w: "2.2", area: "url(#chart-grad-tok)" },
+                   { v: SERIES.prefill, c: "var(--series-2)", w: "1.8" }] },
+        { top: 236, h: 144, title: "requests", unit: "req",  kind: "count",
+          series: [{ v: SERIES.reqs,    c: "var(--series-3)", w: "2", area: "url(#chart-grad-reqs)" }] },
+        { top: 410, h: 185, title: "tokens",   unit: "",     kind: "count",
+          series: [{ v: SERIES.tokens,  c: "var(--series-4)", w: "2", area: "url(#chart-grad-tokens)" }] },
+      ]
+    : [{ top: pad.top, h: H - pad.top - pad.bottom, title: metric === "all" ? "tokens (left axis)" : unit,
+         unit, kind: metric === "throughput" ? "flow" : "count", series: [] }];
+
+  const legendState = {}; // sel -> {on, peak, unit, ownsAxis}, filled by the band pass
+
   const gridSteps = 4;
-  for (let s = 0; s <= gridSteps; s++) {
-    const frac = s / gridSteps;
-    const y = pad.top + chartH * (1 - frac);
-    const line = svgElem("line", {
-      x1: pad.left,
-      y1: y,
-      x2: W - pad.right,
-      y2: y,
-      class: "chart-grid-line",
-    });
-    gGrid.appendChild(line);
+  BANDS.forEach((band) => {
+    const top = band.top;
+    const chartH = band.h;
+    // Each band's axis is sized from its own series' window peak — same honesty rule
+    // as the single-metric tabs (labelled gridlines, drawn values can't exceed it).
+    const bandMax = banded
+      ? (band.kind === "flow" ? Math.max(maxTok * 1.15, 10)
+         : (band.title === "requests" ? Math.max(maxReqs * 1.2, 5) : Math.max(maxTokens * 1.15, 10)))
+      : primaryMax;
+    const getY = (val, maxVal) => top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / maxVal)));
 
-    const val = primaryMax * frac;
-    // M81-review (A10): a metric that is not one of the four wired tabs must still get a
-    // labelled axis. The fallback keeps the gridline numbers from ever going blank.
-    let labelText = `${Math.round(val)}`;
-    if (metric === "throughput") {
-      labelText = `${val.toFixed(0)}`;
-    } else if (metric === "tokens" || metric === "all") {
-      labelText = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M` : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k` : `${Math.round(val)}`;
+    for (let s = 0; s <= gridSteps; s++) {
+      const frac = s / gridSteps;
+      const y = top + chartH * (1 - frac);
+      gGrid.appendChild(svgElem("line", {
+        x1: pad.left, y1: y, x2: W - pad.right, y2: y,
+        class: "chart-grid-line",
+      }));
+      const val = bandMax * frac;
+      // M81-review (A10): a metric that is not one of the four wired tabs must still get a
+      // labelled axis. The fallback keeps the gridline numbers from ever going blank.
+      let labelText = `${Math.round(val)}`;
+      const kind = banded ? band.kind : (metric === "throughput" ? "flow" : "count");
+      if (kind === "flow") {
+        labelText = val.toFixed(0);
+      } else if (kind === "count") {
+        labelText = val >= 1e6 ? `${(val / 1e6).toFixed(1)}M` : val >= 1e3 ? `${(val / 1e3).toFixed(0)}k` : `${Math.round(val)}`;
+      }
+      // a33-18: the top gridline carries the unit so the number can never be read as a
+      // bare count. The axis title element below states it again in words.
+      if (s === gridSteps && labelText) labelText = `${labelText} ${band.unit}`;
+      const txt = svgElem("text", {
+        x: pad.left - 8, y: y + 4,
+        class: "chart-axis-text",
+        "text-anchor": "end",
+      });
+      txt.textContent = labelText;
+      gGrid.appendChild(txt);
     }
-    // a33-18: the top gridline carries the unit so the number can never be read as a
-    // bare count. The axis title element below states it again in words.
-    if (s === gridSteps && labelText) labelText = `${labelText} ${unit}`;
-    const txt = svgElem("text", {
-      x: pad.left - 8,
-      y: y + 4,
-      class: "chart-axis-text",
-      "text-anchor": "end",
-    });
-    txt.textContent = labelText;
-    gGrid.appendChild(txt);
-  }
 
-  // Axis title, so the unit is stated in words and not only as a suffix.
-  const axisTitle = svgElem("text", {
-    x: 6,
-    y: pad.top - 10,
-    class: "chart-axis-text chart-axis-title",
-    "text-anchor": "start",
+    // Axis title, so the unit is stated in words and not only as a suffix. In the
+    // banded view every band carries its own (a33-18 per band).
+    const axisTitle = svgElem("text", {
+      x: 6, y: top - 9,
+      class: "chart-axis-text chart-axis-title" + (banded ? " chart-band-title" : ""),
+      "text-anchor": "start",
+    });
+    axisTitle.textContent = band.title;
+    gGrid.appendChild(axisTitle);
   });
-  axisTitle.textContent = metric === "all" ? `tokens (left axis)` : unit;
-  gGrid.appendChild(axisTitle);
 
   // M81-T4 (a33-21): a bucket with no polls is an observation gap, not a quiet engine.
   const gaps = buckets.filter((b) => !b.samples).length;
   if (gaps) {
+    const spanTop = BANDS[0].top;
+    const lastBand = BANDS[BANDS.length - 1];
+    const spanBottom = banded ? lastBand.top + lastBand.h : pad.top + (H - pad.top - pad.bottom);
     buckets.forEach((b, i) => {
       if (b.samples) return;
       const x = getX(i);
       gGrid.appendChild(svgElem("line", {
-        x1: x, y1: pad.top, x2: x, y2: pad.top + chartH,
+        x1: x, y1: spanTop, x2: x, y2: spanBottom,
         class: "chart-gap-line",
       }));
     });
@@ -1937,6 +1969,16 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
     });
     gapNote.textContent = `${gaps} bucket${gaps > 1 ? "s" : ""} had no samples`;
     gGrid.appendChild(gapNote);
+  }
+
+  if (banded) {
+    // Band separators so the stacked plot reads as three charts, not one tall one.
+    BANDS.slice(1).forEach((band) => {
+      gGrid.appendChild(svgElem("line", {
+        x1: pad.left, y1: band.top - 20, x2: W - pad.right, y2: band.top - 20,
+        class: "chart-band-rule",
+      }));
+    });
   }
 
   // M81-T4 (a33-20): a fixed stride of floor(N/6) gave every range a different label
@@ -1963,7 +2005,9 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   // "the engine was idle" when the truth is "no tab was open". Each series is drawn
   // as one polyline per contiguous run of observed buckets, and its area closes only
   // within a run.
-  const drawSeries = (values, maxVal, { stroke, width, dash, areaFill }) => {
+  const drawSeries = (values, maxVal, { stroke, width, dash, areaFill }, top, chartH) => {
+    const getY = (val, mv) => top + chartH * (1 - Math.max(0, Math.min(1, (val || 0) / mv)));
+    const floorY = (top + chartH).toFixed(1);
     let run = [];
     const flush = () => {
       if (run.length === 1) {
@@ -1976,7 +2020,7 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
         if (areaFill) {
           const first = run[0], last = run[run.length - 1];
           gAreas.appendChild(svgElem("path", {
-            d: `M ${first.x},${(pad.top + chartH).toFixed(1)} L ${pts} L ${last.x},${(pad.top + chartH).toFixed(1)} Z`,
+            d: `M ${first.x},${floorY} L ${pts} L ${last.x},${floorY} Z`,
             fill: areaFill,
           }));
         }
@@ -1996,60 +2040,87 @@ function renderTimeseriesChart(data, metric = currentChartMetric, range = curren
   // M81-review (A4): a null value is a hole, so each series draws only its observed
   // points (drawSeries breaks the polyline at a null). No `|| 0` anywhere: a missing
   // reading must never render as a definite zero.
-  if (metric === "all" || metric === "tokens") {
-    drawSeries(SERIES.tokens, primaryMax,
-               { stroke: "#bc8cff", width: "2", areaFill: "url(#chart-grad-tokens)" });
-  }
+  if (banded) {
+    // Small multiples: each band's lines are scaled by that band's labelled axis,
+    // so there are no private scales and nothing left unexplained in this view.
+    BANDS.forEach((band) => {
+      const bandMax = band.kind === "flow" ? Math.max(maxTok * 1.15, 10)
+        : (band.title === "requests" ? Math.max(maxReqs * 1.2, 5) : Math.max(maxTokens * 1.15, 10));
+      band.series.forEach((s) => {
+        drawSeries(s.v, bandMax, { stroke: s.c, width: s.w, areaFill: s.area }, band.top, band.h);
+      });
+    });
+    legendState.tok = { on: true, peak: seriesPeak.tok, unit: "tok/s", ownsAxis: true };
+    legendState.prefill = { on: true, peak: seriesPeak.prefill, unit: "tok/s", ownsAxis: true };
+    legendState.tokens = { on: true, peak: seriesPeak.tokens, unit: "", ownsAxis: true };
+    legendState.reqs = { on: true, peak: seriesPeak.reqs, unit: "", ownsAxis: true };
+  } else {
+    const chartH = H - pad.top - pad.bottom;
+    if (metric === "tokens") {
+      drawSeries(SERIES.tokens, primaryMax,
+                 { stroke: "var(--series-4)", width: "2", areaFill: "url(#chart-grad-tokens)" }, pad.top, chartH);
+    }
 
-  if (metric === "all" || metric === "requests") {
-    // A privately scaled series is scaled by the peak the legend discloses, so the
-    // highest point on the line really does sit at the top of the plot.
-    const rMax = metric === "requests" ? primaryMax : Math.max(seriesPeak.reqs, 1);
-    drawSeries(SERIES.reqs, rMax,
-               { stroke: "#d29922", width: metric === "requests" ? "2.2" : "1.8",
-                 dash: metric === "all" ? "4,3" : null,
-                 areaFill: metric === "requests" ? "url(#chart-grad-reqs)" : null });
-  }
+    if (metric === "requests") {
+      drawSeries(SERIES.reqs, primaryMax,
+                 { stroke: "var(--series-3)", width: "2.2",
+                   areaFill: "url(#chart-grad-reqs)" }, pad.top, chartH);
+    }
 
-  if (metric === "all" || metric === "throughput") {
-    const tMax = metric === "throughput" ? primaryMax : Math.max(seriesPeak.tok, 1);
-    drawSeries(SERIES.tok, tMax,
-               { stroke: "#58a6ff", width: "2.2",
-                 areaFill: metric === "throughput" ? "url(#chart-grad-tok)" : null });
+    if (metric === "throughput") {
+      drawSeries(SERIES.tok, primaryMax,
+                 { stroke: "var(--series-1)", width: "2.2",
+                   areaFill: "url(#chart-grad-tok)" }, pad.top, chartH);
 
-    // A privately scaled series is scaled by exactly the peak its legend discloses, so
-    // "scaled to peak X" is literally true: the highest point on the line sits at the
-    // top of the plot (M81-review A3).
-    const pMax = Math.max(seriesPeak.prefill, 1);
-    drawSeries(SERIES.prefill, pMax,
-               { stroke: "#3fb950", width: "1.8" });
+      // A privately scaled series is scaled by exactly the peak its legend discloses, so
+      // "scaled to peak X" is literally true: the highest point on the line sits at the
+      // top of the plot (M81-review A3).
+      const pMax = Math.max(seriesPeak.prefill, 1);
+      drawSeries(SERIES.prefill, pMax,
+                 { stroke: "var(--series-2)", width: "1.8" }, pad.top, chartH);
+    }
+
+    legendState.tok = { on: metric === "throughput", peak: seriesPeak.tok, unit: "tok/s", ownsAxis: metric === "throughput" };
+    legendState.prefill = { on: metric === "throughput", peak: seriesPeak.prefill, unit: "tok/s", ownsAxis: false };
+    legendState.tokens = { on: metric === "tokens", peak: seriesPeak.tokens, unit: "", ownsAxis: metric === "tokens" };
+    legendState.reqs = { on: metric === "requests", peak: seriesPeak.reqs, unit: "", ownsAxis: metric === "requests" };
   }
 
   // M81-T4 (a33-18/a33-22): the legend is the disclosure for every series that does NOT
-  // own the left axis, so each drawn series states its own peak; items for series that
-  // are not in this metric mode are hidden instead of implying an absent line.
+  // own an axis; in the banded view every line owns its band's labelled axis, so the
+  // honest disclosure there is "own scale". Items for series that are not drawn are
+  // hidden instead of implying an absent line.
   const legend = [
-    { sel: ".legend-tok", on: metric === "all" || metric === "throughput", peak: seriesPeak.tok, unit: "tok/s" },
-    { sel: ".legend-prefill", on: metric === "all" || metric === "throughput", peak: seriesPeak.prefill, unit: "tok/s" },
-    { sel: ".legend-tokens", on: metric === "all" || metric === "tokens", peak: seriesPeak.tokens, unit: "" },
-    { sel: ".legend-reqs", on: metric === "all" || metric === "requests", peak: seriesPeak.reqs, unit: "" },
+    { sel: ".legend-tok", key: "tok" },
+    { sel: ".legend-prefill", key: "prefill" },
+    { sel: ".legend-tokens", key: "tokens" },
+    { sel: ".legend-reqs", key: "reqs" },
   ];
   legend.forEach((item) => {
     const el = document.querySelector(`#chart-legend ${item.sel}`);
-    if (!el) return;
-    el.hidden = !item.on;
+    const st = legendState[item.key];
+    if (!el || !st) return;
+    el.hidden = !st.on;
     const peakEl = el.querySelector(".legend-peak");
     if (!peakEl) return;
-    if (!item.on) { peakEl.textContent = ""; return; }
-    // A series scaled by the left axis needs no extra disclosure; the others do.
-    const ownsAxis = (metric === "throughput" && item.sel === ".legend-tok")
-      || (metric === "tokens" && item.sel === ".legend-tokens")
-      || (metric === "requests" && item.sel === ".legend-reqs")
-      || (metric === "all" && item.sel === ".legend-tokens");
-    if (ownsAxis) { peakEl.textContent = "· left axis"; return; }
-    const p = item.peak > 0 ? (item.unit === "tok/s" ? item.peak.toFixed(1) : fmtInt(item.peak)) : null;
-    peakEl.textContent = p != null ? `· scaled to peak ${p}${item.unit ? " " + item.unit : ""}` : "· no data";
+    if (!st.on) { peakEl.textContent = ""; return; }
+    if (st.ownsAxis) { peakEl.textContent = banded ? "\u00b7 own scale" : "\u00b7 left axis"; return; }
+    const p = st.peak > 0 ? (st.unit === "tok/s" ? st.peak.toFixed(1) : fmtInt(st.peak)) : null;
+    peakEl.textContent = p != null ? `\u00b7 scaled to peak ${p}${st.unit ? " " + st.unit : ""}` : "\u00b7 no data";
   });
+
+  // The crosshair spans the whole plot: one cursor reads every band at once
+  // (M84-T2 shared time cursor — the tooltip already lists all four series).
+  const crosshairEl = $("chart-crosshair");
+  if (crosshairEl) {
+    crosshairEl.setAttribute("y1", String(BANDS[0].top));
+    crosshairEl.setAttribute("y2", String(banded ? BANDS[BANDS.length - 1].top + BANDS[BANDS.length - 1].h : H - pad.bottom));
+  }
+  const wrapEl = $("chart-canvas-wrap");
+  if (wrapEl) wrapEl.classList.toggle("is-banded", banded);
+  const svgEl = $("chart-svg");
+  if (svgEl) svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`); // banded: taller canvas
+
   // M81-T8 (a32-02): stamped at the very end of the pass, so the UI suite can wait for a chart
   // render newer than its own click instead of sleeping a guessed interval.
   window.__lastChartRender = Date.now();

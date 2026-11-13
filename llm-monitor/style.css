@@ -6,6 +6,14 @@
 :root {
   color-scheme: dark light;
 
+  /* M84-T2 (a41-02): one source of truth for chart series hues. The "All Combined"
+   * view is small multiples now, but the hues stay stable so muscle memory and the
+   * legend dots survive. task-84-t4 owns semantic colours + accent and may extend. */
+  --series-1: #58a6ff; /* decode tok/s — primary throughput */
+  --series-2: #3fb950; /* prefill tok/s — secondary throughput */
+  --series-3: #d29922; /* requests */
+  --series-4: #bc8cff; /* token volume */
+
   --bg: #0b0f14;
   --bg-elev: #141a22;
   --bg-elev-2: #1b2430;
@@ -2372,6 +2380,21 @@ body[data-view="compact"] .topbar__meta {
   user-select: none;
 }
 
+/* M84-T2: "All Combined" is three stacked bands (small multiples) — one meaning
+ * per y-axis — so the canvas grows to keep every band readable. */
+.chart-canvas-wrap.is-banded {
+  height: clamp(420px, 62vh, 560px);
+}
+
+.chart-band-rule {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-band-title {
+  font-weight: 600;
+}
+
 #chart-svg {
   width: 100%;
   height: 100%;
@@ -2458,10 +2481,10 @@ body[data-view="compact"] .topbar__meta {
   border-radius: 50%;
 }
 
-.legend-tok .legend-dot { background: #58a6ff; }
-.legend-prefill .legend-dot { background: #3fb950; }
-.legend-tokens .legend-dot { background: #bc8cff; }
-.legend-reqs .legend-dot { background: #d29922; }
+.legend-tok .legend-dot { background: var(--series-1); }
+.legend-prefill .legend-dot { background: var(--series-2); }
+.legend-tokens .legend-dot { background: var(--series-4); }
+.legend-reqs .legend-dot { background: var(--series-3); }
 
 /* M81-T4: each series that is NOT the left axis states its own scale. */
 .legend-peak {

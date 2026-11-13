@@ -973,9 +973,10 @@ carryovers:
     finding: "Performance & Token Charts overlays 5 high-chroma series with dashed styles, no requests axis, unit mismatch (k tokens vs tok/s), no shared cursor/tooltips — the flagship viz is the least usable element"
     location: agent/reports/audit-41-design-stack-and-ui-facelift-2026-11-13.md
     severity: medium
-    status: pending
-    fix_applied_date: null
+    status: fixed
+    fix_applied_date: 2026-11-13
     verified_in_audit: 41
+    resolution: "task-84-t2 shipped: All Combined is three stacked bands (tok/s, requests, tokens) each with its own labelled axis inside #chart-svg; solid lines on --series-1..4 tokens; shared crosshair spans all bands, tooltip lists every series with units. New pinned check chart-small-multiples; single-metric tabs' pinned geometry untouched."
     notes: "Small multiples or one-primary-series mode, shared crosshair + tooltip, per-series axis labels, desaturated calibrated palette. Planned as task-84-t2 (M84 opened 2026-11-13)."
   - id: a41-03
     audit: 41

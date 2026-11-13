@@ -848,11 +848,14 @@ def main():
           const g = document.getElementById('chart-grid');
           if (!g) return null;
           const texts = [...g.querySelectorAll('text')].map(t => t.textContent.trim());
-          return {texts, title: (document.querySelector('.chart-axis-title') || {}).textContent};
+          const titles = [...g.querySelectorAll('.chart-axis-title')].map(t => t.textContent.trim());
+          return {texts, titles, title: titles[0]};
         })()""")
-        assert axis and axis["title"], f"no chart axis title was rendered ({axis!r})"
-        assert "tokens" in axis["title"], (
-            f"the default (all) axis must name its unit, got {axis['title']!r}"
+        assert axis and axis["titles"], f"no chart axis title was rendered ({axis!r})"
+        # M84-T2: the default (all) view is small multiples — each band titles its own
+        # unit — so "tokens" must appear among the titles rather than only as the one axis.
+        assert any("tokens" in t for t in axis["titles"]), (
+            f"the default (all) axes must name their units, got {axis['titles']!r}"
         )
         # Switch the metric tab; the unit must change with it. A metric tab re-renders from the
         # data already in hand (no fetch), so the observable is a newer chart render.
@@ -876,6 +879,46 @@ def main():
             f"no gridline label carries the unit ({axis2['texts'][:8]!r})"
         )
         print("PASS chart-axis-labelled")
+
+        # 14b. chart-small-multiples (M84-T2 / audit-41 a41-02) — "All Combined" must be
+        #      stacked bands with one labelled axis per unit, not a five-series overlay on
+        #      one private-scaled axis. The empty temp DB is fine: structure is under test.
+        chart_stamp_all = js(ws, "window.__lastChartRender || 0")
+        js(ws, """(() => {
+          const t = document.querySelector('#chart-metric-tabs .chart-tab[data-metric=all]');
+          if (t) t.click();
+        })()""")
+        settle(ws, "(window.__lastChartRender || 0) > %d" % int(chart_stamp_all),
+               "the all metric tab re-rendering the banded chart")
+        bands = js(ws, """(() => {
+          const g = document.getElementById('chart-grid');
+          if (!g) return null;
+          const titles = [...g.querySelectorAll('.chart-axis-title')].map(t => t.textContent.trim());
+          const svg = document.getElementById('chart-svg');
+          const vb = (svg.getAttribute('viewBox') || '').split(/\\s+/).map(Number);
+          const dashed = [...document.querySelectorAll('#chart-series-lines polyline')]
+            .filter(p => p.getAttribute('stroke-dasharray')).length;
+          const hiddenLegend = [...document.querySelectorAll('#chart-legend .legend-item')].filter(e => e.hidden).length;
+          return {titles, vbH: vb[3], dashed, hiddenLegend,
+                  banded: document.getElementById('chart-canvas-wrap').classList.contains('is-banded')};
+        })()""")
+        assert bands and len(bands["titles"]) >= 3, (
+            f"the combined view must draw one titled band per unit, got {bands!r}"
+        )
+        joined = " ".join(bands["titles"]).lower()
+        assert "tok/s" in joined and "token" in joined and "request" in joined, (
+            f"band titles must cover throughput, token volume and requests: {bands['titles']!r}"
+        )
+        assert bands["banded"] and bands["vbH"] > 300, (
+            f"the canvas did not switch to the tall banded layout ({bands!r})"
+        )
+        assert bands["dashed"] == 0, (
+            f"{bands['dashed']} dashed lines: dashes are reserved for projected series (M84-T2)"
+        )
+        assert bands["hiddenLegend"] == 0, (
+            f"the combined view draws every series, so no legend item may hide ({bands!r})"
+        )
+        print("PASS chart-small-multiples")
 
         # 15. chart-gap-marked (a33-21) — an unobserved bucket must be marked as a gap, not
         #     drawn as a flat zero. The empty temp DB makes every bucket unobserved, so the
@@ -1691,7 +1734,9 @@ def main():
         # again and only the legend would look wrong in hindsight.
         top = js(ws, """(() => {
           const ln = [...document.querySelectorAll('#chart-series-lines polyline')]
-            .find(p => (p.getAttribute('stroke') || '') === '#3fb950');
+            // M84-T2 migrated the stroke hues to --series-* tokens; match the token (and the
+            // old literal) so this stays the same "is the line drawn to its disclosed scale" test.
+            .find(p => /^(#3fb950|var\\(--series-2\\))$/.test((p.getAttribute('stroke') || '').trim()));
           if (!ln) return null;
           const ys = (ln.getAttribute('points') || '').trim().split(/\\s+/)
             .map(pt => parseFloat(pt.split(',')[1]));
