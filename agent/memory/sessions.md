@@ -3,6 +3,12 @@
 # DO NOT edit manually — updated by /acp-commit
 
 - date: 2026-11-13
+  executor: hermes-coordinator
+  tasks: [weekly-code-review, weekly-integrity-scan, /acp-plan M85]
+  done: [review-018-pass-with-receipts, r18-01-carryover, audit-43-complete, pattern-scan-py-revived-with-corpus, integrity-manifest-generated, loopback-network-whitelist-created, a43-01-noted, a43-02-pending, m85-opened-3-tasks, recurring-fields-refreshed-x2]
+  deferred: [task-85-t1 -> M85, task-85-t2 -> M85, task-85-t3 -> M85]
+  key_fact: "acp.pattern-scan.sh called acp.pattern-scan.py which never existed in any git revision — the exfil/persistence integrity category was silently dead since M64 while integrity-e2e stayed green because it only asserts the .sh exists. Lesson: a wrapper's existence is not evidence its dependency runs; e2e must execute the pipeline end-to-end and assert output shape, not file presence."
+- date: 2026-11-13
   executor: hermes
   branch: main
   tasks:

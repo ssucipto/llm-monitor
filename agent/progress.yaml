@@ -7,7 +7,7 @@ project:
   version: 0.4.0
   started: 2026-10-07
   status: in_progress
-  current_milestone: M84
+  current_milestone: M85
   description: |
     A live local dashboard for whatever LLM engine owns port 8080 (Strata Coder
     or Vulkan llama.cpp). Reads the engine's own HTTP endpoints plus Hermes
@@ -279,13 +279,30 @@ milestones:
       archetype + popular-web-designs references (Linear/Sentry/Kraken). The 31+20-check
       UI suite guards every task commit; DOM id contracts preserved.
 
+  - id: M85
+    name: Hygiene & Design System — Async Error Hardening, DESIGN.md Palette, Integrity Hooks
+    priority: 1
+    file: agent/milestones/milestone-85-hygiene-and-design-system.md
+    status: in_progress
+    progress: 0
+    started: "2026-11-13"
+    completed:
+    estimated_weeks: 1
+    tasks_completed: 0
+    tasks_total: 3
+    notes: |
+      Planned from review-018 (r18-01 async fire-and-forget, HIGH) + audit-43
+      (a43-02 IG-37 no-op; F2 manifest-regen gotcha) + a41-07 stretch
+      (DESIGN.md palette authoring). All three tasks small and independent;
+      ordered correctness -> design-system docs -> toolchain durability.
+
 active_handoff:
-  path: agent/reports/handoff-m84-close-2026-11-13.md
+  path: agent/reports/handoff-m85-open-2026-11-13.md
   date: "2026-11-13"
   to_executor: hermes-coordinator
   from_executor: hermes-coordinator
-  git_commit: 7732f14
-  status: active — M84 CLOSED 4/4 2026-11-13; resume at overdue recurring reviews (weekly-code-review since 2026-11-04, weekly-integrity-scan due 2026-11-13)
+  git_commit: 6b72443
+  status: active — both weekly reviews DONE (review-018 PASS+1 carryover, audit-43 5 findings 3 fixed); M85 OPENED 0/3; resume at task-85-t1
 
 # Tasks are granular work items within milestones
 tasks:
@@ -794,6 +811,35 @@ tasks:
       estimated_hours: 3
       file: agent/tasks/milestone-84-ui-facelift/task-84-t4-number-status-palette-system.md
 
+  milestone_85:
+    - id: task-85-t1
+      name: Async error-path hardening + EH-09 handler
+      priority: 1
+      status: not_started
+      started:
+      completed_date:
+      actual_hours:
+      estimated_hours: 1
+      file: agent/tasks/milestone-85-hygiene-and-design-system/task-85-t1-async-error-hardening.md
+    - id: task-85-t2
+      name: DESIGN.md authoring of the M84 palette
+      priority: 2
+      status: not_started
+      started:
+      completed_date:
+      actual_hours:
+      estimated_hours: 2
+      file: agent/tasks/milestone-85-hygiene-and-design-system/task-85-t2-design-md-palette.md
+    - id: task-85-t3
+      name: Integrity self-sustain (team_members + manifest hook)
+      priority: 2
+      status: not_started
+      started:
+      completed_date:
+      actual_hours:
+      estimated_hours: 1.5
+      file: agent/tasks/milestone-85-hygiene-and-design-system/task-85-t3-integrity-self-sustain.md
+
 documentation:
   design_documents: 0
   milestone_documents: 12
@@ -811,6 +857,18 @@ progress:
 
 # Recent work log (most recent first)
 recent_work:
+  - date: "2026-11-13"
+    description: |
+      Weekly reviews cleared + M85 opened. review-018 (scope a6b988f^..HEAD: CI harness + all of M84):
+      Phase 1 per-file scan + Phase 2 semantic — diff CLEAN, 4 scanner HIGHs triaged to 1 true pre-existing
+      (wireDragDrop async fire-and-forget -> r18-01). audit-43 integrity: dead pattern-scan.py revived with
+      TP/FP corpus (category never enforced since M64), manifest + loopback whitelist created (pushed 6b72443),
+      IG-17 triaged FP, IG-37 no-op found. M85 planned 3 tasks from these findings.
+    items:
+      - "✅ review-018 PASS with 1 carryover (r18-01 HIGH pre-existing); recurring refreshed"
+      - "✅ audit-43: F1 pattern-scan revived + corpus, F2 manifest, F3 whitelist (commit 6b72443); a43-01 noted, a43-02 pending"
+      - "✅ M85 Hygiene & Design System OPENED (t1 async hardening, t2 DESIGN.md palette, t3 integrity self-sustain)"
+
   - date: "2026-11-13"
     description: |
       M84-T4 number/status/palette system closed — M84 COMPLETE (4/4). One fmt policy over every rendered
@@ -1432,9 +1490,8 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - "M84 UI Facelift CLOSED 2026-11-13 (4/4, a41-01..07 all closed). No open milestone — next engineering step is clearing the overdue recurring reviews below, then plan M85 from whatever they surface"
-  - "a41-07 stretch follow-up: author the accent/series palette as DESIGN.md via the design-md skill (tokens exist in :root; not yet spec'd)"
-  - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
+  - "M85 Hygiene & Design System OPENED 2026-11-13 (0/3): t1 async error hardening (r18-01), t2 DESIGN.md palette (a41-07 stretch), t3 integrity self-sustain (a43-02 + manifest hook)"
+  - "weekly reviews current again: code-review next_due 2026-11-20, integrity-scan next_due 2026-11-20"
   - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probed 2026-11-12 in audit-40 — no counter source exists on Windows with driver 32.0.32015.7029; honest '--' stays. Re-check if Adrenalin ships an installable ADL SDK/WMI provider or the engine moves to Linux amdgpu (a40-01)"
   - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"
 
@@ -1458,9 +1515,9 @@ recurring_tasks:
     frequency: weekly
     executor: copilot
     description: "Weekly code quality review"
-    last_run: 2026-10-28
-    next_due: 2026-11-04
-    status: overdue
+    last_run: 2026-11-13
+    next_due: 2026-11-20
+    status: current
 
   - id: weekly-integrity-scan
     command: /acp-integrity --self --report --carryover

@@ -1092,3 +1092,13 @@ carryovers:
     fix_applied_date: null
     verified_in_audit: 43
     notes: "Single-maintainer repo — populate team_members with the owner's git identity to activate IG-37, or record an explicit wontfix. Planned for M85 planning intake."
+
+  - id: r18-01
+    audit: review-018
+    finding: "wireDragDrop is declared async but called fire-and-forget (app.js:2639, call :2719): a throw becomes an unhandled rejection with no handler; app.js also registers no global unhandledrejection handler (EH-09)"
+    location: llm-monitor/app.js
+    severity: high
+    status: pending
+    fix_applied_date: null
+    verified_in_audit: null
+    notes: "Pre-existing baseline (tile-layout milestone), surfaced by weekly Phase 1 and triaged TRUE. Fix shape: await or void+catch at the call site, register window unhandledrejection logging, and add the reason comment to the deliberate localStorage catch (_) {} at :2402 in the same touch. Planned as task-85-t1 (M85 opened 2026-11-13)."
