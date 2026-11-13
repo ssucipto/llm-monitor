@@ -1985,6 +1985,51 @@ def main():
             f"(document={len(on_document or [])} window={len(on_window or [])})"
         )
         print("PASS detail-wiring-follows-the-region")
+
+        # M84-T1 (audit-41 a41-01/06, audit-42 a42-01): nothing may widen the document at
+        # phone width. The pre-M84 page measured scrollWidth 594 at a 390px viewport because
+        # grid items default to min-width:auto, so the widest table dragged the single track
+        # past the viewport. This check pins containment: the document fits, every panel
+        # fits, and touch controls reach 44px when the phone media query is active.
+        stamp = mark_layout(ws)
+        ws.call("Emulation.setDeviceMetricsOverride",
+                {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": False})
+        js(ws, "window.dispatchEvent(new Event('resize'))")
+        settle_spans(ws, stamp, "after setting the viewport to 390px")
+        try:
+            fit = js(ws, """(() => {
+              const doc = document.documentElement;
+              const panels = [...document.querySelectorAll('.panel')]
+                .map(p => Math.round(p.getBoundingClientRect().width));
+              const pill = document.querySelector('.view-tab').getBoundingClientRect();
+              const firstCol = getComputedStyle(document.querySelector('.request-table thead th:first-child'));
+              return {sw: doc.scrollWidth, cw: doc.clientWidth,
+                      over: panels.filter(w => w > doc.clientWidth + 1).length,
+                      maxPanel: panels.length ? Math.max(...panels) : 0,
+                      pillH: Math.round(pill.height),
+                      firstColPos: firstCol.position, firstColLeft: firstCol.left};
+            })()""")
+            assert fit["sw"] <= fit["cw"], (
+                f"document overflows horizontally at 390px: scrollWidth={fit['sw']} > "
+                f"clientWidth={fit['cw']} (something escapes its container)"
+            )
+            assert fit["over"] == 0, (
+                f"{fit['over']} panel(s) wider than the viewport at 390px "
+                f"(widest {fit['maxPanel']}px vs {fit['cw']}px)"
+            )
+            assert fit["pillH"] >= 44, (
+                f"view tab is {fit['pillH']}px tall at phone width; touch targets must "
+                "reach 44px (audit-41 a41-06)"
+            )
+            assert fit["firstColPos"] == "sticky" and fit["firstColLeft"] == "0px", (
+                f"request-table TIME column is not pinned inside the tile "
+                f"(position={fit['firstColPos']}, left={fit['firstColLeft']})"
+            )
+        finally:
+            stamp = mark_layout(ws)
+            ws.call("Emulation.clearDeviceMetricsOverride")
+            settle_spans(ws, stamp, "after clearing the 390px viewport override")
+        print("PASS viewport-no-hoverflow")
         return 0
     finally:
         for p in (proc, server):

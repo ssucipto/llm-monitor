@@ -151,6 +151,11 @@ body {
   align-items: center;
   gap: 14px;
   font-variant-numeric: tabular-nums;
+  /* M84-T1 (audit-42 a42-01): flex item with min-width:auto — the KPI row measured
+   * 427px at a 390px viewport and widened the document. */
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
 }
 
 /* The engine + model identity is the headline of the whole page: what is running
@@ -161,6 +166,11 @@ body {
   align-items: center;
   gap: 10px;
   white-space: nowrap;
+  /* M84-T1 (audit-42 a42-01): the build string made this cluster 572px wide at a
+   * 390px viewport; flex items default to min-width:auto, so it widened the bar. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .brand__mark {
@@ -2514,5 +2524,55 @@ body[data-view="compact"] .topbar__meta {
 
   .hud-status-orb {
     animation: none !important;
+  }
+}
+
+/* ── M84-T1 (audit-41 a41-01/06, audit-42 a42-01): phone-width containment ─────
+ * The 900px media query already collapses the masonry to one column, but grid
+ * items default to min-width:auto — the widest descendant (request-table ~588px,
+ * topbar identity ~572px) dragged the single track past the viewport (measured
+ * scrollWidth 594 at 390px). Containment, not another media query, is the fix. */
+.tiles > .panel,
+.tiles--detail > * {
+  min-width: 0;
+}
+
+/* Wide tables pan inside their own scroller instead of widening the page. The
+ * request table deliberately does NOT get a new wrapper: it already lives in the
+ * scrollable .tiles > .requests tile, and a nested scroller would re-anchor its
+ * sticky thead onto a non-scrolling box (sticky top would stop working). */
+.request-table,
+.history-table {
+  max-width: 100%;
+}
+
+.history-table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* TIME column stays pinned while the request table pans inside its tile
+ * (acceptance: "tables pan inside their tile with TIME pinned"). Backgrounds
+ * mirror the zebra rows so scrolled cells never show through. */
+.request-table th:first-child,
+.request-table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--bg-elev);
+  z-index: 1;
+}
+.request-table thead th:first-child {
+  z-index: 3; /* above both the sticky row and the sticky header row */
+}
+.request-table tbody tr:nth-child(odd) td:first-child {
+  background: color-mix(in srgb, var(--bg-elev-2) 55%, var(--bg-elev));
+}
+
+/* Touch ergonomics (a41-06): pills were 24-30px tall. Desktop density unchanged. */
+@media (max-width: 700px), (pointer: coarse) {
+  .view-tab,
+  .chart-tab,
+  .chart-range-btn {
+    min-height: 44px;
   }
 }
