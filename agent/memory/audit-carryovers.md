@@ -966,7 +966,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "Fix shape: single-column collapse <=700px + contained table scrollers + sticky first column; guard with a new static check asserting scrollWidth==innerWidth at 390px in the existing CDP suite. M84-T1 candidate."
+    notes: "Fix shape: single-column collapse <=700px + contained table scrollers + sticky first column; guard with a new static check asserting scrollWidth==innerWidth at 390px in the existing CDP suite. Planned as task-84-t1 (M84 opened 2026-11-13)."
   - id: a41-02
     audit: 41
     finding: "Performance & Token Charts overlays 5 high-chroma series with dashed styles, no requests axis, unit mismatch (k tokens vs tok/s), no shared cursor/tooltips — the flagship viz is the least usable element"
@@ -975,7 +975,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "Small multiples or one-primary-series mode, shared crosshair + tooltip, per-series axis labels, desaturated calibrated palette. M84-T2 candidate."
+    notes: "Small multiples or one-primary-series mode, shared crosshair + tooltip, per-series axis labels, desaturated calibrated palette. Planned as task-84-t2 (M84 opened 2026-11-13)."
   - id: a41-03
     audit: 41
     finding: "No hero metric: ~40 near-equal-weight numbers on the first screen; decode tok/s appears 3x at equal weight; KPI strip duplicates the cards below it"
@@ -984,7 +984,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "Monitor-surface hierarchy: one oversized vital + delta chip, demote strip to muted pills, use existing --fs-* scale tokens. M84-T3 candidate."
+    notes: "Monitor-surface hierarchy: one oversized vital + delta chip, demote strip to muted pills, use existing --fs-* scale tokens. Planned as task-84-t3 (M84 opened 2026-11-13)."
   - id: a41-04
     audit: 41
     finding: "Numeric precision/unit discipline: false precision on live values (310.188 Wh, raw 90,607,381/102,522,079), units as loose tokens, dev vocabulary in copy ('gauge to 100', 'S created')"
@@ -993,7 +993,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "Central fmt() policy in app.js: compact notation, sig-digit caps, unit span at lighter weight, human labels. M84-T4 candidate."
+    notes: "Central fmt() policy in app.js: compact notation, sig-digit caps, unit span at lighter weight, human labels. Planned as task-84-t4 (M84 opened 2026-11-13)."
   - id: a41-05
     audit: 41
     finding: "Semantic status colours (is-ok/is-warn/is-bad) exist and fire for VRAM/power/context/HUD but not for RAM/CPU hardware vitals — a monitor should alarm without being asked"
@@ -1002,7 +1002,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "Threshold classes on all vitals; fold into the fmt()/status pass. M84-T4 candidate."
+    notes: "Threshold classes on all vitals; fold into the fmt()/status pass. Planned as task-84-t4 (M84 opened 2026-11-13)."
   - id: a41-06
     audit: 41
     finding: "Tab pills and time-range chips measure ~24-30px tall with no min-height rules — below the 44px touch-target floor, mis-tap-prone"
@@ -1011,7 +1011,7 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "min-height >=44px on interactive pills/chips at narrow widths. Pairs with a41-01 in M84-T1."
+    notes: "min-height >=44px on interactive pills/chips at narrow widths. Planned inside task-84-t1 (M84 opened 2026-11-13)."
   - id: a41-07
     audit: 41
     finding: "Colour semantics overloaded: green means good-percent AND a chart series AND the speculative rate; accent is the GitHub-dark default rather than a chosen identity"
@@ -1020,4 +1020,4 @@ carryovers:
     status: pending
     fix_applied_date: null
     verified_in_audit: 41
-    notes: "One accent + dedicated calibrated series palette in :root; consider authoring the set as DESIGN.md via the design-md skill. M84-T4 candidate."
+    notes: "One accent + dedicated calibrated series palette in :root; consider authoring the set as DESIGN.md via the design-md skill. Planned as task-84-t4 (M84 opened 2026-11-13)."

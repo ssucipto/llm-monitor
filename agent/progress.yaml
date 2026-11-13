@@ -260,6 +260,25 @@ milestones:
       primary accelerator sorting (RX 7900 XTX 24GB + GTX 1660 6GB), and modernizes .toc into a
       high-contrast developer HUD pill bar.
 
+  - id: M84
+    name: UI Facelift — Mobile Containment, Chart System, Hero Hierarchy, Number/Status/Palette
+    priority: 1
+    file: agent/milestones/milestone-84-ui-facelift.md
+    status: in_progress
+    progress: 0
+    started: "2026-11-13"
+    completed: null
+    estimated_weeks: 1
+    tasks_completed: 0
+    tasks_total: 4
+    notes: |
+      Planned from audit-41 (carryovers a41-01..a41-07): fix measured mobile horizontal
+      overflow (scrollWidth 594 at 390px viewport), rebuild the flagship chart as small
+      multiples with a shared crosshair, land one hero vital with honest delta, and
+      systematize numbers/status/palette. Doctrine: impeccable + claude-design Monitor
+      archetype + popular-web-designs references (Linear/Sentry/Kraken). The 31+20-check
+      UI suite guards every task commit; DOM id contracts preserved.
+
 active_handoff:
   path: agent/reports/handoff-next-agent-m83-session-closeout-2026-11-06.md
   date: "2026-11-06"
@@ -736,6 +755,32 @@ tasks:
       actual_hours: 2.0
       file: agent/tasks/milestone-83-header-dual-gauges-multi-gpu-and-nav-redesign/task-83-t4-modern-navigation-pill-bar.md
       estimated_hours: 2
+
+  milestone_84:
+    - id: task-84-t1
+      name: Mobile containment and touch targets
+      priority: 1
+      status: not_started
+      estimated_hours: 3
+      file: agent/tasks/milestone-84-ui-facelift/task-84-t1-mobile-containment-and-touch-targets.md
+    - id: task-84-t2
+      name: Chart system redesign (small multiples + shared cursor)
+      priority: 1
+      status: not_started
+      estimated_hours: 4
+      file: agent/tasks/milestone-84-ui-facelift/task-84-t2-chart-system-redesign.md
+    - id: task-84-t3
+      name: Hero-metric hierarchy
+      priority: 2
+      status: not_started
+      estimated_hours: 3
+      file: agent/tasks/milestone-84-ui-facelift/task-84-t3-hero-metric-hierarchy.md
+    - id: task-84-t4
+      name: Number / status / palette system
+      priority: 2
+      status: not_started
+      estimated_hours: 3
+      file: agent/tasks/milestone-84-ui-facelift/task-84-t4-number-status-palette-system.md
 
 documentation:
   design_documents: 0
@@ -1353,7 +1398,7 @@ recent_work:
 
 # Next steps (prioritized list)
 next_steps:
-  - "M84 UI facelift (audit-41 planned): T1 mobile containment (scrollWidth==innerWidth at 390px, a41-01/06) -> T2 chart redesign (small multiples + crosshair, a41-02) -> T3 hero-metric hierarchy (a41-03) -> T4 fmt()/status/palette system (a41-04/05/07). Run /acp-plan to open it"
+  - "M84 UI Facelift OPENED 2026-11-13 (/acp-plan): task-84-t1 mobile containment (a41-01/06) -> t2 chart small multiples + crosshair (a41-02) -> t3 hero-metric hierarchy (a41-03) -> t4 fmt/status/palette (a41-04/05/07). Start with /acp-proceed"
   - "weekly-code-review recurring task is overdue (last real review-015 2026-10-28); weekly-integrity-scan due 2026-11-13"
   - "GPU temp/PCIe on the AMD HIP driver (M81 follow-up): probed 2026-11-12 in audit-40 — no counter source exists on Windows with driver 32.0.32015.7029; honest '--' stays. Re-check if Adrenalin ships an installable ADL SDK/WMI provider or the engine moves to Linux amdgpu (a40-01)"
   - "Add more labelled corpus fixtures to tests/fixtures/review-corpus as new rules mature"
